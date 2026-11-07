@@ -3,9 +3,6 @@
 */
 package io.reliza.service.kev;
 
-import java.util.List;
-
-import io.reliza.model.KevAssertionData;
 import io.reliza.model.KevSource;
 
 /**
@@ -22,13 +19,14 @@ public interface KevSourceConnector {
 	KevSource source();
 
 	/**
-	 * Fetch and normalize the source's complete current catalog. The
-	 * {@code credential} is the per-org token (e.g. VulnCheck Bearer) for
-	 * sources that need one; sources that read a public feed (CISA) ignore
-	 * it. Returns an empty list to signal a failed or empty fetch — the
-	 * orchestrator then skips reconciliation for that (org, source), so a
-	 * bad fetch never revokes live assertions. Implementations must not
-	 * throw.
+	 * Fetch and normalize the source's complete current catalog, with its
+	 * header when the source publishes one (FDAW-2: the catalog version and
+	 * release date a VDR names). The {@code credential} is the per-org token
+	 * (e.g. VulnCheck Bearer) for sources that need one; sources that read a
+	 * public feed (CISA) ignore it. Returns empty entries to signal a failed
+	 * or empty fetch -- the orchestrator then skips reconciliation for that
+	 * (org, source), so a bad fetch never revokes live assertions.
+	 * Implementations must not throw.
 	 */
-	List<KevAssertionData> fetchCatalog(String credential);
+	KevCatalogFetch fetchCatalog(String credential);
 }

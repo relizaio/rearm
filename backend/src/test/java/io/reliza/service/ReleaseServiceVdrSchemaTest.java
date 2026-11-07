@@ -10,8 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.ZonedDateTime;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -24,7 +24,6 @@ import org.cyclonedx.generators.BomGeneratorFactory;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.Component.Type;
-import org.cyclonedx.model.Metadata;
 import org.cyclonedx.model.Property;
 import org.cyclonedx.model.vulnerability.Vulnerability;
 import org.cyclonedx.model.vulnerability.Vulnerability.Version.Status;
@@ -32,11 +31,14 @@ import org.cyclonedx.parsers.JsonParser;
 import org.junit.jupiter.api.Test;
 
 import io.reliza.common.Utils;
+import io.reliza.model.KevSource;
+import io.reliza.model.VdrAnalysisState;
 import io.reliza.model.VdrMetadataProperty;
 import io.reliza.model.VdrSnapshotType;
 import io.reliza.model.VulnerabilityRecordData;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
+import io.reliza.service.kev.KevCatalogStateService.KevCatalogState;
 
 /**
  * Structural guardrail that every VDR document shape emitted by {@link ReleaseService#generateVdrInternal}
@@ -44,8 +46,9 @@ import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
  *
  * Scope note (deliberate): this test operates on fixtures built with the same {@code cyclonedx-core-java}
  * builder patterns used inside {@code generateVdrInternal} (serial number via
- * {@link ReleaseService#buildVdrSerialNumber}, rearm metadata via {@link Utils#setRearmBomMetadata}, the
- * snapshot {@link VdrMetadataProperty} constants, and the {@link Vulnerability.Analysis} model). It does
+ * {@link ReleaseService#buildVdrSerialNumber}, rearm metadata via {@link Utils#setRearmBomMetadata}, every
+ * {@link VdrMetadataProperty} via the production {@link ReleaseService#attachVdrMetadataProperties}, and the
+ * {@link Vulnerability.Analysis} model). It does
  * not reach through the full service graph because that would require mocking 5+ collaborators and still
  * would not improve schema coverage. Each fixture here corresponds to a distinct structural path the
  * producer actually emits, so a breaking CDX change or a library upgrade that renames fields will still
@@ -67,7 +70,20 @@ public class ReleaseServiceVdrSchemaTest {
 				() -> "CDX 1.6 schema validation failed:\n" + errors + "\n---\n" + json);
 	}
 
+	/** A COMPLETED analysis, the state a scanned release's VDR carries; the default of every fixture. */
+	private static final VdrAnalysisState.Derived COMPLETED = new VdrAnalysisState.Derived(
+			VdrAnalysisState.COMPLETED, null, ZonedDateTime.parse("2024-05-31T10:00:00Z"), 1, 0, 0);
+
 	private static Bom newBaseBom(VdrSnapshotType snapshotType, String snapshotValue, ZonedDateTime cutOff) {
+		return newBaseBom(snapshotType, snapshotValue, cutOff, COMPLETED, null);
+	}
+
+	/**
+	 * A VDR's base as buildVdrBom writes it: serial, rearm metadata and every metadata property through
+	 * the production {@link ReleaseService#attachVdrMetadataProperties} (FDAW-2).
+	 */
+	private static Bom newBaseBom(VdrSnapshotType snapshotType, String snapshotValue, ZonedDateTime cutOff,
+			VdrAnalysisState.Derived analysis, KevCatalogState kev) {
 		Bom bom = new Bom();
 		bom.setSerialNumber(ReleaseService.buildVdrSerialNumber(
 				FIXED_RELEASE, snapshotType, snapshotValue, cutOff, Boolean.FALSE));
@@ -77,37 +93,15 @@ public class ReleaseServiceVdrSchemaTest {
 		rootComponent.setVersion("1.0.0");
 		Utils.augmentRootBomComponent("demo-org", rootComponent);
 		Utils.setRearmBomMetadata(bom, rootComponent);
+		ReleaseService.attachVdrMetadataProperties(bom.getMetadata(), cutOff, snapshotType, snapshotValue, analysis, kev);
 		return bom;
 	}
 
-	private static void attachSnapshotProperties(Bom bom, VdrSnapshotType snapshotType, String snapshotValue,
-			ZonedDateTime cutOff) {
-		Metadata metadata = bom.getMetadata();
-		if (metadata.getProperties() == null) {
-			metadata.setProperties(new ArrayList<>());
-		}
-		Property snap = new Property();
-		snap.setName(VdrMetadataProperty.VDR_SNAPSHOT.toString());
-		snap.setValue("true");
-		metadata.getProperties().add(snap);
-
-		Property cutoff = new Property();
-		cutoff.setName(VdrMetadataProperty.VDR_CUTOFF_DATE.toString());
-		cutoff.setValue(cutOff.toString());
-		metadata.getProperties().add(cutoff);
-
-		if (snapshotType != null) {
-			Property type = new Property();
-			type.setName(VdrMetadataProperty.VDR_SNAPSHOT_TYPE.toString());
-			type.setValue(snapshotType.name());
-			metadata.getProperties().add(type);
-		}
-		if (snapshotValue != null) {
-			Property val = new Property();
-			val.setName(VdrMetadataProperty.VDR_SNAPSHOT_VALUE.toString());
-			val.setValue(snapshotValue);
-			metadata.getProperties().add(val);
-		}
+	private static String property(Bom bom, VdrMetadataProperty name) {
+		return bom.getMetadata().getProperties().stream()
+				.filter(p -> name.toString().equals(p.getName()))
+				.map(Property::getValue)
+				.findFirst().orElse(null);
 	}
 
 	private static Component libraryComponent(String purl) {
@@ -148,7 +142,10 @@ public class ReleaseServiceVdrSchemaTest {
 	void historicalLifecycleSnapshot_withProperties_isSchemaValid() throws Exception {
 		ZonedDateTime cutOff = ZonedDateTime.parse("2024-06-01T00:00:00Z");
 		Bom bom = newBaseBom(VdrSnapshotType.LIFECYCLE, "release", cutOff);
-		attachSnapshotProperties(bom, VdrSnapshotType.LIFECYCLE, "release", cutOff);
+		assertEquals("true", property(bom, VdrMetadataProperty.VDR_SNAPSHOT));
+		assertEquals("2024-06-01T00:00:00Z", property(bom, VdrMetadataProperty.VDR_CUTOFF_DATE));
+		assertEquals("LIFECYCLE", property(bom, VdrMetadataProperty.VDR_SNAPSHOT_TYPE));
+		assertEquals("release", property(bom, VdrMetadataProperty.VDR_SNAPSHOT_VALUE));
 		assertSchemaValid(bom);
 	}
 
@@ -156,7 +153,66 @@ public class ReleaseServiceVdrSchemaTest {
 	void historicalDateSnapshot_withProperties_isSchemaValid() throws Exception {
 		ZonedDateTime cutOff = ZonedDateTime.parse("2024-06-01T00:00:00Z");
 		Bom bom = newBaseBom(VdrSnapshotType.DATE, null, cutOff);
-		attachSnapshotProperties(bom, VdrSnapshotType.DATE, null, cutOff);
+		assertNull(property(bom, VdrMetadataProperty.VDR_SNAPSHOT_VALUE));
+		assertSchemaValid(bom);
+	}
+
+	// ---- FDAW-2: analysis state and KEV catalog properties, per the table of the design (3.1) ----
+
+	@Test
+	void completedVdr_namesTheCompletionTime_andNoReasonOrCounts() throws Exception {
+		Bom bom = newBaseBom(null, null, null);
+		assertEquals("COMPLETED", property(bom, VdrMetadataProperty.VDR_ANALYSIS_STATE));
+		assertEquals("2024-05-31T10:00:00Z", property(bom, VdrMetadataProperty.VDR_ANALYSIS_COMPLETED_AT));
+		assertNull(property(bom, VdrMetadataProperty.VDR_ANALYSIS_REASON));
+		assertNull(property(bom, VdrMetadataProperty.VDR_ANALYSIS_RELEASES_ANALYSED));
+		assertNull(property(bom, VdrMetadataProperty.VDR_ANALYSIS_RELEASES_NOT_ANALYSED));
+		assertNull(property(bom, VdrMetadataProperty.VDR_SNAPSHOT));
+		assertSchemaValid(bom);
+	}
+
+	@Test
+	void partialVdr_namesTheCompletionTimeAndBothCounts() throws Exception {
+		Bom bom = newBaseBom(null, null, null, new VdrAnalysisState.Derived(VdrAnalysisState.PARTIAL, null,
+				ZonedDateTime.parse("2024-05-31T10:00:00Z"), 2, 3, 0), null);
+		assertEquals("PARTIAL", property(bom, VdrMetadataProperty.VDR_ANALYSIS_STATE));
+		assertEquals("2024-05-31T10:00:00Z", property(bom, VdrMetadataProperty.VDR_ANALYSIS_COMPLETED_AT));
+		assertEquals("2", property(bom, VdrMetadataProperty.VDR_ANALYSIS_RELEASES_ANALYSED));
+		assertEquals("3", property(bom, VdrMetadataProperty.VDR_ANALYSIS_RELEASES_NOT_ANALYSED));
+		assertNull(property(bom, VdrMetadataProperty.VDR_ANALYSIS_REASON));
+		assertSchemaValid(bom);
+	}
+
+	@Test
+	void notAnalysedVdr_namesTheReason_andNoCompletionTimeOrCounts_forEachReason() throws Exception {
+		for (VdrAnalysisState.Reason reason : VdrAnalysisState.Reason.values()) {
+			Bom bom = newBaseBom(null, null, null, new VdrAnalysisState.Derived(VdrAnalysisState.NOT_ANALYSED, reason,
+					null, 0, 1, 0), null);
+			assertEquals("NOT_ANALYSED", property(bom, VdrMetadataProperty.VDR_ANALYSIS_STATE));
+			assertEquals(reason.name(), property(bom, VdrMetadataProperty.VDR_ANALYSIS_REASON));
+			assertNull(property(bom, VdrMetadataProperty.VDR_ANALYSIS_COMPLETED_AT));
+			assertNull(property(bom, VdrMetadataProperty.VDR_ANALYSIS_RELEASES_ANALYSED));
+			assertNull(property(bom, VdrMetadataProperty.VDR_ANALYSIS_RELEASES_NOT_ANALYSED));
+			assertSchemaValid(bom);
+		}
+	}
+
+	@Test
+	void cisaKevCatalog_namesTheSourceTheCatalogDateAndTheSync() throws Exception {
+		Bom bom = newBaseBom(null, null, null, COMPLETED, new KevCatalogState(KevSource.CISA,
+				Instant.parse("2024-05-30T17:58:23.643Z"), Instant.parse("2024-05-31T01:00:00Z")));
+		assertEquals("CISA", property(bom, VdrMetadataProperty.VDR_KEV_CATALOG_SOURCE));
+		assertEquals("2024-05-30T17:58:23.643Z", property(bom, VdrMetadataProperty.VDR_KEV_CATALOG_DATE));
+		assertEquals("2024-05-31T01:00:00Z", property(bom, VdrMetadataProperty.VDR_KEV_CATALOG_SYNCED_AT));
+		assertSchemaValid(bom);
+	}
+
+	@Test
+	void noKevIntegration_namesSourceNone_andNoDates() throws Exception {
+		Bom bom = newBaseBom(null, null, null);
+		assertEquals("NONE", property(bom, VdrMetadataProperty.VDR_KEV_CATALOG_SOURCE));
+		assertNull(property(bom, VdrMetadataProperty.VDR_KEV_CATALOG_DATE));
+		assertNull(property(bom, VdrMetadataProperty.VDR_KEV_CATALOG_SYNCED_AT));
 		assertSchemaValid(bom);
 	}
 

@@ -35,6 +35,7 @@ import io.reliza.model.NoMatchableComponentsReason;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.VdrAnalysisState;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.BomScanTally;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasDto;
@@ -125,10 +126,32 @@ public class ReleaseMetricsComputeService {
 	 * the save, and the variant lookup is by the release's uuid.
 	 */
 	public BomScanTally tallyBomScanInputs(ReleaseData rd) {
-		if (null == rd.getUuid()) return BomScanTally.EMPTY;
+		return ownBomFacts(rd).tally();
+	}
+
+	/**
+	 * FDAW-2: the release's own BOMs as the VDR analysis state reads them, from one gather and one
+	 * light read: the tally, the latest real artifact firstScanned among the scannable BOMs and
+	 * whether any scannable BOM still lacks one -- the same predicate and loop as the compute's
+	 * all-or-nothing flag. A release not saved yet answers the empty facts, as the tally does.
+	 */
+	VdrAnalysisState.OwnBomFacts ownBomFacts(ReleaseData rd) {
+		if (null == rd.getUuid()) return new VdrAnalysisState.OwnBomFacts(BomScanTally.EMPTY, null, false);
 		Set<UUID> ids = artifactGatherService.gatherReleaseArtifacts(rd);
-		if (ids.isEmpty()) return BomScanTally.EMPTY;
-		return tallyBomScan(artifactService.getArtifactDataListLight(ids));
+		if (ids.isEmpty()) return new VdrAnalysisState.OwnBomFacts(BomScanTally.EMPTY, null, false);
+		List<ArtifactData> arts = artifactService.getArtifactDataListLight(ids);
+		ZonedDateTime latest = null;
+		boolean anyUnscanned = false;
+		for (ArtifactData ad : arts) {
+			if (!isScanInput(ad)) continue;
+			ZonedDateTime fs = null != ad.getMetrics() ? ad.getMetrics().getFirstScanned() : null;
+			if (null == fs) {
+				anyUnscanned = true;
+			} else if (null == latest || fs.isAfter(latest)) {
+				latest = fs;
+			}
+		}
+		return new VdrAnalysisState.OwnBomFacts(tallyBomScan(arts), latest, anyUnscanned);
 	}
 
 	@Transactional
@@ -236,7 +259,7 @@ public class ReleaseMetricsComputeService {
 			// LEAF only -- a PRODUCT derives from its children (the rollup below), not its own artifacts.
 			// Children that are not scanned (a board's document rounds, task RD4-11) are no input:
 			// a product composed of them alone is a leaf here, like one with no children.
-			List<ReleaseData> scannedChildren = scannedChildrenOf(rd);
+			List<ReleaseData> scannedChildren = scannableChildrenOf(rd);
 			boolean hasChildRels = !scannedChildren.isEmpty();
 			if (!hasChildRels
 					&& isScannableLifecycle(rd.getLifecycle())
@@ -1213,8 +1236,11 @@ public class ReleaseMetricsComputeService {
 	 * instead of throwing out of the metrics pass on every attempt. The lookup is the same
 	 * org-scoped read as before (own org only), so no row of another
 	 * organization is read.
+	 *
+	 * Package-private: the VDR analysis state (ReleaseService.vdrAnalysisStateOf, FDAW-2) walks the
+	 * same children with the same reads.
 	 */
-	private List<ReleaseData> scannedChildrenOf(ReleaseData rd) {
+	List<ReleaseData> scannableChildrenOf(ReleaseData rd) {
 		var parents = rd.getParentReleases();
 		if (parents == null || parents.isEmpty()) return List.of();
 		List<ReleaseData> out = new ArrayList<>();

@@ -26,6 +26,8 @@ import io.reliza.model.DeliverableData;
 import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.VariantData;
 import io.reliza.model.Rebom.BomHash;
@@ -171,6 +173,43 @@ class ReleaseServiceReleaseNodeFactsTest {
 		assertEquals(nothing, ReleaseNodeFacts.key(null));
 		assertEquals(nothing, ReleaseNodeFacts.key(new ReleaseNodeFacts(null, null, null, null)));
 		assertEquals(nothing, ReleaseNodeFacts.key(new ReleaseNodeFacts(" ", List.of(), "", " ")));
+	}
+
+	private DeliverableData hashedDeliverable(UUID uuid, String digest, String purl) {
+		DeliverableData dd = new DeliverableData();
+		dd.setSoftwareMetadata(SoftwareDeliverableMetadata.builder()
+				.digestRecords(new LinkedHashSet<>(List.of(new DigestRecord(DigestAlgorithm.SHA_256, digest)))).build());
+		if (null != purl) dd.setIdentifiers(List.of(new RearmIdentifier(RearmIdentifierType.PURL, purl)));
+		when(getDeliverableService.getDeliverableData(uuid)).thenReturn(Optional.of(dd));
+		return dd;
+	}
+
+	private void ships(UUID... deliverables) {
+		VariantData base = new VariantData();
+		base.setOutboundDeliverables(new LinkedHashSet<>(List.of(deliverables)));
+		when(variantService.findBaseVariantForRelease(RELEASE)).thenReturn(Optional.of(base));
+	}
+
+	/** FDAW-6 T15 (design 3.5, B12): two hashed deliverables have no single set of bytes, so none. */
+	@Test
+	void twoHashedDeliverablesYieldNoHashes() {
+		UUID other = UUID.randomUUID();
+		hashedDeliverable(DELIVERABLE, SHA_256, null);
+		hashedDeliverable(other, SHA_256.replace('9', '8'), null);
+		ships(DELIVERABLE, other);
+		assertEquals(List.of(), svc.releaseNodeHashes(rd));
+	}
+
+	/** FDAW-6 T15 (design 3.5, ADR-11): a digest of an artifact of another purl type is not the node's bytes. */
+	@Test
+	void oneHashedDeliverableOfAnotherPurlTypeYieldsNoneAndOfTheSameTypeItsRecords() {
+		when(rd.getIdentifiers()).thenReturn(List.of(new RearmIdentifier(RearmIdentifierType.PURL,
+				"pkg:npm/example/glucoview-web@2.4.0")));
+		hashedDeliverable(DELIVERABLE, SHA_256, "pkg:oci/glucoview-web@sha256%3A" + SHA_256);
+		ships(DELIVERABLE);
+		assertEquals(List.of(), svc.releaseNodeHashes(rd));
+		hashedDeliverable(DELIVERABLE, SHA_256, "pkg:npm/example/glucoview-web@2.4.0");
+		assertEquals(List.of(new BomHash("SHA-256", SHA_256)), svc.releaseNodeHashes(rd));
 	}
 
 	@Test

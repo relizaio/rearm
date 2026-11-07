@@ -2302,6 +2302,14 @@ type SubmissionProfileRef {
 	sourceObject: ID
 }
 
+"""The release SBOM a package version pins: the CycloneDX serialNumber (a uuid), the document version, the sha256 of the stored bytes and the artifact that holds them; download it with the artifact and version."""
+type ReleaseSbomRef {
+	serial: ID!
+	version: Int!
+	sha256: String!
+	artifact: ID!
+}
+
 """One part of a submission version, in manifest order; download a PRODUCED or REFERENCED artifact through the artifact rawdownload endpoints with artifactVersion."""
 type SubmissionPart {
 	part: PackagePart!
@@ -2313,6 +2321,9 @@ type SubmissionPart {
 	mediaType: String
 	size: Long
 	sha256: String
+	"The document identity of a VDR, a VEX or the referenced release SBOM: urn:uuid of its serialNumber (or the OpenVEX @id)."
+	documentSerial: String
+	documentVersion: Int
 	skipReason: PartSkipReason
 	detail: String
 }
@@ -2331,6 +2342,8 @@ type SubmissionVersion {
 	reason: String
 	settings: SubmissionSettingsRef
 	sbomProfile: SubmissionProfileRef
+	"The release SBOM this version pins; null when the aggregate is excluded or skipped."
+	releaseSbom: ReleaseSbomRef
 	parts: [SubmissionPart!]!
 	manifestArtifact: ID
 	manifestArtifactVersion: String

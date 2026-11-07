@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -41,6 +42,7 @@ import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Commit;
 import org.cyclonedx.model.Component;
 import org.cyclonedx.model.Component.Type;
+import org.cyclonedx.model.ExternalReference;
 import org.cyclonedx.model.Hash;
 import org.cyclonedx.model.Metadata;
 import org.cyclonedx.model.Hash.Algorithm;
@@ -124,7 +126,9 @@ import io.reliza.model.ParentRelease;
 import io.reliza.model.Release;
 import io.reliza.model.VdrSnapshotType;
 import io.reliza.model.VdrMetadataProperty;
+import io.reliza.model.VdrAnalysisState;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.ReleaseSbomRef;
 import io.reliza.model.ReleaseData.ReleaseApprovalProgrammaticInput;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.model.ReleaseData.ReleaseDataExtended;
@@ -176,6 +180,8 @@ import io.reliza.repositories.dao.DateCountDao;
 import io.reliza.versioning.VersionType;
 import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
+import io.reliza.service.kev.KevCatalogStateService;
+import io.reliza.service.kev.KevCatalogStateService.KevCatalogState;
 import io.reliza.service.oss.OssReleaseService;
 
 @Service
@@ -247,6 +253,9 @@ public class ReleaseService {
 
 	@Autowired
 	private ReleaseMetricsComputeService releaseMetricsComputeService;
+
+	@Autowired
+	private KevCatalogStateService kevCatalogStateService;
 	
 	@Autowired
 	private VulnAnalysisService vulnAnalysisService;
@@ -3621,6 +3630,27 @@ public class ReleaseService {
 	 * @return VDR JSON string
 	 */
 	public String generateVdr(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle) throws Exception {
+		return generateVdr(releaseData, includeSuppressed, upToDate, targetLifecycle, null);
+	}
+
+	/**
+	 * {@link #generateVdr(ReleaseData, Boolean, ZonedDateTime, ReleaseLifecycle)} with the document's
+	 * serialNumber given (FDAW-2, B1): a package build passes {@link #newDocumentSerial()} so no two
+	 * builds share an identity. Null keeps the deterministic seed of {@link #buildVdrSerialNumber}.
+	 */
+	public String generateVdr(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime upToDate,
+			ReleaseLifecycle targetLifecycle, String serialNumber) throws Exception {
+		return generateVdr(releaseData, includeSuppressed, upToDate, targetLifecycle, serialNumber, null);
+	}
+
+	/**
+	 * {@link #generateVdr(ReleaseData, Boolean, ZonedDateTime, ReleaseLifecycle, String)} for a package
+	 * version (FDAW-7 3.6): with {@code pin} the document names the pinned release SBOM by BOM-Link (a
+	 * {@code bom} external reference on the metadata component and one BOM-Link affect per component of
+	 * the finding's purl beside the purl affect). A null pin keeps the bytes as they are without it.
+	 */
+	public String generateVdr(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime upToDate,
+			ReleaseLifecycle targetLifecycle, String serialNumber, ReleaseSbomRef pin) throws Exception {
 		// Compute the actual cutoff date from lifecycle events
 		ZonedDateTime cutOffDate = computeLifecycleCutoffDate(releaseData, upToDate, targetLifecycle);
 		
@@ -3634,7 +3664,8 @@ public class ReleaseService {
 			snapshotType = VdrSnapshotType.DATE;
 		}
 		
-		return generateVdrWithSnapshot(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
+		return generateVdrWithSnapshot(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue, serialNumber,
+				pin);
 	}
 	
 	/**
@@ -3650,7 +3681,31 @@ public class ReleaseService {
 	 */
 	public String generateVdrWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed, 
 			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
-		return generateVdrInternal(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
+		return generateVdrWithSnapshot(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue, null);
+	}
+
+	/** {@link #generateVdrWithSnapshot} with the serialNumber given; null keeps the deterministic seed. */
+	public String generateVdrWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue, String serialNumber) throws Exception {
+		return generateVdrWithSnapshot(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue,
+				serialNumber, null);
+	}
+
+	/** {@link #generateVdrWithSnapshot} with the serialNumber and the release SBOM pin given (FDAW-7 3.6). */
+	public String generateVdrWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue, String serialNumber,
+			ReleaseSbomRef pin) throws Exception {
+		return generateVdrInternal(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue, serialNumber,
+				pin);
+	}
+
+	/**
+	 * A fresh document identity (FDAW-2, B1 interim): a random v4 urn:uuid, so a package's VDR or VEX
+	 * never shares a serialNumber with an earlier build's. The exports and the release trigger keep
+	 * the deterministic seeds.
+	 */
+	public static String newDocumentSerial() {
+		return "urn:uuid:" + UUID.randomUUID();
 	}
 
 	/**
@@ -3682,6 +3737,20 @@ public class ReleaseService {
 	 */
 	public String generateCdxVex(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
 			ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle) throws Exception {
+		return generateCdxVex(releaseData, includeSuppressed, includeInTriage, upToDate, targetLifecycle, null);
+	}
+
+	/** {@link #generateCdxVex} with the serialNumber given; null keeps the deterministic VEX seed. */
+	public String generateCdxVex(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle, String serialNumber) throws Exception {
+		return generateCdxVex(releaseData, includeSuppressed, includeInTriage, upToDate, targetLifecycle, serialNumber,
+				null);
+	}
+
+	/** {@link #generateCdxVex} for a package version: the serialNumber and the release SBOM pin given (FDAW-7 3.6). */
+	public String generateCdxVex(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle, String serialNumber, ReleaseSbomRef pin)
+			throws Exception {
 		ZonedDateTime cutOffDate = computeLifecycleCutoffDate(releaseData, upToDate, targetLifecycle);
 		VdrSnapshotType snapshotType = null;
 		String snapshotValue = null;
@@ -3691,7 +3760,8 @@ public class ReleaseService {
 		} else if (upToDate != null) {
 			snapshotType = VdrSnapshotType.DATE;
 		}
-		return generateCdxVexWithSnapshot(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType, snapshotValue);
+		return generateCdxVexWithSnapshot(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType,
+				snapshotValue, serialNumber, pin);
 	}
 
 	/**
@@ -3700,7 +3770,23 @@ public class ReleaseService {
 	 */
 	public String generateCdxVexWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
 			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
-		Bom bom = buildCdxVexBom(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType, snapshotValue);
+		return generateCdxVexWithSnapshot(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType,
+				snapshotValue, null);
+	}
+
+	/** {@link #generateCdxVexWithSnapshot} with the serialNumber given; null keeps the deterministic VEX seed. */
+	public String generateCdxVexWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue, String serialNumber) throws Exception {
+		return generateCdxVexWithSnapshot(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType,
+				snapshotValue, serialNumber, null);
+	}
+
+	/** {@link #generateCdxVexWithSnapshot} with the serialNumber and the release SBOM pin given (FDAW-7 3.6). */
+	public String generateCdxVexWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue, String serialNumber,
+			ReleaseSbomRef pin) throws Exception {
+		Bom bom = buildCdxVexBom(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType, snapshotValue,
+				serialNumber, pin);
 		BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
 		return generator.toJsonString();
 	}
@@ -3712,8 +3798,26 @@ public class ReleaseService {
 	 */
 	Bom buildCdxVexBom(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
 			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
-		Bom bom = buildVdrBom(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
-		transformVdrBomToCdxVex(bom, releaseData.getUuid(), includeInTriage, cutOffDate, snapshotType, snapshotValue, includeSuppressed);
+		return buildCdxVexBom(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType, snapshotValue, null);
+	}
+
+	/** {@link #buildCdxVexBom} with the VEX serialNumber given; null keeps the deterministic VEX seed. */
+	Bom buildCdxVexBom(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue, String serialNumber) throws Exception {
+		return buildCdxVexBom(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType, snapshotValue,
+				serialNumber, null);
+	}
+
+	/**
+	 * {@link #buildCdxVexBom} with the release SBOM pin given (FDAW-7 3.6): the VDR it transforms carries
+	 * the BOM-Link reference and affects, which the transform keeps. OpenVEX passes no pin.
+	 */
+	Bom buildCdxVexBom(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue, String serialNumber,
+			ReleaseSbomRef pin) throws Exception {
+		Bom bom = buildVdrBom(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue, null, pin);
+		transformVdrBomToCdxVex(bom, releaseData.getUuid(), includeInTriage, cutOffDate, snapshotType, snapshotValue,
+				includeSuppressed, serialNumber);
 		appendHistoricallyResolvedFindings(bom, releaseData, cutOffDate);
 		return bom;
 	}
@@ -3725,9 +3829,18 @@ public class ReleaseService {
 	 */
 	static void transformVdrBomToCdxVex(Bom bom, UUID releaseUuid, Boolean includeInTriage,
 			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue, Boolean includeSuppressed) {
-		// 1. VEX documents identify themselves separately from VDRs: use a distinct urn:uuid.
-		bom.setSerialNumber(buildCdxVexSerialNumber(releaseUuid, snapshotType, snapshotValue,
-				cutOffDate, includeSuppressed, includeInTriage));
+		transformVdrBomToCdxVex(bom, releaseUuid, includeInTriage, cutOffDate, snapshotType, snapshotValue,
+				includeSuppressed, null);
+	}
+
+	/** {@link #transformVdrBomToCdxVex} with the VEX serialNumber given; null keeps the deterministic VEX seed. */
+	static void transformVdrBomToCdxVex(Bom bom, UUID releaseUuid, Boolean includeInTriage,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue, Boolean includeSuppressed,
+			String serialNumber) {
+		// 1. VEX documents identify themselves separately from VDRs: use a distinct urn:uuid -- the
+		//    caller's when given (a package build, FDAW-2), else the deterministic VEX seed.
+		bom.setSerialNumber(null != serialNumber ? serialNumber : buildCdxVexSerialNumber(releaseUuid, snapshotType,
+				snapshotValue, cutOffDate, includeSuppressed, includeInTriage));
 
 		// 2. Keep components[] as-is — VEX is a VDR extension: same SBOM-level context, plus the
 		//    VEX_DOCUMENT marker, filtered vulnerabilities, and a distinct serialNumber. This makes
@@ -4188,8 +4301,9 @@ public class ReleaseService {
 	 * @param snapshotValue Value for snapshot (lifecycle name or approval entry name)
 	 * @return VDR JSON string
 	 */
-	private String generateVdrInternal(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
-		Bom bom = buildVdrBom(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue);
+	private String generateVdrInternal(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime cutOffDate,
+			VdrSnapshotType snapshotType, String snapshotValue, String serialNumber, ReleaseSbomRef pin) throws Exception {
+		Bom bom = buildVdrBom(releaseData, includeSuppressed, cutOffDate, snapshotType, snapshotValue, serialNumber, pin);
 		BomJsonGenerator generator = BomGeneratorFactory.createJson(org.cyclonedx.Version.VERSION_16, bom);
 		return generator.toJsonString();
 	}
@@ -4201,13 +4315,18 @@ public class ReleaseService {
 	 * filter vulnerabilities by analysis state, flip metadata property) without duplicating
 	 * ~250 lines of enrichment logic.
 	 */
-	private Bom buildVdrBom(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
+	private Bom buildVdrBom(ReleaseData releaseData, Boolean includeSuppressed, ZonedDateTime cutOffDate,
+			VdrSnapshotType snapshotType, String snapshotValue, String serialNumber, ReleaseSbomRef pin) throws Exception {
+		// FDAW-7 3.6: the pinned release SBOM's purl index, read once; an unreadable pin fails the document
+		BomLinkIndex bomLinks = null == pin ? null : BomLinkIndex.of(pinnedDocument(pin, releaseData.getOrg()));
 		Bom bom = new Bom();
 		// CISA/CDX VDRs SHOULD have a serial number (urn:uuid). Derive deterministically so that
 		// re-exporting the same logical snapshot yields the same serial (idempotent; referenceable
 		// from external systems). Seed shape is locked by VulnAnalysisServiceVdrSerialTest.
-		bom.setSerialNumber(buildVdrSerialNumber(releaseData.getUuid(), snapshotType, snapshotValue,
-				cutOffDate, includeSuppressed));
+		// A package build passes its own fresh serial instead (FDAW-2, B1).
+		bom.setSerialNumber(null != serialNumber ? serialNumber : buildVdrSerialNumber(releaseData.getUuid(),
+				snapshotType, snapshotValue, cutOffDate, includeSuppressed));
+		bom.setVersion(1);
 		
 		// Set metadata
 		OrganizationData orgData = getOrganizationService.getOrganizationData(releaseData.getOrg()).orElse(null);
@@ -4231,46 +4350,12 @@ public class ReleaseService {
 				.ifPresent(bomComponent::setPurl);
 		String orgName = orgData != null ? orgData.getName() : null;
 		Utils.augmentRootBomComponent(orgName, bomComponent);
+		if (null != pin) addReleaseSbomReference(bomComponent, pin);
 		Utils.setRearmBomMetadata(bom, bomComponent);
 		
-		// Add property to metadata if this is a historical snapshot
-		if (cutOffDate != null) {
-			Metadata metadata = bom.getMetadata();
-			if (metadata == null) {
-				metadata = new Metadata();
-				bom.setMetadata(metadata);
-			}
-			
-			// Add a property indicating this is a historical snapshot
-			Property snapshotProperty = new Property();
-			snapshotProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT.toString());
-			snapshotProperty.setValue("true");
-			
-			Property cutoffProperty = new Property();
-			cutoffProperty.setName(VdrMetadataProperty.VDR_CUTOFF_DATE.toString());
-			cutoffProperty.setValue(cutOffDate.toString());
-			
-			if (metadata.getProperties() == null) {
-				metadata.setProperties(new java.util.ArrayList<>());
-			}
-			metadata.getProperties().add(snapshotProperty);
-			metadata.getProperties().add(cutoffProperty);
-			
-			// Add snapshot type and value if provided
-			if (snapshotType != null) {
-				Property typeProperty = new Property();
-				typeProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT_TYPE.toString());
-				// Use uppercase enum name for GraphQL compatibility
-				typeProperty.setValue(snapshotType.name());
-				metadata.getProperties().add(typeProperty);
-			}
-			if (snapshotValue != null) {
-				Property valueProperty = new Property();
-				valueProperty.setName(VdrMetadataProperty.VDR_SNAPSHOT_VALUE.toString());
-				valueProperty.setValue(snapshotValue);
-				metadata.getProperties().add(valueProperty);
-			}
-		}
+		// Snapshot, analysis-state and KEV catalog properties (FDAW-2, B2): one method writes them all.
+		attachVdrMetadataProperties(bom.getMetadata(), cutOffDate, snapshotType, snapshotValue,
+				vdrAnalysisStateOf(releaseData), kevCatalogStateService.forOrg(releaseData.getOrg()).orElse(null));
 		
 		// Transform vulnerabilities to CycloneDX format
 		ReleaseMetricsDto metrics = releaseData.getMetrics();
@@ -4402,7 +4487,7 @@ public class ReleaseService {
 
 			// Build VDR context for transformation
 			VdrContext vdrContext = new VdrContext(analysisMap, releaseAnalysisMaps, releaseBomRefMap,
-					releaseData.getUuid(), enrichmentByPrimaryId);
+					releaseData.getUuid(), enrichmentByPrimaryId, pin, bomLinks);
 			
 			// Transform vulnerabilities - split by analysis state if sources have different states
 			List<Vulnerability> vulnerabilities = new ArrayList<>();
@@ -4496,8 +4581,63 @@ public class ReleaseService {
 		 * for releases that haven't been rescanned since the
 		 * {@code vulnerability_records} migration.
 		 */
-		Map<String, VulnerabilityRecordData> enrichmentByPrimaryId
+		Map<String, VulnerabilityRecordData> enrichmentByPrimaryId,
+		/** The pinned release SBOM of a package version (FDAW-7 3.6) and its purl index; both null otherwise. */
+		ReleaseSbomRef pin,
+		BomLinkIndex bomLinks
 	) {}
+
+	/** The {@code bom} external reference that names the pinned release SBOM (FDAW-7 3.6), on the metadata component. */
+	static void addReleaseSbomReference(Component bomComponent, ReleaseSbomRef pin) {
+		ExternalReference ref = new ExternalReference();
+		ref.setType(ExternalReference.Type.BOM);
+		ref.setUrl(BomLinkIndex.bomLink(pin.serial(), pin.version()));
+		ref.setComment("the release SBOM this document describes");
+		List<ExternalReference> refs = new ArrayList<>();
+		if (null != bomComponent.getExternalReferences()) refs.addAll(bomComponent.getExternalReferences());
+		refs.add(ref);
+		bomComponent.setExternalReferences(refs);
+	}
+
+	/** The pinned release SBOM's bytes as rebom holds them; a failure is the build's (FDAW-7 3.10). */
+	JsonNode pinnedDocument(ReleaseSbomRef pin, UUID org) throws RelizaException {
+		JsonNode doc;
+		try {
+			doc = rebomService.findBomByVersion(pin.serial(), org, pin.version());
+		} catch (RuntimeException e) {
+			throw new RelizaException("the pinned release SBOM " + pin.serial() + " version " + pin.version()
+					+ " could not be read: " + e.getMessage());
+		}
+		if (null == doc || !doc.isObject() || doc.isEmpty()) {
+			throw new RelizaException("the pinned release SBOM " + pin.serial() + " version " + pin.version()
+					+ " could not be read: rebom answered no document");
+		}
+		return doc;
+	}
+
+	/**
+	 * The BOM-Link affects of one purl affect (FDAW-7 3.6): one per bom-ref the pinned document's index
+	 * holds under the purl's identity, in document order, each with the purl affect's versions; at most
+	 * {@link BomLinkIndex#MAX_LINKS_PER_FINDING}, the rest dropped with one WARN (security F-7).
+	 */
+	static List<Vulnerability.Affect> bomLinkAffects(ReleaseSbomRef pin, BomLinkIndex bomLinks, String purl,
+			List<Vulnerability.Version> versions, String vulnId) {
+		if (null == pin || null == bomLinks) return List.of();
+		List<String> refs = bomLinks.bomRefsOf(purl);
+		if (refs.size() > BomLinkIndex.MAX_LINKS_PER_FINDING) {
+			log.warn("VDR finding {} on {}: {} components of the pinned release SBOM {} carry its purl; the first {} "
+					+ "are linked", vulnId, purl, refs.size(), pin.serial(), BomLinkIndex.MAX_LINKS_PER_FINDING);
+			refs = refs.subList(0, BomLinkIndex.MAX_LINKS_PER_FINDING);
+		}
+		List<Vulnerability.Affect> out = new ArrayList<>();
+		for (String bomRef : refs) {
+			Vulnerability.Affect a = new Vulnerability.Affect();
+			a.setRef(BomLinkIndex.elementLink(pin.serial(), pin.version(), bomRef));
+			if (!versions.isEmpty()) a.setVersions(versions);
+			out.add(a);
+		}
+		return out;
+	}
 	
 	/**
 	 * Transform internal VulnerabilityDto to CycloneDX Vulnerability entries.
@@ -4628,6 +4768,8 @@ public class ReleaseService {
 					null == record ? null : record.getAffectedRanges(), vulnDto.vulnId());
 			if (!versions.isEmpty()) purlAffect.setVersions(versions);
 			affects.add(purlAffect);
+			affects.addAll(bomLinkAffects(vdrContext.pin(), vdrContext.bomLinks(), vulnDto.purl(), versions,
+					vulnDto.vulnId()));
 		}
 		
 		// Add release bom-refs from sources with this analysis state
@@ -4814,6 +4956,103 @@ public class ReleaseService {
 		};
 	}
 	
+	/**
+	 * Every {@code metadata.properties} entry a VDR carries (and so every CycloneDX VEX, which starts
+	 * from the VDR), in one place so tests call production code:
+	 * <ul>
+	 *   <li>the snapshot block when there is a cut-off: VDR_SNAPSHOT, VDR_CUTOFF_DATE (RFC-3339 UTC,
+	 *       B16), VDR_SNAPSHOT_TYPE and VDR_SNAPSHOT_VALUE when given;</li>
+	 *   <li>always VDR_ANALYSIS_STATE; VDR_ANALYSIS_REASON when NOT_ANALYSED;
+	 *       VDR_ANALYSIS_COMPLETED_AT when COMPLETED or PARTIAL; the two release counts when PARTIAL;</li>
+	 *   <li>always VDR_KEV_CATALOG_SOURCE ({@code NONE} when {@code kev} is null);
+	 *       VDR_KEV_CATALOG_DATE when the source published one; VDR_KEV_CATALOG_SYNCED_AT when stamped.</li>
+	 * </ul>
+	 */
+	static void attachVdrMetadataProperties(Metadata metadata, ZonedDateTime cutOffDate, VdrSnapshotType snapshotType,
+			String snapshotValue, VdrAnalysisState.Derived analysis, KevCatalogState kev) {
+		if (metadata.getProperties() == null) {
+			metadata.setProperties(new ArrayList<>());
+		}
+		List<Property> props = metadata.getProperties();
+		if (cutOffDate != null) {
+			addVdrProperty(props, VdrMetadataProperty.VDR_SNAPSHOT, "true");
+			addVdrProperty(props, VdrMetadataProperty.VDR_CUTOFF_DATE, Utils.toRfc3339Utc(cutOffDate));
+			// Use uppercase enum name for GraphQL compatibility
+			if (snapshotType != null) addVdrProperty(props, VdrMetadataProperty.VDR_SNAPSHOT_TYPE, snapshotType.name());
+			if (snapshotValue != null) addVdrProperty(props, VdrMetadataProperty.VDR_SNAPSHOT_VALUE, snapshotValue);
+		}
+		addVdrProperty(props, VdrMetadataProperty.VDR_ANALYSIS_STATE, analysis.state().name());
+		if (analysis.state() == VdrAnalysisState.NOT_ANALYSED && analysis.reason() != null) {
+			addVdrProperty(props, VdrMetadataProperty.VDR_ANALYSIS_REASON, analysis.reason().name());
+		}
+		if (analysis.state() != VdrAnalysisState.NOT_ANALYSED && analysis.completedAt() != null) {
+			addVdrProperty(props, VdrMetadataProperty.VDR_ANALYSIS_COMPLETED_AT, Utils.toRfc3339Utc(analysis.completedAt()));
+		}
+		if (analysis.state() == VdrAnalysisState.PARTIAL) {
+			addVdrProperty(props, VdrMetadataProperty.VDR_ANALYSIS_RELEASES_ANALYSED,
+					String.valueOf(analysis.analysedReleases()));
+			addVdrProperty(props, VdrMetadataProperty.VDR_ANALYSIS_RELEASES_NOT_ANALYSED,
+					String.valueOf(analysis.notAnalysedReleases()));
+		}
+		addVdrProperty(props, VdrMetadataProperty.VDR_KEV_CATALOG_SOURCE,
+				null == kev ? VdrMetadataProperty.NO_KEV_SOURCE : kev.source().name());
+		if (null != kev && null != kev.dateReleased()) {
+			addVdrProperty(props, VdrMetadataProperty.VDR_KEV_CATALOG_DATE,
+					Utils.toRfc3339Utc(kev.dateReleased().atZone(ZoneOffset.UTC)));
+		}
+		if (null != kev && null != kev.syncedAt()) {
+			addVdrProperty(props, VdrMetadataProperty.VDR_KEV_CATALOG_SYNCED_AT,
+					Utils.toRfc3339Utc(kev.syncedAt().atZone(ZoneOffset.UTC)));
+		}
+	}
+
+	private static void addVdrProperty(List<Property> props, VdrMetadataProperty name, String value) {
+		Property p = new Property();
+		p.setName(name.toString());
+		p.setValue(value);
+		props.add(p);
+	}
+
+	/**
+	 * Whether the vulnerability analysis behind this release's VDR has happened (FDAW-2, B2), per
+	 * release unit: a release with scannable children is derived from them (recursively, each
+	 * release once), never from its own stored firstScanned, which carries the no-BOM anchor of
+	 * SBOM-less children; a release without is a leaf. The children are the metrics rollup's own
+	 * (org-scoped reads, document rounds left out). Reads the stored bomScan tally and gathers a
+	 * release's own artifacts only when that tally is absent or has scannable BOMs.
+	 */
+	public VdrAnalysisState.Derived vdrAnalysisStateOf(ReleaseData rd) {
+		return vdrAnalysisStateOf(rd, new HashSet<>());
+	}
+
+	private VdrAnalysisState.Derived vdrAnalysisStateOf(ReleaseData rd, Set<UUID> visited) {
+		visited.add(rd.getUuid());
+		List<ReleaseData> scannableChildren = releaseMetricsComputeService.scannableChildrenOf(rd);
+		ReleaseMetricsDto metrics = rd.getMetrics();
+		ReleaseMetricsDto.BomScanTally stored = null != metrics ? metrics.getBomScan() : null;
+		// A leaf is a release without scannable children. A product whose children were all counted
+		// under an earlier branch (a shared child) is still a product: it adds its own BOMs only, never
+		// its stored rollup, whose firstScanned may be a child's no-BOM anchor.
+		if (scannableChildren.isEmpty()) {
+			ReleaseMetricsDto.BomScanTally tally = null != stored ? stored
+					: releaseMetricsComputeService.tallyBomScanInputs(rd);
+			return VdrAnalysisState.deriveLeaf(metrics, tally);
+		}
+		VdrAnalysisState.OwnBomFacts own;
+		if (null != stored && stored.state() == ReleaseMetricsDto.BomScanState.NO_BOMS) {
+			own = null;
+		} else if (null != stored && stored.scannableBoms() == 0) {
+			own = new VdrAnalysisState.OwnBomFacts(stored, null, false);
+		} else {
+			own = releaseMetricsComputeService.ownBomFacts(rd);
+		}
+		List<VdrAnalysisState.Derived> derivedChildren = new ArrayList<>();
+		for (ReleaseData child : scannableChildren) {
+			if (visited.add(child.getUuid())) derivedChildren.add(vdrAnalysisStateOf(child, visited));
+		}
+		return VdrAnalysisState.combine(own, derivedChildren);
+	}
+
 	/**
 	 * Build the deterministic VDR {@code serialNumber} (urn:uuid:...) for a given release snapshot.
 	 *
