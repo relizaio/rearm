@@ -72,7 +72,7 @@
                         :actor="e.rec.settledBy" :task="task"/></template> <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template><template
                         v-if="e.rec.state !== 'REQUESTED' && e.rec.note">: {{ e.rec.note }}</template></span>
                     <ol v-if="e.rec.proposedChildren?.length" class="hist__children" data-testid="split-request-children">
-                        <li v-for="(c, j) in e.rec.proposedChildren" :key="j" :title="c.description ?? undefined">{{ c.title }}<template
+                        <li v-for="(c, j) in e.rec.proposedChildren" :key="j" :title="c.description ?? undefined">{{ proposedChildTitle(c) }}<template
                             v-if="c.dependsOnSiblingIndexes?.length"> · after {{ c.dependsOnSiblingIndexes.map((x: number) => x + 1).join(', ') }}</template><template
                             v-if="c.workLevel != null"> · level {{ c.workLevel }}</template></li>
                     </ol>
@@ -86,6 +86,16 @@
                     <span class="hist__time hist__time--wrap hist__muted" :class="{ 'hist__history': e.rec.live === false }"><agent-time :at="e.rec.at"/> &middot; by routing: {{ e.rec.reason }}<template
                         v-if="e.rec.waives?.length">; waives {{ e.rec.waives.join(', ') }}</template><template
                         v-if="e.rec.live === false"> (since ran)</template></span>
+                </template>
+                <!-- A split child's carried design (task TPF-164): its own row at the record's at, by the seat that split; the
+                     words come from the record, one shared phrase per carried pass, and no session is printed. -->
+                <template v-else-if="e.kind === 'carried_design'">
+                    <n-tag size="tiny" :bordered="false" data-testid="hop-carried-design"
+                           :class="{ 'hist__history': e.rec.standing === false }">design carried</n-tag>
+                    <span class="hist__role">from {{ e.rec.parentKey }}</span>
+                    <span class="hist__time hist__time--wrap"><agent-time :at="e.rec.at"/><template v-if="e.rec.by"> &middot; by <actor-ref
+                        :actor="e.rec.by" :task="task"/></template></span>
+                    <div class="hist__note" data-testid="carried-design">{{ carriedDesignLine(task) }}</div>
                 </template>
                 <template v-else>
                     <n-tag size="tiny" :bordered="false" type="warning">returned</n-tag>
@@ -122,7 +132,8 @@ import { actorLabel } from '@/utils/agentActors'
 import { costLabel, formatTokenSplit, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { DocumentRelease, documentFileUrl, documentLabel, outputsOfHop } from '@/utils/agentDocuments'
 import { agentName, dur, hopHistory } from '@/utils/agentTaskFormat'
-import { checkpointWaiver, childCount, roleAhead, splitRequestWaits, waiverIgnored } from '@/utils/agentTaskLabels'
+import { checkpointWaiver, childCount, proposedChildTitle, roleAhead, splitRequestWaits, waiverIgnored } from '@/utils/agentTaskLabels'
+import { carriedDesignLine } from '@/utils/agentCarriedDesign'
 import { enumWord, outcomeWord } from '@/utils/agentWords'
 import { reviewedChips } from '@/utils/agentReviewed'
 

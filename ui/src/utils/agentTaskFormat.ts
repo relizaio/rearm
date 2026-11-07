@@ -127,7 +127,7 @@ export function missingRequiredRoles (task: any, roles: any[] | null | undefined
 }
 
 export type HopEntry = {
-    kind: 'signoff' | 'return' | 'checkpoint' | 'split_request' | 'condition_skip', rec: any, at: string | null, phase?: ReturnType<typeof checkpointPhase>
+    kind: 'signoff' | 'return' | 'checkpoint' | 'split_request' | 'condition_skip' | 'carried_design', rec: any, at: string | null, phase?: ReturnType<typeof checkpointPhase>
 }
 
 /**
@@ -142,6 +142,9 @@ export type HopEntry = {
  * server stamps the two. A settled request keeps that place; its settlement is in the row's words.
  *
  * A conditional role routing passed over (task TPF-156) is one row per entry of rolesSkippedByCondition, at its at.
+ *
+ * A split child's carried design (task TPF-164) is one row at the record's at, by its by: its own kind, never a
+ * sign-off row, drawn from the record alone.
  */
 export function hopHistory (task: any): HopEntry[] {
     if (!task) return []
@@ -166,6 +169,7 @@ export function hopHistory (task: any): HopEntry[] {
         rows.push({ kind: 'split_request', rec: sr, at })
     }
     for (const rec of task.rolesSkippedByCondition ?? []) rows.push({ kind: 'condition_skip', rec, at: rec.at ?? null })
+    if (task.carriedDesign) rows.push({ kind: 'carried_design', rec: task.carriedDesign, at: task.carriedDesign.at ?? null })
     return rows.sort((a, b) => compareHopTimes(a.at, b.at))
 }
 

@@ -64,6 +64,14 @@
                 </template>
                 {{ splitRequestTooltip(task) }}
             </n-tooltip>
+            <!-- A split child building from its parent's reviewed design (task TPF-164); muted once it no longer stands. -->
+            <n-tooltip v-if="carriedTag" trigger="hover" :style="{ maxWidth: '520px', overflowWrap: 'anywhere' }">
+                <template #trigger>
+                    <n-tag size="small" :bordered="false" :type="carriedMuted ? 'default' : 'info'"
+                           :class="{ 'tag--history': carriedMuted }" data-testid="carried-design-chip">{{ carriedTag }}</n-tag>
+                </template>
+                {{ carriedDesignTooltip(task) }}
+            </n-tooltip>
             <n-tag v-for="k in tagKeys(task)" :key="k" size="small" :bordered="false" round class="dhead__tag"
                    data-testid="tag-chip">#{{ k }}</n-tag>
             <slot/>
@@ -83,6 +91,7 @@ import { levelTooltip, taskLevelLabel } from '@/utils/agentTaskLevel'
 import { groupByKey, groupColour, groupLabel, tagKeys, waitingOnLabel } from '@/utils/agentTaskGroups'
 import { actorLabel } from '@/utils/agentActors'
 import { isInvestigation } from '@/utils/agentInvestigation'
+import { carriedDesignMuted, carriedDesignTag, carriedDesignTooltip } from '@/utils/agentCarriedDesign'
 
 const props = defineProps<{ task: any, board?: any, clamp?: boolean, roles?: any[] }>()
 // A board without sources is its own tracker: no task has a ref there, and none is a "draft".
@@ -90,6 +99,8 @@ const boardHasSources = computed(() => (props.board?.sources?.length ?? 0) > 0)
 const roleTag = computed(() => roleTagFor(props.task))
 const checkpoint = computed(() => checkpointTag(props.task))
 const splitRequest = computed(() => splitRequestTag(props.task))
+const carriedTag = computed(() => carriedDesignTag(props.task))
+const carriedMuted = computed(() => carriedDesignMuted(props.task))
 const requiredLine = computed(() => requiredSignOffsLine(missingRequiredRoles(props.task, props.roles)))
 </script>
 
