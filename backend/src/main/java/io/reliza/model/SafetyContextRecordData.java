@@ -28,6 +28,7 @@ public class SafetyContextRecordData implements RelizaObject {
     @JsonProperty("uuid") private UUID uuid;
     @JsonProperty("org") private UUID org;
     @JsonProperty("sourceArtifact") private UUID sourceArtifact;
+    @JsonProperty("sourceFormat") private String sourceFormat;
     @JsonProperty("sourceDocumentHash") private String sourceDocumentHash;
     @JsonProperty("sourceAssertionHash") private String sourceAssertionHash;
     @JsonProperty("sourceDocumentJson") private String sourceDocumentJson;
