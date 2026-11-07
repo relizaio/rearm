@@ -1028,6 +1028,18 @@ public class OrganizationService {
 				}
 			}
 
+			// The second confirmer of a package (FDAW-1 O4): a patch that omits it leaves it alone, and
+			// the transition is logged as the support injection's is, after the commit, actor's uuid only.
+			if (null != settingsPatch.getSubmissionSecondConfirmer()) {
+				boolean wasOn = settings.isSubmissionSecondConfirmerOn();
+				boolean nowOn = settingsPatch.getSubmissionSecondConfirmer();
+				settings.setSubmissionSecondConfirmer(nowOn);
+				if (wasOn != nowOn) {
+					TxUtils.afterCommitOrNow(() -> log.info("SUBMISSION_SECOND_CONFIRMER changed for org {}: {} -> {} by user {}",
+							orgUuid, wasOn, nowOn, wu.getLastUpdatedBy()));
+				}
+			}
+
 			applySidPurlPatch(settings, settingsPatch);
 
 

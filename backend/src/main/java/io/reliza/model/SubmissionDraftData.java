@@ -4,6 +4,8 @@
 
 package io.reliza.model;
 
+import java.time.ZonedDateTime;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
 
@@ -12,14 +14,17 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.Utils;
+import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
+import io.reliza.model.ReleaseData.ReleaseUpdateScope;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 /**
  * The working copy of a submission's next version (FDAW-1 D2, table {@code rearm.submission_drafts}):
  * one per release and kind, mutable, saved whole with its revision. {@code submission} is null until
- * the first version exists. The draft verbs and the rest of the record come with FDAW-1 A3; nothing
- * writes a draft yet.
+ * the first version exists; {@code plannedSubmission} is the head's uuid, minted at Start for a first
+ * draft, so a part can name its submission before it exists. A key caller reads none of this
+ * (FDAW-29 3.3b).
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -45,6 +50,42 @@ public class SubmissionDraftData extends RelizaDataParent implements RelizaObjec
 	@JsonIgnore
 	private int revision;
 
+	@JsonProperty
+	private UUID plannedSubmission;
+	@JsonProperty
+	private int plannedVersion;
+	@JsonProperty
+	private ZonedDateTime startedAt;
+	@JsonProperty
+	private DraftActor startedBy;
+	@JsonProperty
+	private NewVersionReason reasonCategory;
+	/** Null only on a FIRST_VERSION draft; bounded and stored trimmed. */
+	@JsonProperty
+	private String reasonText;
+	@JsonProperty
+	private ReplacesRef replaces;
+	@JsonProperty
+	private DraftJob job;
+	/** The last successful build; a failed job leaves it as it was. */
+	@JsonProperty
+	private DraftBuild build;
+	/** Set by Confirm, cleared by Return to draft and by any Rebuild. */
+	@JsonProperty
+	private HeldConfirmation confirmation;
+
+	/** The value a Start or Discard release event names the draft by. */
+	public static String eventLabel(PackageKind kind) {
+		return kind.name() + " draft";
+	}
+
+	/** Whether the release event is a draft's own: the writer and the key-lane filter share the label. */
+	public static boolean isDraftEvent(ReleaseUpdateEvent e) {
+		if (null == e || ReleaseUpdateScope.SUBMISSION != e.rus()) return false;
+		return Arrays.stream(PackageKind.values()).map(SubmissionDraftData::eventLabel)
+				.anyMatch(label -> label.equals(e.oldValue()) || label.equals(e.newValue()));
+	}
+
 	public Map<String, Object> toRecordData() {
 		return Utils.dataToRecord(this);
 	}
@@ -68,6 +109,7 @@ public class SubmissionDraftData extends RelizaDataParent implements RelizaObjec
 		d.setSubmission(submission);
 		d.setState(state);
 		d.setRevision(row.getRevision());
+		if (null == d.getJob()) d.setJob(DraftJob.none());
 		d.setCreatedDate(row.getCreatedDate());
 		d.setUpdatedDate(row.getLastUpdatedDate());
 		return d;

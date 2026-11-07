@@ -368,6 +368,8 @@ type Query {
 	submissionVersion(submission: ID!, version: Int!): SubmissionVersion
 	"What a submission act on the release would do, without generating anything (READ on the release's component)."
 	submissionPreview(release: ID!, kind: PackageKind!): SubmissionPreview!
+	"A draft of a next version (READ on its release)."
+	draft(uuid: ID!): SubmissionDraft
 
 	# TEA publications (task TEA-5)
 	"What the release page needs to publish the release on TEA: whether it can, why not, and its publication and collections (READ)."
@@ -1293,6 +1295,16 @@ type Mutation {
 	resubmitSubmission(submission: ID!, reason: String!, expectedLatestVersion: Int): SubmissionActResult!
 	"Cancel a FINAL submission with a reason: a CANCEL act, the version becomes CANCELLED; every version and document is kept (READ_WRITE on the component)."
 	withdrawSubmission(submission: ID!, reason: String!): SubmissionActResult!
+	"Start the draft of a release's next version of a kind, with a reason; replaces names the FINAL or SENT version it replaces, of a release of the same component (READ_WRITE on the release's component)."
+	startDraft(release: ID!, kind: PackageKind!, reasonCategory: NewVersionReason!, reasonText: String, replacesSubmission: ID, replacesVersion: Int): SubmissionActResult!
+	"Discard a draft with a reason: its parts are archived, the row is deleted, the act and the release event stay (READ_WRITE on the component)."
+	discardDraft(draft: ID!, reason: String!): SubmissionActResult!
+	"Confirm a built draft where the organization uses a second confirmer; expectedRevision refuses STALE_HEAD when the draft moved (READ_WRITE on the component)."
+	confirmDraft(draft: ID!, expectedRevision: Int!): SubmissionActResult!
+	"Return a draft awaiting confirmation to editing, with a reason; the held confirmation is dropped (READ_WRITE on the component)."
+	returnDraftToEditing(draft: ID!, reason: String!): SubmissionActResult!
+	"Cancel a FINAL version with a reason: a CANCEL act, the version becomes CANCELLED; every version and document is kept; refused NOT_FINAL on any other state (READ_WRITE on the component)."
+	cancelSubmission(submission: ID!, reason: String!): SubmissionActResult!
 	"Publish the release on TEA (PUBLISH_EXTERNALLY); refused when it is already published: use republishReleaseOnTea"
 	publishReleaseOnTea(release: ID!, comment: String): TeaPublishResult!
 	"Regenerate and, when anything changed, append a collection version; a hidden publication becomes published again"
@@ -4826,6 +4838,11 @@ input SettingsInput {
 	"not part of this patch".
 	"""
 	supportInjection: SupportInjectionSetting
+	"""
+	Whether a package needs a second confirmer. PATCH: omitting the field leaves the
+	stored value alone; true turns it on, false off.
+	"""
+	submissionSecondConfirmer: Boolean
 	"""
 	Labeling VI.A.2: that patches and software updates may cease at end of support.
 	PATCH: OMIT to leave unchanged, send an EMPTY STRING to clear. Blank normalises to null

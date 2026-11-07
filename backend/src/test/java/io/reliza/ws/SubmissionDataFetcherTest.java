@@ -25,6 +25,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -39,6 +41,8 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -58,8 +62,12 @@ import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.exceptions.SubmissionRefusedException;
 import io.reliza.model.ComponentData;
+import io.reliza.model.NewVersionReason;
 import io.reliza.model.PackageKind;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.ReleaseData.ReleaseUpdateAction;
+import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
+import io.reliza.model.ReleaseData.ReleaseUpdateScope;
 import io.reliza.model.SubmissionActData;
 import io.reliza.model.SubmissionActKind;
 import io.reliza.model.SubmissionActOutcome;
@@ -490,6 +498,106 @@ class SubmissionDataFetcherTest {
 		assertEquals(List.of(), fetcher.actsOf(head));
 		assertEquals(List.of(), fetcher.regulatoryKindsOf(cd));
 		verifyNoInteractions(auth, shared, components);
+	}
+
+	// ------------------------------------------------------------------ FDAW-29 rows 9 and 15
+
+	@Test
+	void withoutAHookTheDraftVerbsAnswerUnsupportedAfterWhatTheyCanCheck() throws Exception {
+		ReflectionTestUtils.setField(fetcher, "hook", null);
+		UUID draft = UUID.randomUUID();
+		SubmissionRefusedException start = assertThrows(SubmissionRefusedException.class, () -> fetcher.startDraft(ud,
+				rd.getUuid(), PackageKind.FDA_PREMARKET, NewVersionReason.FIRST_VERSION, null, UUID.randomUUID(), 1));
+		assertEquals(SubmissionRefusal.EDITION_UNSUPPORTED, start.reason());
+		verify(auth).isUserAuthorizedForObjectGraphQL(ud, PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
+				cd.getUuid(), List.of(cd), CallType.WRITE);
+		for (Executable verb : List.<Executable>of(
+				() -> fetcher.discardDraft(ud, draft, "r"), () -> fetcher.confirmDraft(ud, draft, 0),
+				() -> fetcher.returnDraftToEditing(ud, draft, "r"), () -> fetcher.cancelSubmission(ud, head.getUuid(), "r"))) {
+			assertEquals(SubmissionRefusal.EDITION_UNSUPPORTED,
+					assertThrows(SubmissionRefusedException.class, verb).reason());
+		}
+		assertNull(fetcher.draft(ud, draft));
+		assertEquals(List.of(), fetcher.draftsOf(rd));
+		assertEquals(List.of(), fetcher.submissionsOf(rd));
+	}
+
+	@Test
+	void withoutAHookADeniedCallerIsRefusedBeforeStartAnswers() throws Exception {
+		ReflectionTestUtils.setField(fetcher, "hook", null);
+		denyEverything();
+		assertThrows(AccessDeniedException.class, () -> fetcher.startDraft(ud, rd.getUuid(), PackageKind.FDA_PREMARKET,
+				NewVersionReason.FIRST_VERSION, null, null, null));
+	}
+
+	private static void signedIn() {
+		Jwt jwt = Jwt.withTokenValue("t").header("alg", "none").subject("fdaw-29").build();
+		SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+		ctx.setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
+		SecurityContextHolder.setContext(ctx);
+	}
+
+	private static void signedInAs(Authentication a) {
+		SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+		ctx.setAuthentication(a);
+		SecurityContextHolder.setContext(ctx);
+	}
+
+	private List<SubmissionActData> everyKind() {
+		List<SubmissionActData> acts = new ArrayList<>();
+		for (SubmissionActKind k : SubmissionActKind.values()) {
+			SubmissionActData a = new SubmissionActData();
+			a.setKind(k);
+			acts.add(a);
+		}
+		when(hook.listActs(ORG, head.getUuid())).thenReturn(acts);
+		return acts;
+	}
+
+	private static ReleaseUpdateEvent event(ReleaseUpdateScope scope, String oldValue, String newValue) {
+		return new ReleaseUpdateEvent(scope, ReleaseUpdateAction.CHANGED, oldValue, newValue, UUID.randomUUID(), "why",
+				ZonedDateTime.now(), null);
+	}
+
+	@Test
+	void aSignedInUserReadsEveryActAndEveryEvent() {
+		List<SubmissionActData> acts = everyKind();
+		assertEquals(13, acts.size());
+		List<ReleaseUpdateEvent> events = List.of(event(ReleaseUpdateScope.SUBMISSION, null, "FDA_PREMARKET draft"),
+				event(ReleaseUpdateScope.LIFECYCLE, "DRAFT", "ASSEMBLED"));
+		rd.setUpdateEvents(events);
+		signedIn();
+		assertEquals(acts, fetcher.actsOf(head));
+		assertEquals(events, fetcher.updateEventsOf(rd));
+	}
+
+	@Test
+	void anyoneElseReadsNoDraftActAndNoDraftEvent() {
+		List<SubmissionActData> acts = everyKind();
+		List<SubmissionActData> kept = acts.stream()
+				.filter(a -> !SubmissionActKind.DRAFT_LANE.contains(a.getKind())).toList();
+		assertEquals(9, kept.size());
+		ReleaseUpdateEvent lifecycle = event(ReleaseUpdateScope.LIFECYCLE, "DRAFT", "ASSEMBLED");
+		ReleaseUpdateEvent created = event(ReleaseUpdateScope.SUBMISSION, null, "FDA_PREMARKET v1");
+		ReleaseUpdateEvent cancelled = event(ReleaseUpdateScope.SUBMISSION, "FINAL v1", "CANCELLED");
+		ReleaseUpdateEvent notSubmission = event(ReleaseUpdateScope.LIFECYCLE, null, "FDA_PREMARKET draft");
+		rd.setUpdateEvents(List.of(lifecycle, event(ReleaseUpdateScope.SUBMISSION, null, "FDA_PREMARKET draft"), created,
+				event(ReleaseUpdateScope.SUBMISSION, "FDA_PREMARKET draft", null), cancelled, notSubmission));
+		List<Runnable> callers = List.of(SecurityContextHolder::clearContext,
+				() -> signedInAs(new UsernamePasswordAuthenticationToken("key", "secret")));
+		for (Runnable caller : callers) {
+			caller.run();
+			assertEquals(kept, fetcher.actsOf(head));
+			assertEquals(List.of(lifecycle, created, cancelled, notSubmission), fetcher.updateEventsOf(rd));
+		}
+		rd.setUpdateEvents(null);
+		assertNull(fetcher.updateEventsOf(rd));
+	}
+
+	@Test
+	void aKeyReadsNoDraftsAndTheHookIsNotAsked() {
+		assertEquals(List.of(), fetcher.draftsOf(rd));
+		verify(hook, never()).listDraftsOfRelease(any(), any());
 	}
 
 	@Test
