@@ -1484,6 +1484,7 @@ public class ArtifactService {
 		ArtifactType.VDR,
 		ArtifactType.BOV,
 		ArtifactType.VEX,
+		ArtifactType.SAFETY_CONTEXT,
 		ArtifactType.CODE_SCANNING_RESULT,
 		ArtifactType.SARIF
 	);
@@ -1534,7 +1535,7 @@ public class ArtifactService {
 	
 	/**
 	 * Validates and resolves artifact format details (serialization format and spec version)
-	 * Only processes specific artifact types: BOM, ATTESTATION, VDR, BOV, VEX, CODE_SCANNING_RESULT, SARIF
+	 * Only processes specific artifact types: BOM, ATTESTATION, VDR, BOV, VEX, SAFETY_CONTEXT, CODE_SCANNING_RESULT, SARIF
 	 * @param file The artifact file resource
 	 * @param artifactType The type of artifact
 	 * @return ArtifactFormatResolution with resolved format and optional spec version, or null if type not resolvable
