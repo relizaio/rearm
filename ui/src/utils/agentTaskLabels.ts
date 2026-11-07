@@ -277,6 +277,14 @@ export function childCount (n: number): string {
 }
 
 /**
+ * A proposed child's title as the split request shows it (task TPF-164): " [design from parent]" after the title of
+ * a child proposed to build from the parent's reviewed design. Only a true designFromParent marks it.
+ */
+export function proposedChildTitle (child: any): string {
+    return child?.designFromParent === true ? `${child.title} [design from parent]` : `${child?.title ?? ''}`
+}
+
+/**
  * The chip's tooltip: the requester's reason and the children it proposes, titles whole (the server bounds
  * them). A blind read has no description; it then reads as the redacted request does. '' without a record.
  */
@@ -284,7 +292,7 @@ export function splitRequestTooltip (task: any): string {
     const rec = task?.splitRequest
     if (!rec) return ''
     const head = rec.description ?? `split requested by ${rec.role}`
-    const titles = (rec.proposedChildren ?? []).map((c: any) => c.title)
+    const titles = (rec.proposedChildren ?? []).map(proposedChildTitle)
     if (!titles.length) return `${head}; proposes no children`
     return `${head}; proposes ${childCount(titles.length)}: ${titles.join('; ')}`
 }
