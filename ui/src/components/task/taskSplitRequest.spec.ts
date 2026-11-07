@@ -179,7 +179,7 @@ describe('the sources', () => {
         const store = src('src/store.ts')
         const start = store.indexOf('const AGENT_TASK_SELECTION = `')
         const selection = store.slice(start, store.indexOf('`', start + 'const AGENT_TASK_SELECTION = `'.length))
-        expect(selection).toContain('splitRequest { requestedAt role roleUuid session description proposedChildren { title description dependsOnSiblingIndexes workLevel } state settledBy { kind uuid name } settledAt note }')
+        expect(selection).toContain('splitRequest { requestedAt role roleUuid session description proposedChildren { title description dependsOnSiblingIndexes workLevel designFromParent } state settledBy { kind uuid name } settledAt note }')
         const marker = store.indexOf('statusHistory { from to trigger actor { kind } }')
         expect(marker).toBeGreaterThan(-1)
         const open = store.lastIndexOf('`', marker)

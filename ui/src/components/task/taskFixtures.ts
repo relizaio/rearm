@@ -89,6 +89,28 @@ export function richTask (over: Record<string, any> = {}) {
     }
 }
 
+/**
+ * A split child's carried design (task TPF-164), the parent TPF-12's reviewed rounds and the passes they rest on, as
+ * the server serves it: standing, every role live. Not a richTask default: pass it as an override, as
+ * rolesSkippedByCondition is, so the specs that count rows and chips stay as they are.
+ */
+export function carriedDesignFixture (over: Record<string, any> = {}) {
+    return {
+        parentTask: 'tp', parentKey: 'TPF-12',
+        rounds: [
+            { specification: 'ARCHITECTURE', release: 'pa2', round: 2, path: 'boards/b/design/TPF-12/architecture-2.md' },
+            { specification: 'THREAT_MODEL', release: 'pt1', round: 1, path: 'boards/b/design/TPF-12/threat_model-1.md' },
+        ],
+        roles: [
+            { role: 'architect', roleUuid: 'rc-arch', signedOffAt: '2026-09-19T10:00:00Z', session: '5e55a0c1-0000-4000-8000-000000000001', reviewedBy: null, decidedOver: false, live: true },
+            { role: 'reviewer', roleUuid: 'rc-rev', signedOffAt: '2026-09-19T12:00:00Z', session: '5e55a0c1-0000-4000-8000-000000000002', reviewedBy: null, decidedOver: false, live: true },
+        ],
+        at: '2026-09-20T10:30:00Z', by: { kind: 'SESSION', uuid: 'c0000000-0000-4000-8000-0000000000aa', name: 'coordinator' },
+        standing: true,
+        ...over,
+    }
+}
+
 /** The staleness marks AgentTask.stale carries (TPF-69): a stalled hop of 70 minutes, a delivery stuck for 3 h. */
 export const staleHopMark = { rule: 'hopNoProgress', since: '2026-10-20T10:00:00Z', minutes: 70,
     message: 'RD3-5 stalled: assigned to coder (session 5e550001) for 70 min with no progress reported; release it with task unassign if the agent is gone' }
