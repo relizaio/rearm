@@ -174,6 +174,24 @@ describe('mergeBoms: the FDAW-6 passes in the pipeline', () => {
         }
     });
 
+    it('FDAW-19 3.2: each keep* flag gates only its own record, independently of the other two', async () => {
+        const bomA = await mergeBoms(['one'], {
+            name: 'merged', group: 'Example', version: '1.0.0', purl: ROOT, structure: 'FLAT', tldOnly: false, ignoreDev: false,
+            keepExcludedScope: false, keepPersonalData: true, keepLocalPaths: false
+        } as any, 'org');
+        expect(property(bomA, PERSONAL_DATA_STRIPPED_PROPERTY)).toBeUndefined();
+        expect(property(bomA, LOCAL_PATHS_STRIPPED_PROPERTY)).toMatch(/^\d+$/);
+        expect(property(bomA, EXCLUDED_SCOPE_DROPPED_PROPERTY)).toMatch(/^\d+$/);
+
+        const bomB = await mergeBoms(['one'], {
+            name: 'merged', group: 'Example', version: '1.0.0', purl: ROOT, structure: 'FLAT', tldOnly: false, ignoreDev: false,
+            keepExcludedScope: true, keepPersonalData: false, keepLocalPaths: true
+        } as any, 'org');
+        expect(property(bomB, PERSONAL_DATA_STRIPPED_PROPERTY)).toMatch(/^\d+$/);
+        expect(property(bomB, LOCAL_PATHS_STRIPPED_PROPERTY)).toBeUndefined();
+        expect(property(bomB, EXCLUDED_SCOPE_DROPPED_PROPERTY)).toBeUndefined();
+    });
+
     it('FDAW-19 3.2: null and false run every pass, only true skips one', async () => {
         for (const off of [null, false]) {
             passes.calls.length = 0;
