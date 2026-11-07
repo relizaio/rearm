@@ -6,9 +6,7 @@ package io.reliza.ws;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -42,6 +40,7 @@ import io.reliza.model.DownloadLogData.DownloadType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.service.ArtifactDownloadAccessService;
+import io.reliza.service.ArtifactDownloadAccessService.Holders;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
@@ -224,13 +223,13 @@ public class ArtifactWs {
      * programmatic endpoints. Throws, as that one does; {@link #keyGate} turns a throw into a returned
      * status. The verification it returns carries the actor the download-log row is written under.
      */
-    private FreeformKeyVerification authorizeKeyDownload(AuthHeaderParse ahp, ArtifactData ad, Set<UUID> components) throws RelizaException {
-        if (components.isEmpty()) {
+    private FreeformKeyVerification authorizeKeyDownload(AuthHeaderParse ahp, ArtifactData ad, Holders holders) throws RelizaException {
+        if (holders.orgScope()) {
             return authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp, PermissionFunction.ARTIFACT_DOWNLOAD,
                 PermissionScope.ORGANIZATION, ad.getOrg(), List.of(ad), CallType.READ);
         } else {
             return authorizationService.isFreeformKeyAuthorizedForAnyObjectGraphQL(ahp, PermissionFunction.ARTIFACT_DOWNLOAD,
-                PermissionScope.COMPONENT, components, List.of(ad));
+                PermissionScope.COMPONENT, holders.components(), List.of(ad));
         }
     }
 
@@ -273,9 +272,9 @@ public class ArtifactWs {
         }
         ArtifactData ad = oad.get();
         List<ReleaseData> releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ad.getOrg());
-        Set<UUID> components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+        Holders holders = artifactDownloadAccessService.holdersOf(ad, releases);
         try {
-            artifactDownloadAccessService.authorizeUserDownload(ud, ad, components);
+            artifactDownloadAccessService.authorizeUserDownload(ud, ad, holders);
         } catch (AccessDeniedException e) {
             logRefusal(uuid, caller, request, e.getMessage());
             return Gate.refused(forbidden());
@@ -323,10 +322,10 @@ public class ArtifactWs {
         }
         ArtifactData ad = oad.get();
         List<ReleaseData> releases = sharedReleaseService.gatherReleasesForArtifact(uuid, ad.getOrg());
-        Set<UUID> components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+        Holders holders = artifactDownloadAccessService.holdersOf(ad, releases);
         FreeformKeyVerification authorized;
         try {
-            authorized = authorizeKeyDownload(vk.principal(), ad, components);
+            authorized = authorizeKeyDownload(vk.principal(), ad, holders);
         } catch (AccessDeniedException e) {
             logRefusal(uuid, caller, request, e.getMessage());
             return Gate.refused(forbidden());
