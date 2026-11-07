@@ -82,8 +82,13 @@ public class VulnCheckKevConnector implements KevSourceConnector {
 		return KevSource.VULNCHECK;
 	}
 
+	/** VulnCheck publishes no catalog version or release date: the header stays null. */
 	@Override
-	public List<KevAssertionData> fetchCatalog(String credential) {
+	public KevCatalogFetch fetchCatalog(String credential) {
+		return KevCatalogFetch.entriesOnly(fetchEntries(credential));
+	}
+
+	private List<KevAssertionData> fetchEntries(String credential) {
 		if (StringUtils.isBlank(credential)) {
 			log.debug("VulnCheck KEV credential not provided — VulnCheck source inactive for this org");
 			return List.of();

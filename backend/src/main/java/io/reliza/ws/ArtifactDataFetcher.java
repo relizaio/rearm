@@ -45,6 +45,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactScanStatusDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.service.ArtifactDownloadAccessService;
+import io.reliza.service.ArtifactDownloadAccessService.Holders;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
@@ -119,9 +120,8 @@ public class ArtifactDataFetcher {
 			throw new RelizaException("Artifact not found: " + artifactUuid);
 		}
 		RelizaObject ro = oad.get();
-		var releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, oad.get().getOrg());
-		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
-		if (components.isEmpty()) {
+		Holders holders = artifactDownloadAccessService.holdersOf(oad.get());
+		if (holders.orgScope()) {
 			// Session-attached / orphan artifact -- no release/component
 			// linkage exists, so the per-component auth check can't be
 			// answered. Fall back to org-scope READ on the artifact's
@@ -130,7 +130,7 @@ public class ArtifactDataFetcher {
 					PermissionScope.ORGANIZATION, oad.get().getOrg(), List.of(ro), CallType.READ);
 		} else {
 			authorizationService.isUserAuthorizedForAnyObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
-					PermissionScope.COMPONENT, components, List.of(ro), CallType.READ);
+					PermissionScope.COMPONENT, holders.components(), List.of(ro), CallType.READ);
 		}
 		return oad.get();
 	}
@@ -156,8 +156,8 @@ public class ArtifactDataFetcher {
 		}
 		ArtifactData ad = latestOad.get();
 		var releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, ad.getOrg());
-		Set<UUID> components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
-		artifactDownloadAccessService.authorizeUserDownload(oud.get(), ad, components);
+		artifactDownloadAccessService.authorizeUserDownload(oud.get(), ad,
+				artifactDownloadAccessService.holdersOf(ad, releases));
 		Optional<ArtifactData> oad = (null == version) ? latestOad
 				: artifactService.getArtifactDataByVersion(artifactUuid, version);
 		if (oad.isEmpty()) {
@@ -235,9 +235,9 @@ public class ArtifactDataFetcher {
 	private record AuthorizedArtifact(UserData user, ArtifactData artifact) {}
 
 	/**
-	 * The artifact, once the caller is authorized for it at {@code callType}: on any component holding it in one of
-	 * its releases, or on its organization when no release holds it. An unknown and a refused uuid end in the same
-	 * AccessDeniedException (no cross-organization existence oracle).
+	 * The artifact, once the caller is authorized for it at {@code callType}: on the components
+	 * {@link ArtifactDownloadAccessService#holdersOf} answers, or on its organization when that says so. An unknown
+	 * and a refused uuid end in the same AccessDeniedException (no cross-organization existence oracle).
 	 */
 	private AuthorizedArtifact authorizedArtifactThroughHolders(UUID artifactUuid, CallType callType)
 			throws RelizaException {
@@ -247,14 +247,13 @@ public class ArtifactDataFetcher {
 		if (oad.isEmpty()) throw new AccessDeniedException("Artifact not found: " + artifactUuid);
 		ArtifactData ad = oad.get();
 		try {
-			var components = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, ad.getOrg())
-					.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
-			if (components.isEmpty()) {
+			Holders holders = artifactDownloadAccessService.holdersOf(ad);
+			if (holders.orgScope()) {
 				authorizationService.isUserAuthorizedForObjectGraphQL(ud, PermissionFunction.RESOURCE,
 						PermissionScope.ORGANIZATION, ad.getOrg(), List.of(ad), callType);
 			} else {
 				authorizationService.isUserAuthorizedForAnyObjectGraphQL(ud, PermissionFunction.RESOURCE,
-						PermissionScope.COMPONENT, components, List.of(ad), callType);
+						PermissionScope.COMPONENT, holders.components(), List.of(ad), callType);
 			}
 		} catch (AccessDeniedException e) {
 			// A refused uuid reads exactly as an unknown one (no cross-organization existence oracle).

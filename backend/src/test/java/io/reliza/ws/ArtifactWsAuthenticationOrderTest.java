@@ -112,6 +112,7 @@ class ArtifactWsAuthenticationOrderTest {
 		// the user rule lives in main's shared ArtifactDownloadAccessService (SBOM score query too); wired to the same mock
 		ArtifactDownloadAccessService access = new ArtifactDownloadAccessService();
 		ReflectionTestUtils.setField(access, "authorizationService", authorizationService);
+		ReflectionTestUtils.setField(access, "sharedReleaseService", sharedReleaseService);
 		ReflectionTestUtils.setField(ws, "artifactDownloadAccessService", access);
 		ReflectionTestUtils.setField(ws, "userService", userService);
 		ReflectionTestUtils.setField(ws, "downloadLogService", downloadLogService);

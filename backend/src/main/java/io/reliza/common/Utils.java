@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -39,6 +40,7 @@ import org.cyclonedx.generators.BomGeneratorFactory;
 import org.cyclonedx.generators.json.BomJsonGenerator;
 import org.cyclonedx.model.Bom;
 import org.cyclonedx.model.Commit;
+import org.cyclonedx.model.Component;
 import org.cyclonedx.model.Hash.Algorithm;
 import org.cyclonedx.model.Metadata;
 import org.cyclonedx.model.OrganizationalContact;
@@ -926,32 +928,105 @@ public class Utils {
 	/** The name {@link #setRearmBomMetadata} writes, on the documents THIS service generates. */
 	public static final String REARM_TOOL_NAME = "ReARM";
 
-	
+
+	/** The name of the second tool entry: this backend binary, with the version it was built as. */
+	public static final String REARM_BACKEND_TOOL_NAME = "rearm-backend";
+
+	/** Where spring-boot-maven-plugin's build-info goal writes build.version (backend/pom.xml). */
+	static final String BUILD_INFO_RESOURCE = "META-INF/build-info.properties";
+
 	/**
-	 * The ReARM version named on ReARM's tool entry when the deployment does not pass one (a local
-	 * run, a compose file without REARM_PRODUCT_VERSION). Must match rebom's fallback.
+	 * Values build.version carries when no real version reached the build: the pom literal the
+	 * Dockerfile's sed replaces (a local mvn package, an IDE or mvn test build) and the Dockerfile's
+	 * ARG VERSION default (an image built without VERSION). Neither is a version anybody shipped.
 	 */
-	public static final String REARM_PRODUCT_VERSION_FALLBACK = "26.08.95";
+	static final Set<String> PLACEHOLDER_BUILD_VERSIONS = Set.of("Version_Managed_By_CI_AND_Reliza", "not_versioned");
 
 	/**
 	 * The ReARM product version this server belongs to: REARM_PRODUCT_VERSION, which the chart sets
 	 * to its appVersion -- the value the UI shows as the ReARM version, and the one rebom writes on
-	 * its tool entry. {@link #REARM_PRODUCT_VERSION_FALLBACK} when the deployment does not pass it.
+	 * its tool entry. Null when the deployment does not pass it: a document then names no product
+	 * version rather than one nobody built.
 	 */
 	public static String rearmProductVersion() {
 		return rearmProductVersion(System.getenv("REARM_PRODUCT_VERSION"));
 	}
 
 	static String rearmProductVersion(String fromEnvironment) {
-		return (null == fromEnvironment || fromEnvironment.isBlank())
-				? REARM_PRODUCT_VERSION_FALLBACK : fromEnvironment.trim();
+		return (null == fromEnvironment || fromEnvironment.isBlank()) ? null : fromEnvironment.trim();
 	}
 
-	public static void setRearmBomMetadata (Bom bom, org.cyclonedx.model.Component bomComponent) {
+	/** Read once: the classpath does not change while the server runs. */
+	private static final class RearmBuildVersion {
+		private static final String VALUE = buildVersionOn(Utils.class.getClassLoader());
+	}
+
+	/**
+	 * The version this backend binary was built as (build.version of META-INF/build-info.properties),
+	 * or null when the build knew none: no file (IDE, unit tests), blank, or a placeholder of
+	 * {@link #PLACEHOLDER_BUILD_VERSIONS}.
+	 */
+	public static String rearmBuildVersion() {
+		return RearmBuildVersion.VALUE;
+	}
+
+	/** {@link #rearmBuildVersion()} as read through the given class loader. */
+	static String buildVersionOn(ClassLoader classLoader) {
+		try (InputStream in = null == classLoader ? null : classLoader.getResourceAsStream(BUILD_INFO_RESOURCE)) {
+			if (null == in) return null;
+			Properties props = new Properties();
+			props.load(in);
+			return realBuildVersion(props.getProperty("build.version"));
+		} catch (IOException e) {
+			log.warn("Could not read {}; the rearm-backend tool entry names no version", BUILD_INFO_RESOURCE, e);
+			return null;
+		}
+	}
+
+	/** The trimmed value when it is a real version; null for absent, blank or a placeholder. */
+	static String realBuildVersion(String raw) {
+		if (null == raw || raw.isBlank()) return null;
+		String v = raw.trim();
+		return PLACEHOLDER_BUILD_VERSIONS.contains(v) ? null : v;
+	}
+
+	/**
+	 * RFC-3339 UTC instant with a trailing Z, the form every timestamp in a generated document takes
+	 * (ai-agents/coding_principles.md); never {@code ZonedDateTime.toString()} with its [zone] suffix.
+	 * Null in, null out.
+	 */
+	public static String toRfc3339Utc(ZonedDateTime zdt) {
+		return null == zdt ? null : DateTimeFormatter.ISO_INSTANT.format(zdt);
+	}
+
+	/**
+	 * Writes the document's metadata with two tool entries: ReARM (the product version the deployment
+	 * passes) and rearm-backend (the version this binary was built as). Either version is left out
+	 * when it is not known; no constant ever stands in for it.
+	 */
+	public static void setRearmBomMetadata (Bom bom, Component bomComponent) {
+		setRearmBomMetadata(bom, bomComponent, rearmProductVersion(), rearmBuildVersion());
+	}
+
+	static void setRearmBomMetadata (Bom bom, Component bomComponent,
+			String productVersion, String buildVersion) {
 		Metadata bomMeta = new Metadata();
 		ToolInformation rearmTool = new ToolInformation();
-		org.cyclonedx.model.Component rearmComponent = new org.cyclonedx.model.Component();
-		rearmComponent.setName(REARM_TOOL_NAME);
+		Component rearmComponent = rearmToolComponent(REARM_TOOL_NAME,
+				"Release Governance Platform", productVersion);
+		Component backendComponent = rearmToolComponent(REARM_BACKEND_TOOL_NAME,
+				"ReARM backend (this server)", buildVersion);
+		rearmTool.setComponents(List.of(rearmComponent, backendComponent));
+		ZonedDateTime zdt = ZonedDateTime.now();
+		bomMeta.setTimestamp(Date.from(zdt.toInstant()));
+		if (null != bomComponent) bomMeta.setComponent(bomComponent);
+		bomMeta.setToolChoice(rearmTool);
+		bom.setMetadata(bomMeta);
+	}
+
+	private static Component rearmToolComponent(String name, String description, String version) {
+		Component rearmComponent = new Component();
+		rearmComponent.setName(name);
 		rearmComponent.setType(Type.APPLICATION);
 		rearmComponent.setGroup(REARM_TOOL_GROUP);
 		OrganizationalEntity oe = new OrganizationalEntity();
@@ -963,7 +1038,7 @@ public class Utils {
 		oe.setContacts(List.of(oc));
 		rearmComponent.setSupplier(oe);
 		rearmComponent.setAuthors(List.of(oc));
-		rearmComponent.setDescription("Release Governance Platform");
+		rearmComponent.setDescription(description);
 		ExternalReference erRelizaVcs = new ExternalReference();
 		erRelizaVcs.setType(org.cyclonedx.model.ExternalReference.Type.VCS);
 		erRelizaVcs.setUrl("ssh://git@github.com/relizaio/rearm.git");
@@ -974,13 +1049,8 @@ public class Utils {
 		erRelizaDocs.setType(org.cyclonedx.model.ExternalReference.Type.DOCUMENTATION);
 		erRelizaDocs.setUrl("https://docs.rearmhq.com");
 		rearmComponent.setExternalReferences(List.of(erRelizaUrl, erRelizaVcs, erRelizaDocs));
-		rearmComponent.setVersion(rearmProductVersion());
-		rearmTool.setComponents(List.of(rearmComponent));
-		ZonedDateTime zdt = ZonedDateTime.now();
-		bomMeta.setTimestamp(Date.from(zdt.toInstant()));
-		if (null != bomComponent) bomMeta.setComponent(bomComponent);
-		bomMeta.setToolChoice(rearmTool);
-		bom.setMetadata(bomMeta);
+		if (null != version) rearmComponent.setVersion(version);
+		return rearmComponent;
 	}
 	
     public static String resolveTagByKey(String key, List<TagRecord> tags) {

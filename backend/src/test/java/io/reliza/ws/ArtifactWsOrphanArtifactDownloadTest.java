@@ -99,6 +99,7 @@ class ArtifactWsOrphanArtifactDownloadTest {
 		// The user rule lives in the shared service the score query uses too; wired to the same mock.
 		ArtifactDownloadAccessService access = new ArtifactDownloadAccessService();
 		ReflectionTestUtils.setField(access, "authorizationService", authorizationService);
+		ReflectionTestUtils.setField(access, "sharedReleaseService", sharedReleaseService);
 		ReflectionTestUtils.setField(ws, "artifactDownloadAccessService", access);
 		ReflectionTestUtils.setField(ws, "userService", userService);
 		ReflectionTestUtils.setField(ws, "downloadLogService", downloadLogService);

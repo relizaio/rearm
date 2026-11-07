@@ -3,6 +3,8 @@
 */
 package io.reliza.service.kev;
 
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import io.reliza.common.Utils;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
 import io.reliza.model.IntegrationData.IntegrationType;
@@ -139,7 +142,7 @@ public class KevCatalogSyncService {
 
 		// One upstream fetch per (source, credential) for the whole pass --
 		// collapses the per-org CISA fan-out to a single GET. See fetchCached.
-		Map<FetchKey, List<KevAssertionData>> catalogCache = new HashMap<>();
+		Map<FetchKey, KevCatalogFetch> catalogCache = new HashMap<>();
 
 		int totalNew = 0;
 		for (IntegrationType type : List.of(IntegrationType.CISA_KEV, IntegrationType.VULNCHECK_KEV)) {
@@ -150,8 +153,8 @@ public class KevCatalogSyncService {
 				try {
 					IntegrationData id = IntegrationData.dataFromRecord(row);
 					if (id.getOrg() == null) continue;
-					List<KevAssertionData> entries = fetchCached(catalogCache, connector, decryptCredential(id));
-					totalNew += syncOneOrgSource(id.getOrg(), connector, entries);
+					KevCatalogFetch fetch = fetchCached(catalogCache, connector, decryptCredential(id));
+					totalNew += syncOneOrgSource(id.getOrg(), row.getUuid(), connector, fetch);
 				} catch (Exception e) {
 					log.error("KEV sync failed for integration {} ({})", row.getUuid(), type, e);
 				}
@@ -169,7 +172,7 @@ public class KevCatalogSyncService {
 	 * a bad upstream fails closed for every sharing org without re-hitting it
 	 * this pass -- the fan-out is removed on the failure path as well.
 	 */
-	private List<KevAssertionData> fetchCached(Map<FetchKey, List<KevAssertionData>> cache,
+	private KevCatalogFetch fetchCached(Map<FetchKey, KevCatalogFetch> cache,
 			KevSourceConnector connector, String credential) {
 		return cache.computeIfAbsent(new FetchKey(connector.source(), credential),
 				k -> connector.fetchCatalog(credential));
@@ -201,7 +204,7 @@ public class KevCatalogSyncService {
 		try {
 			IntegrationData id = IntegrationData.dataFromRecord(row);
 			// Single org, single fetch -- no cross-org dedup needed here.
-			syncOneOrgSource(orgUuid, connector, connector.fetchCatalog(decryptCredential(id)));
+			syncOneOrgSource(orgUuid, row.getUuid(), connector, connector.fetchCatalog(decryptCredential(id)));
 		} catch (Exception e) {
 			log.error("KEV async sync failed for {}/{}", orgUuid, type, e);
 		}
@@ -223,8 +226,13 @@ public class KevCatalogSyncService {
 	 * is done by the caller (deduplicated per pass in {@link #syncCatalog()},
 	 * or a single fetch in the async configure-flow path) so the public feed
 	 * is not re-requested per org.
+	 *
+	 * <p>FDAW-2: once the apply has committed, the catalog header and the sync instant are stamped on
+	 * the integration row in place (no audit row, no revision), so a VDR can name the catalog date it
+	 * was checked against. A failed apply throws out of the template and never reaches the stamp.
 	 */
-	private int syncOneOrgSource(UUID orgUuid, KevSourceConnector connector, List<KevAssertionData> entries) {
+	private int syncOneOrgSource(UUID orgUuid, UUID integrationRow, KevSourceConnector connector, KevCatalogFetch fetch) {
+		List<KevAssertionData> entries = fetch.entries();
 		if (entries.isEmpty()) {
 			// Connector already logged the cause; skip reconcile (fail-closed).
 			return 0;
@@ -240,6 +248,16 @@ public class KevCatalogSyncService {
 			return applied;
 		});
 		if (outcome == null) return 0;
+		// The apply has committed: a failed stamp must not skip the re-gate below, so it is caught here.
+		// The documents then name the previous sync until the next one stamps again.
+		try {
+			integrationRepository.stampKevCatalogState(integrationRow, fetch.catalogVersion(),
+					null == fetch.dateReleased() ? null : Utils.toRfc3339Utc(fetch.dateReleased().atZone(ZoneOffset.UTC)),
+					Utils.toRfc3339Utc(ZonedDateTime.now(ZoneOffset.UTC)));
+		} catch (RuntimeException e) {
+			log.error("KEV catalog applied for org {} source {}, but stamping its header on integration {} failed",
+					orgUuid, connector.source(), integrationRow, e);
+		}
 		if (bootstrap) {
 			log.info("KEV catalog bootstrapped for org {} source {}: {} entries; KEV_ADDED event pass skipped",
 					orgUuid, connector.source(), outcome.total());

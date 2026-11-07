@@ -6,8 +6,10 @@ package io.reliza.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -77,6 +79,21 @@ class SupportBomInjectorMergeCountsRecordTest {
 		assertNull(swept.get("services").get(0).get("properties"), "the service's forged copy went, its array with it");
 		assertNull(swept.get("metadata").get("component").get("properties"));
 		assertNull(swept.get("metadata").get("tools").get("components").get(0).get("properties"));
+	}
+
+	@Test
+	void aCopyAnywhereButTheDocumentRecordsIsSweptOnTheInjectPathToo() throws Exception {
+		JsonNode injected = SupportBomInjector.inject(Utils.OM.readTree(doc()), Map.of(), LocalDate.of(2026, 1, 1));
+
+		// inject() still writes its own disclosure/count markers after the sweep: the six records plus
+		// the dedup record that survived the strip lead metadata.properties, in order, before anything inject adds.
+		List<String> metaNames = names(injected.get("metadata").get("properties"));
+		assertEquals(List.of(SIX.get(0), SIX.get(1), SIX.get(2), SIX.get(3), SIX.get(4), SIX.get(5),
+				"reliza:export:bomRefsDeduplicated"), metaNames.subList(0, 7));
+		assertEquals(List.of("cdx:other"), names(injected.get("components").get(0).get("properties")));
+		assertNull(injected.get("services").get(0).get("properties"), "the service's forged copy went");
+		assertNull(injected.get("metadata").get("component").get("properties"));
+		assertNull(injected.get("metadata").get("tools").get("components").get(0).get("properties"));
 	}
 
 	@Test

@@ -48,6 +48,7 @@ import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.dto.ArtifactScanStatusDto;
 import io.reliza.model.dto.ArtifactScanStatusDto.ScanBlockerDto;
+import io.reliza.service.ArtifactDownloadAccessService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.SharedReleaseService;
@@ -74,6 +75,14 @@ class ArtifactDataFetcherScanStatusTest {
 	private final UUID c1 = UUID.randomUUID();
 	private final UserData ud = mock(UserData.class);
 	private final DgsDataFetchingEnvironment dfe = mock(DgsDataFetchingEnvironment.class);
+
+	@BeforeEach
+	void wireHolderResolution() {
+		ArtifactDownloadAccessService access = new ArtifactDownloadAccessService();
+		ReflectionTestUtils.setField(access, "authorizationService", authorizationService);
+		ReflectionTestUtils.setField(access, "sharedReleaseService", sharedReleaseService);
+		ReflectionTestUtils.setField(fetcher, "artifactDownloadAccessService", access);
+	}
 
 	@BeforeEach
 	void ownSecurityContext() {

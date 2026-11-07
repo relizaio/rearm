@@ -204,6 +204,23 @@ public class ReleaseServiceCdxVexTransformTest {
 	}
 
 	@Test
+	void transform_withAGivenSerial_setsExactlyThatSerial() throws Exception {
+		// FDAW-2 (B1): a package build passes its own fresh serial.
+		String given = "urn:uuid:" + UUID.randomUUID();
+		Bom bom = buildVdrLikeFixture();
+		ReleaseService.transformVdrBomToCdxVex(bom, FIXTURE_RELEASE, Boolean.FALSE, null, null, null, Boolean.FALSE, given);
+		assertEquals(given, bom.getSerialNumber());
+	}
+
+	@Test
+	void transform_withANullSerial_keepsTheDeterministicVexSeed() throws Exception {
+		Bom bom = buildVdrLikeFixture();
+		ReleaseService.transformVdrBomToCdxVex(bom, FIXTURE_RELEASE, Boolean.FALSE, null, null, null, Boolean.FALSE, null);
+		assertEquals(ReleaseService.buildCdxVexSerialNumber(FIXTURE_RELEASE, null, null, null, Boolean.FALSE, Boolean.FALSE),
+				bom.getSerialNumber());
+	}
+
+	@Test
 	void transform_outputIsSchemaValidAgainstCdx16() throws Exception {
 		// Cover both default and include-in-triage modes so both code paths validate.
 		for (Boolean triage : new Boolean[]{Boolean.FALSE, Boolean.TRUE}) {

@@ -162,7 +162,7 @@ class KevCatalogSyncServiceTest {
 		UUID orgA = UUID.randomUUID();
 		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.CISA_KEV.name()))
 				.thenReturn(List.of(integrationRow(orgA, IntegrationType.CISA_KEV, null)));
-		when(cisaConnector.fetchCatalog(isNull())).thenReturn(List.of());
+		when(cisaConnector.fetchCatalog(isNull())).thenReturn(KevCatalogFetch.EMPTY);
 		// Already-bootstrapped org — irrelevant since reconcile is skipped.
 		when(kevAssertionService.countRecordsForOrg(orgA)).thenReturn(5L);
 
@@ -190,7 +190,7 @@ class KevCatalogSyncServiceTest {
 		UUID orgA = UUID.randomUUID();
 		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.CISA_KEV.name()))
 				.thenReturn(List.of(integrationRow(orgA, IntegrationType.CISA_KEV, null)));
-		when(cisaConnector.fetchCatalog(isNull())).thenReturn(oneEntry());
+		when(cisaConnector.fetchCatalog(isNull())).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
 		when(kevAssertionService.countRecordsForOrg(orgA)).thenReturn(0L);
 		when(kevAssertionService.applyCatalog(eq(orgA), eq(KevSource.CISA), any())).thenReturn(
 				new KevCatalogApplyOutcome(List.of("CVE-2026-0001"), 0, 0, 0, 1));
@@ -211,7 +211,7 @@ class KevCatalogSyncServiceTest {
 		UUID orgB = UUID.randomUUID();
 		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.CISA_KEV.name()))
 				.thenReturn(List.of(integrationRow(orgA, IntegrationType.CISA_KEV, null)));
-		when(cisaConnector.fetchCatalog(isNull())).thenReturn(oneEntry());
+		when(cisaConnector.fetchCatalog(isNull())).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
 		when(kevAssertionService.countRecordsForOrg(orgA)).thenReturn(1L); // already-bootstrapped
 		when(kevAssertionService.applyCatalog(eq(orgA), eq(KevSource.CISA), any())).thenReturn(
 				new KevCatalogApplyOutcome(List.of("CVE-2026-0001"), 0, 0, 0, 1));
@@ -238,7 +238,7 @@ class KevCatalogSyncServiceTest {
 		UUID orgA = UUID.randomUUID();
 		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.CISA_KEV.name()))
 				.thenReturn(List.of(integrationRow(orgA, IntegrationType.CISA_KEV, null)));
-		when(cisaConnector.fetchCatalog(isNull())).thenReturn(oneEntry());
+		when(cisaConnector.fetchCatalog(isNull())).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
 		when(kevAssertionService.countRecordsForOrg(orgA)).thenReturn(1L);
 		when(kevAssertionService.applyCatalog(eq(orgA), eq(KevSource.CISA), any())).thenReturn(
 				new KevCatalogApplyOutcome(List.of("CVE-2026-0001"), 0, 0, 0, 1));
@@ -256,7 +256,7 @@ class KevCatalogSyncServiceTest {
 		UUID orgA = UUID.randomUUID();
 		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.CISA_KEV.name()))
 				.thenReturn(List.of(integrationRow(orgA, IntegrationType.CISA_KEV, null)));
-		when(cisaConnector.fetchCatalog(isNull())).thenReturn(oneEntry());
+		when(cisaConnector.fetchCatalog(isNull())).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
 		when(kevAssertionService.countRecordsForOrg(orgA)).thenReturn(1L);
 		when(kevAssertionService.applyCatalog(eq(orgA), eq(KevSource.CISA), any())).thenReturn(
 				new KevCatalogApplyOutcome(List.of("CVE-2026-0001"), 0, 0, 0, 1));
@@ -278,7 +278,7 @@ class KevCatalogSyncServiceTest {
 		// missing credential as a failed/empty fetch and returns an empty list.
 		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.VULNCHECK_KEV.name()))
 				.thenReturn(List.of(integrationRow(orgA, IntegrationType.VULNCHECK_KEV, null)));
-		when(vulnCheckConnector.fetchCatalog(isNull())).thenReturn(List.of());
+		when(vulnCheckConnector.fetchCatalog(isNull())).thenReturn(KevCatalogFetch.EMPTY);
 
 		assertEquals(0, service.syncCatalog());
 
@@ -297,7 +297,7 @@ class KevCatalogSyncServiceTest {
 				.thenReturn(List.of(
 						integrationRow(orgA, IntegrationType.CISA_KEV, null),
 						integrationRow(orgB, IntegrationType.CISA_KEV, null)));
-		when(cisaConnector.fetchCatalog(isNull())).thenReturn(oneEntry());
+		when(cisaConnector.fetchCatalog(isNull())).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
 		// Both already bootstrapped — keep the test focused on the fan-out.
 		when(kevAssertionService.countRecordsForOrg(any(UUID.class))).thenReturn(1L);
 		when(kevAssertionService.applyCatalog(any(UUID.class), eq(KevSource.CISA), any())).thenReturn(
@@ -323,7 +323,7 @@ class KevCatalogSyncServiceTest {
 						integrationRow(orgA, IntegrationType.VULNCHECK_KEV, "enc-shared"),
 						integrationRow(orgB, IntegrationType.VULNCHECK_KEV, "enc-shared")));
 		when(encryptionService.decrypt("enc-shared")).thenReturn("plain-shared");
-		when(vulnCheckConnector.fetchCatalog(eq("plain-shared"))).thenReturn(oneEntry());
+		when(vulnCheckConnector.fetchCatalog(eq("plain-shared"))).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
 		when(kevAssertionService.countRecordsForOrg(any(UUID.class))).thenReturn(1L);
 		when(kevAssertionService.applyCatalog(any(UUID.class), eq(KevSource.VULNCHECK), any())).thenReturn(
 				new KevCatalogApplyOutcome(List.of(), 0, 0, 0, 1));
@@ -347,8 +347,8 @@ class KevCatalogSyncServiceTest {
 						integrationRow(orgB, IntegrationType.VULNCHECK_KEV, "enc-b")));
 		when(encryptionService.decrypt("enc-a")).thenReturn("token-a");
 		when(encryptionService.decrypt("enc-b")).thenReturn("token-b");
-		when(vulnCheckConnector.fetchCatalog(eq("token-a"))).thenReturn(oneEntry());
-		when(vulnCheckConnector.fetchCatalog(eq("token-b"))).thenReturn(oneEntry());
+		when(vulnCheckConnector.fetchCatalog(eq("token-a"))).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
+		when(vulnCheckConnector.fetchCatalog(eq("token-b"))).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
 		when(kevAssertionService.countRecordsForOrg(any(UUID.class))).thenReturn(1L);
 		when(kevAssertionService.applyCatalog(any(UUID.class), eq(KevSource.VULNCHECK), any())).thenReturn(
 				new KevCatalogApplyOutcome(List.of(), 0, 0, 0, 1));
@@ -369,8 +369,8 @@ class KevCatalogSyncServiceTest {
 		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.VULNCHECK_KEV.name()))
 				.thenReturn(List.of(integrationRow(orgA, IntegrationType.VULNCHECK_KEV, "enc-token")));
 		when(encryptionService.decrypt("enc-token")).thenReturn("plain-token");
-		when(cisaConnector.fetchCatalog(isNull())).thenReturn(oneEntry());
-		when(vulnCheckConnector.fetchCatalog(eq("plain-token"))).thenReturn(oneEntry());
+		when(cisaConnector.fetchCatalog(isNull())).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
+		when(vulnCheckConnector.fetchCatalog(eq("plain-token"))).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
 		when(kevAssertionService.countRecordsForOrg(orgA)).thenReturn(1L);
 		when(kevAssertionService.applyCatalog(eq(orgA), any(KevSource.class), any())).thenReturn(
 				new KevCatalogApplyOutcome(List.of(), 0, 0, 0, 1));
@@ -390,7 +390,7 @@ class KevCatalogSyncServiceTest {
 				orgA.toString(), IntegrationType.VULNCHECK_KEV.name(), "base"))
 				.thenReturn(Optional.of(row));
 		when(encryptionService.decrypt("enc-token")).thenReturn("plain-token");
-		when(vulnCheckConnector.fetchCatalog(eq("plain-token"))).thenReturn(oneEntry());
+		when(vulnCheckConnector.fetchCatalog(eq("plain-token"))).thenReturn(KevCatalogFetch.entriesOnly(oneEntry()));
 		when(kevAssertionService.countRecordsForOrg(orgA)).thenReturn(0L); // first sync
 		when(kevAssertionService.applyCatalog(eq(orgA), eq(KevSource.VULNCHECK), any())).thenReturn(
 				new KevCatalogApplyOutcome(List.of("CVE-2026-0001"), 0, 0, 0, 1));
