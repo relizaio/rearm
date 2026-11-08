@@ -79,30 +79,30 @@ public class SafetyContextProposalService {
 
     /**
      * Lists SAFETY_CONTEXT proposals whose source artifact was uploaded to the given release —
-     * "what SAFETY_CONTEXT artifacts have been uploaded here ". A VEX artifact can be bound to a release
+     * "what SAFETY_CONTEXT artifacts have been uploaded here ". A SAFETY_CONTEXT artifact can be bound to a release
      * through several paths, so this walks all of them: the release's own artifacts,
      * its deliverables (release-level inbound plus each variant's outbound), and its
      * source code entries (export SCE plus commit SCEs). The deliverable/SCE upload
-     * paths attach the VEX artifact to that child object, not to the release's own
+     * paths attach the SAFETY_CONTEXT artifact to that child object, not to the release's own
      * artifact list (see {@code ReleaseService.processDeliverableArtifacts} /
      * {@code processSceArtifacts}), so a release-artifacts-only walk silently misses
-     * deliverable- and SCE-bound VEX.
+     * deliverable- and SCE-bound SAFETY_CONTEXT artifacts.
      *
-     * <p>The view stays provenance-local: it answers "which VEX documents were
-     * uploaded against this release", not "which VEX decisions affect it". Proposals
+     * <p>The view stays provenance-local: it answers "which SAFETY_CONTEXT documents were
+     * uploaded against this release", not "which SAFETY_CONTEXT records affect it". Proposals
      * whose effect crosses scope levels (e.g. an ORG-scoped proposal touching many
-     * releases) are surfaced in the org-wide VEX Proposals inbox, not here.
+     * releases) are surfaced in the org-wide SAFETY_CONTEXT Proposals inbox, not here.
      */
     public List<SafetyContextProposalData> listForRelease(UUID org, UUID release) {
         Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(release, org);
         if (ord.isEmpty()) {
             return List.of();
         }
-        List<String> vexArtifactUuids = collectVexArtifactUuids(ord.get()).stream()
+        List<String> safetyContextArtifactUuids = collectsafetyContextArtifactUuids(ord.get()).stream()
             .map(UUID::toString)
             .collect(Collectors.toList());
-        if (vexArtifactUuids.isEmpty()) return List.of();
-        return repository.findByOrgAndSourceArtifactIn(org.toString(), vexArtifactUuids).stream()
+        if (safetyContextArtifactUuids.isEmpty()) return List.of();
+        return repository.findByOrgAndSourceArtifactIn(org.toString(), safetyContextArtifactUuids).stream()
             .map(SafetyContextProposalData::dataFromRecord).collect(Collectors.toList());
     }
 
@@ -113,7 +113,7 @@ public class SafetyContextProposalService {
      * or SCE is skipped, never thrown (the model carries no DB-level FKs — see
      * {@code coding_principles.md}).
      */
-    private Set<UUID> collectVexArtifactUuids(ReleaseData rd) {
+    private Set<UUID> collectsafetyContextArtifactUuids(ReleaseData rd) {
         Set<UUID> candidates = new LinkedHashSet<>();
         if (rd.getArtifacts() != null) {
             candidates.addAll(rd.getArtifacts());
@@ -145,7 +145,7 @@ public class SafetyContextProposalService {
             }
         }
 
-        // Keep only VEX-typed artifacts: the proposal table only ever keys off a VEX
+        // Keep only SAFETY_CONTEXT artifacts: the proposal table only ever keys off a VEX
         // source artifact, and this trims the IN-list handed to the repository. One
         // batch lookup — missing artifacts are simply absent from the result.
         return artifactService.getArtifactDataListLight(candidates).stream()
@@ -199,7 +199,7 @@ return saveProposal(
             throw new RelizaException("Proposal not in PENDING state (was: " + d.getStatus() + ")");
         }
         if (d.getSeverity() == null) {
-            throw new RelizaException("Severity is required before accepting a VEX proposal. "
+            throw new RelizaException("Severity is required before accepting a SAFETY_CONTEXT proposal. "
                 + "Use Modify to set it (CRITICAL, HIGH, MEDIUM, LOW, or UNASSIGNED).");
         }
 
@@ -286,7 +286,7 @@ return saveProposal(
                                io.reliza.model.AnalysisScope scope, UUID scopeUuid,
                                WhoUpdated wu) throws RelizaException {
         if (scope == null || scopeUuid == null) {
-            // Defensive: VEX proposals always carry scope + scopeUuid (set by ScopeTargetResolver
+            // Defensive: SAFETY_CONTEXT proposals always carry scope + scopeUuid (set by ScopeTargetResolver
             // before createProposal is invoked); if a caller forgets, we'd otherwise key dedupe
             // against the literal string "null" and silently fail to supersede anything.
             throw new IllegalArgumentException(
