@@ -191,6 +191,9 @@ export const eventTypeOptions = [
     // Regulatory submission events (Pro, TEA-35): a version written (first or resubmission) and a withdrawal.
     { label: 'Release submission created', value: 'RELEASE_SUBMISSION_CREATED', proOnly: true },
     { label: 'Release submission withdrawn', value: 'RELEASE_SUBMISSION_WITHDRAWN', proOnly: true },
+    // License seat events (Pro, TPF-165 D9): a refused sign-in or a skipped SSO group lift, delivered
+    // to the organization's admins.
+    { label: 'License seats', value: 'LICENSE_SEAT_EVENT', proOnly: true },
 ]
 
 export const AGENT_BOARD_EVENT_TYPES = ['AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_RETURNED',
@@ -245,7 +248,9 @@ export const severityOptions = [
  * person is being waited on, MEDIUM for an alert or a return.
  */
 export const SEVERITY_BEARING_EVENT_TYPES = ['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED',
-    'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED', ...AGENT_BOARD_EVENT_TYPES]
+    'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED', ...AGENT_BOARD_EVENT_TYPES,
+    // carries a fixed HIGH severity on the server (TPF-165 D9)
+    'LICENSE_SEAT_EVENT']
 
 /** True when a minimum-severity gate can ever match, given these event types. */
 export function severityAppliesTo (eventTypes: string[] | null | undefined): boolean {

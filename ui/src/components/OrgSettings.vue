@@ -1227,6 +1227,25 @@
                                     </span>
                                 </div>
 
+                                <!-- License seats (TPF-168): read by the server from the DEFAULT
+                                     organization only, so the control shows only there. -->
+                                <div v-if="myorg?.type === 'DEFAULT'" style="margin-top: 18px;" data-testid="sso-users-without-role-block">
+                                    <h4 style="margin-bottom: 2px;">SSO users without a role</h4>
+                                    <n-radio-group v-model:value="ssoUsersWithoutRole" :disabled="savingOrgSettings"
+                                        name="ssoUsersWithoutRole" style="margin: 8px 0 4px;">
+                                        <n-space>
+                                            <n-radio v-for="o in SSO_USERS_WITHOUT_ROLE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</n-radio>
+                                        </n-space>
+                                    </n-radio-group>
+                                    <span class="text-muted" style="display: block; max-width: 760px;">
+                                        What a first single sign-on whose groups claim matches no
+                                        SSO-connected user group of this organization, and who holds no
+                                        pending invitation, does. Refuse: no account is created and the
+                                        person is told no ReARM role is assigned. Create: the account is
+                                        created with no role; it holds no license seat.
+                                    </span>
+                                </div>
+
                                 <n-divider style="margin: 22px 0 10px;" />
 
                                 <n-form-item>
@@ -1515,6 +1534,7 @@ import { Icon } from '@vicons/utils'
 import commonFunctions from '@/utils/commonFunctions'
 import { FDA_PROSE_FIELDS, FDA_PROSE_MAX_LENGTH, proseDiff, proseBaselineFrom } from '@/utils/fdaProseInput'
 import { organizationToCommit, supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
+import { SSO_USERS_WITHOUT_ROLE_OPTIONS, SsoUsersWithoutRole, ssoUsersWithoutRoleInput, ssoUsersWithoutRoleOf } from '@/utils/licenseSeats'
 import { addPerspectiveToComponent } from '@/utils/perspectiveMembership'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { Marked } from '@ts-stack/markdown'
@@ -4226,6 +4246,9 @@ function markDeclaredLicenseUnsupported () {
 
 const supportInjectionEnabled: Ref<boolean> = ref(false)
 const supportInjectionBaseline: Ref<boolean> = ref(false)
+// License seats (TPF-168): the default organization's ssoUsersWithoutRole, absent = REFUSE.
+const ssoUsersWithoutRole: Ref<SsoUsersWithoutRole> = ref(SsoUsersWithoutRole.REFUSE)
+const ssoUsersWithoutRoleBaseline: Ref<SsoUsersWithoutRole> = ref(SsoUsersWithoutRole.REFUSE)
 
 async function loadOrgSettings() {
     await loadOrgDefaultView()
@@ -4244,6 +4267,8 @@ async function loadOrgSettings() {
     // this build does not know -- reads as off, which matches the server's own default rule.
     supportInjectionEnabled.value = supportInjectionFromSettings(s)
     supportInjectionBaseline.value = supportInjectionEnabled.value
+    ssoUsersWithoutRole.value = ssoUsersWithoutRoleOf(s)
+    ssoUsersWithoutRoleBaseline.value = ssoUsersWithoutRole.value
     const seeded = proseBaselineFrom(s)
     for (const f of FDA_PROSE_FIELDS) {
         orgSettings[f] = seeded[f]
@@ -4292,6 +4317,7 @@ async function saveOrgSettings() {
                             fdaPatchesMayCeaseStatement
                             fdaRiskTransferProcessRef
                             fdaRiskIncreasesNotice
+                            ssoUsersWithoutRole
                         }
                     }
                 }`,
@@ -4316,7 +4342,10 @@ async function saveOrgSettings() {
                     ...(supportInjectionSupported.value
                         && supportInjectionEnabled.value !== supportInjectionBaseline.value
                         ? { supportInjection: supportInjectionEnabled.value ? 'ENABLED' : 'DISABLED' }
-                        : {})
+                        : {}),
+                    // Default organization only, and only when changed (PATCH).
+                    ...ssoUsersWithoutRoleInput(myorg.value?.type === 'DEFAULT',
+                        ssoUsersWithoutRole.value, ssoUsersWithoutRoleBaseline.value)
                 }
             },
             fetchPolicy: 'no-cache'
@@ -4365,6 +4394,8 @@ async function saveOrgSettings() {
             // the toggle is supported, and a rejected mutation lands in the catch below with
             // the baseline untouched.
             supportInjectionBaseline.value = supportInjectionEnabled.value
+            ssoUsersWithoutRole.value = ssoUsersWithoutRoleOf(savedSettings)
+            ssoUsersWithoutRoleBaseline.value = ssoUsersWithoutRole.value
             const refreshed = proseBaselineFrom(savedSettings)
             for (const f of FDA_PROSE_FIELDS) {
                 orgSettings[f] = refreshed[f]
