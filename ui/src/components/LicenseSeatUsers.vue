@@ -21,7 +21,7 @@
                     <td>
                         <div>{{ r.email }}</div>
                         <div v-if="r.name" class="text-muted small">{{ r.name }}</div>
-                        <n-tag v-if="r.globalAdmin" size="small" type="info" :data-testid="'seat-user-global-admin-' + r.email">global admin</n-tag>
+                        <n-tag v-if="r.globalAdmin" size="small" type="info" :data-testid="'seat-user-global-admin-' + r.email">Global administrator</n-tag>
                     </td>
                     <td :data-testid="'seat-user-type-' + r.email">{{ r.seatType }}</td>
                     <td :data-testid="'seat-user-created-' + r.email">{{ dateText(r.createdDate) }}</td>
@@ -39,7 +39,10 @@
 // The license seat view (task TPF-168, TPF-165 D10): every seat holder of the instance, one row per
 // email (type READ/WRITE/NONE, created, last login, outside-limit flag), the counts header, Refresh
 // and "Remove accounts with no role". Rendered by SystemSettings.vue for global administrators on
-// Pro. Every read is a fresh count on the server; the client never caches it.
+// Pro. Every read is a fresh count on the server; the client never caches it. Every number and flag
+// is the server's field as given: the outside-limit flag reads `admission` alone and the
+// Global administrator marker reads `globalAdmin` alone (no UI rule combines them). Server texts go
+// to Swal as `text`, never as the positional shorthand, whose second argument is HTML.
 import { computed, onMounted, ref, type Ref } from 'vue'
 import { NButton, NSpace, NTag } from 'naive-ui'
 import Swal from 'sweetalert2'
@@ -95,9 +98,9 @@ async function removeNoRole () {
     try {
         const resp: any = await graphqlClient.mutate({ mutation: REMOVE_ACCOUNTS_WITHOUT_ROLE, fetchPolicy: 'no-cache' })
         const n = Number(resp?.data?.removeAccountsWithoutRole) || 0
-        Swal.fire('Done', `${n} account${n === 1 ? '' : 's'} deactivated.`, 'success')
+        Swal.fire({ title: 'Done', text: `${n} account${n === 1 ? '' : 's'} deactivated.`, icon: 'success' })
     } catch (err: any) {
-        Swal.fire('Error!', graphqlRefusalText(err), 'error')
+        Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
     } finally {
         busy.value = false
     }

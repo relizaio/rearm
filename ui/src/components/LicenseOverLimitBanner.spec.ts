@@ -15,7 +15,7 @@ vi.mock('@/utils/keycloak', () => ({ default: { token: 'test', updateToken: vi.f
 
 const store = (await import('@/store')).default.store
 const { default: LicenseOverLimitBanner } = await import('./LicenseOverLimitBanner.vue')
-const { LICENSE_BANNER_QUERY } = await import('@/utils/licenseSeats')
+const { LICENSE_BANNER_QUERY, overLicenseBannerText } = await import('@/utils/licenseSeats')
 
 const ORG = '11111111-1111-4111-8111-111111111111'
 const GLOBAL_ADMIN = { uuid: 'u1', installationType: 'MANAGED_SERVICE', isGlobalAdmin: true, permissions: { permissions: [] } }
@@ -28,6 +28,11 @@ const CE_ADMIN = { ...GLOBAL_ADMIN, installationType: 'OSS' }
 const OVER = { maxReadUsers: 1, maxWriteUsers: 2, globalUserCounts: { readUsers: 2, writeUsers: 3, outsideLimit: 2 } }
 const FITS = { maxReadUsers: 1, maxWriteUsers: 2, globalUserCounts: { readUsers: 1, writeUsers: 2, outsideLimit: 0 } }
 const BANNER = 'This instance is over its license: 2 read users of 1, 3 write users of 2. Accounts outside the limit, by creation date, cannot sign in.'
+const U8_OVER_I = { maxReadUsers: 1, maxWriteUsers: 2,
+    globalUserCounts: { writeUsers: 4, readUsers: 0, totalUsers: 4, noRoleUsers: 0, outsideLimit: 1 } }
+const U8_OVER_II = { maxReadUsers: 1, maxWriteUsers: 2,
+    globalUserCounts: { writeUsers: 3, readUsers: 0, totalUsers: 3, noRoleUsers: 0, outsideLimit: 0 } }
+const U8_BANNER_I = 'This instance is over its license: 0 read users of 1, 4 write users of 2. Accounts outside the limit, by creation date, cannot sign in.'
 
 const mounted: VueWrapper[] = []
 async function mountAs (user: any) {
@@ -91,6 +96,24 @@ describe('the over-license admin banner', () => {
         await mountAs(READER)
         await mountAs(CE_ADMIN)
         expect(query).not.toHaveBeenCalled()
+    })
+
+    // TPF-168 U8 (architecture round 3, T-1): a global administrator created beyond the write limit
+    // is counted WRITE but admitted, so the backend leaves them out of outsideLimit. The banner prints
+    // the fields as given: no UI-side arithmetic on writeUsers or outsideLimit.
+    it('U8 (i) the administrator and an ordinary user beyond the limit: the banner with the backend numbers', async () => {
+        query.mockResolvedValue({ data: { license: structuredClone(U8_OVER_I) } })
+        const w = await mountAs(GLOBAL_ADMIN)
+        expect(banner(w).text()).toBe(U8_BANNER_I)
+        expect(overLicenseBannerText(U8_OVER_I)).toBe(U8_BANNER_I)
+    })
+
+    it('U8 (ii) the administrator the only one beyond the limit: outsideLimit 0, no banner', async () => {
+        query.mockResolvedValue({ data: { license: structuredClone(U8_OVER_II) } })
+        const w = await mountAs(GLOBAL_ADMIN)
+        expect(query).toHaveBeenCalledTimes(1)
+        expect(overLicenseBannerText(U8_OVER_II)).toBeNull()
+        expect(banner(w).exists()).toBe(false)
     })
 })
 

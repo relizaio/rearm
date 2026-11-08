@@ -3,7 +3,8 @@
 // TPF-168 U5 (TPF-165 4.2, D10): the license seat view of System Settings. One row per email with
 // type, created, last login and the outside-limit flag; the counts header from globalUserCounts;
 // Refresh re-queries with fetchPolicy no-cache; "Remove accounts with no role" asks for
-// confirmation naming the number of accounts, sends the mutation, then re-queries.
+// confirmation naming the number of accounts, sends the mutation, then re-queries. U8 (T-1): a global
+// administrator beyond the write limit is shown as the backend reports it, flag and marker apart.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,6 +32,8 @@ const ROWS = [
 ]
 const LICENSE = { maxWriteUsers: 1, maxReadUsers: 1,
     globalUserCounts: { writeUsers: 2, readUsers: 1, totalUsers: 3, noRoleUsers: 1, outsideLimit: 1, countedAt: '2026-11-08T10:00:00Z' } }
+
+const MARKUP_REFUSAL = 'Not <b>authorized</b>'
 
 const mounted: VueWrapper[] = []
 async function mountView () {
@@ -69,7 +72,7 @@ describe('System Settings: license seat users', () => {
         expect(byId(w, 'seat-user-last-login-w2@x.io').text()).toBe('never')
         expect(byId(w, 'seat-user-outside-w2@x.io').text()).toBe('outside the limit')
         for (const e of ['w1@x.io', 'r1@x.io', 'n1@x.io']) expect(byId(w, 'seat-user-outside-' + e).text()).toBe('')
-        expect(byId(w, 'seat-user-global-admin-w1@x.io').exists()).toBe(true)
+        expect(byId(w, 'seat-user-global-admin-w1@x.io').text()).toBe('Global administrator')
         expect(byId(w, 'seat-user-global-admin-w2@x.io').exists()).toBe(false)
     })
 
@@ -102,7 +105,7 @@ describe('System Settings: license seat users', () => {
         expect(fire.mock.calls[0][0].showCancelButton).toBe(true)
         expect(mutate).toHaveBeenCalledTimes(1)
         expect(mutate.mock.calls[0][0].mutation).toBe(REMOVE_ACCOUNTS_WITHOUT_ROLE)
-        expect(fire.mock.calls[1]).toEqual(['Done', '1 account deactivated.', 'success'])
+        expect(fire.mock.calls[1]).toEqual([{ title: 'Done', text: '1 account deactivated.', icon: 'success' }])
         expect(query).toHaveBeenCalledTimes(2)
     })
 
@@ -114,24 +117,120 @@ describe('System Settings: license seat users', () => {
         expect(query).toHaveBeenCalledTimes(1)
     })
 
-    it('a refused mutation shows the server text and still re-queries', async () => {
+    it('a refused mutation shows the server text as plain text, never as markup, and still re-queries', async () => {
         const w = await mountView()
         fire.mockResolvedValueOnce({ isConfirmed: true }).mockResolvedValue({})
-        const err: any = new Error('Not authorized')
-        err.errors = [{ message: 'Not authorized' }]
+        const err: any = new Error(MARKUP_REFUSAL)
+        err.errors = [{ message: MARKUP_REFUSAL }]
         mutate.mockRejectedValue(err)
         await click(w, 'seat-users-remove-no-role')
-        expect(fire.mock.calls[1]).toEqual(['Error!', 'Not authorized', 'error'])
+        // F-4: the positional Swal.fire(title, msg, icon) shorthand would put msg in `html`.
+        expect(fire.mock.calls[1]).toHaveLength(1)
+        expect(fire.mock.calls[1][0]).toEqual({ title: 'Error!', text: MARKUP_REFUSAL, icon: 'error' })
+        expect(fire.mock.calls[1][0]).not.toHaveProperty('html')
         expect(query).toHaveBeenCalledTimes(2)
     })
 
-    it('a refused read shows the server text instead of the table', async () => {
-        const err: any = new Error('Not authorized')
-        err.errors = [{ message: 'Not authorized' }]
+    it('a refused read shows the server text as plain text instead of the table', async () => {
+        const err: any = new Error(MARKUP_REFUSAL)
+        err.errors = [{ message: MARKUP_REFUSAL }]
         query.mockRejectedValue(err)
         const w = await mountView()
-        expect(byId(w, 'seat-users-error').text()).toBe('Not authorized')
+        expect(byId(w, 'seat-users-error').text()).toBe(MARKUP_REFUSAL)
+        expect(byId(w, 'seat-users-error').find('b').exists()).toBe(false)
         expect(byId(w, 'seat-users-table').exists()).toBe(false)
+    })
+
+    it('every dialog of the view passes its text as text: no positional Swal.fire shorthand, no html', () => {
+        const source = readFileSync(resolve(__dirname, 'LicenseSeatUsers.vue'), 'utf8')
+        expect(source).not.toMatch(/Swal\.fire\(\s*['"`]/)
+        expect(source).not.toMatch(/\bhtml\s*:/)
+        expect(source).not.toContain('v-html')
+        expect(source).not.toContain('innerHTML')
+    })
+})
+
+// TPF-168 U8 (architecture round 3, T-1): a global administrator created beyond the write limit,
+// under the creation-date rank of decision 4 and the admission contract the backend reports
+// (an ACTIVE global administrator is always admitted: counted WRITE, admission INSIDE, never in
+// outsideLimit). The view prints every field as given: the flag from `admission` alone, the marker
+// from `globalAdmin` alone, the counts header unchanged.
+const u8Row = (email: string, createdDate: string, admission: string, globalAdmin: boolean) => ({
+    email, name: null, userUuids: [email], organizations: ['o'], seatType: 'WRITE', admission,
+    createdDate, lastLoginDate: null, globalAdmin })
+const U8_ROWS_I = [
+    u8Row('a@x.io', '2024-01-01T00:00:00Z', 'INSIDE', false),
+    u8Row('b@x.io', '2024-02-01T00:00:00Z', 'INSIDE', false),
+    u8Row('admin@x.io', '2025-01-01T00:00:00Z', 'INSIDE', true),
+    u8Row('c@x.io', '2025-02-01T00:00:00Z', 'OUTSIDE', false),
+]
+const U8_LICENSE_I = { maxWriteUsers: 2, maxReadUsers: 1,
+    globalUserCounts: { writeUsers: 4, readUsers: 0, totalUsers: 4, noRoleUsers: 0, outsideLimit: 1, countedAt: '2026-11-08T10:00:00Z' } }
+const U8_ROWS_II = U8_ROWS_I.filter(r => r.email !== 'c@x.io')
+const U8_LICENSE_II = { maxWriteUsers: 2, maxReadUsers: 1,
+    globalUserCounts: { writeUsers: 3, readUsers: 0, totalUsers: 3, noRoleUsers: 0, outsideLimit: 0, countedAt: '2026-11-08T10:00:00Z' } }
+
+describe('T-1 (U8): a global administrator beyond the write limit', () => {
+    beforeEach(() => {
+        query.mockReset()
+        mutate.mockReset()
+        fire.mockReset()
+    })
+    afterEach(() => {
+        while (mounted.length) mounted.pop()?.unmount()
+    })
+    const answer = (rows: any[], license: any) =>
+        query.mockImplementation(async () => ({ data: { licenseSeatUsers: structuredClone(rows), license: structuredClone(license) } }))
+
+    it('(i) the administrator and an ordinary user beyond the limit: only the ordinary user is flagged', async () => {
+        answer(U8_ROWS_I, U8_LICENSE_I)
+        const w = await mountView()
+        expect(byId(w, 'seat-user-outside-c@x.io').text()).toBe('outside the limit')
+        expect(byId(w, 'seat-user-outside-admin@x.io').text()).toBe('')
+        expect(byId(w, 'seat-user-global-admin-admin@x.io').text()).toBe('Global administrator')
+        for (const e of ['a@x.io', 'b@x.io']) {
+            expect(byId(w, 'seat-user-outside-' + e).text()).toBe('')
+            expect(byId(w, 'seat-user-global-admin-' + e).exists()).toBe(false)
+        }
+        expect(byId(w, 'seat-user-global-admin-c@x.io').exists()).toBe(false)
+        expect(byId(w, 'seat-counts-write').text()).toBe('Write: 4 / 2')
+        expect(byId(w, 'seat-counts-read').text()).toBe('Read: 0 / 1')
+        expect(byId(w, 'seat-counts-outside').text()).toBe('Outside the limit: 1')
+    })
+
+    it('(ii) the administrator the only one beyond the limit: no row flagged, the counts header shows the overflow', async () => {
+        answer(U8_ROWS_II, U8_LICENSE_II)
+        const w = await mountView()
+        expect(w.findAll('tbody tr')).toHaveLength(3)
+        for (const e of ['a@x.io', 'b@x.io', 'admin@x.io']) expect(byId(w, 'seat-user-outside-' + e).text()).toBe('')
+        expect(byId(w, 'seat-user-global-admin-admin@x.io').text()).toBe('Global administrator')
+        expect(byId(w, 'seat-counts-write').text()).toBe('Write: 3 / 2')
+        expect(byId(w, 'seat-counts-outside').text()).toBe('Outside the limit: 0')
+    })
+
+    it('the flag depends on admission alone: globalAdmin neither adds nor removes it', async () => {
+        // A row the backend should never send once it reports the admission decision; the UI
+        // shows it as given rather than hiding a backend defect.
+        answer([u8Row('admin@x.io', '2025-01-01T00:00:00Z', 'OUTSIDE', true),
+            u8Row('c@x.io', '2025-02-01T00:00:00Z', 'INSIDE', false)], U8_LICENSE_I)
+        const w = await mountView()
+        expect(byId(w, 'seat-user-outside-admin@x.io').text()).toBe('outside the limit')
+        expect(byId(w, 'seat-user-global-admin-admin@x.io').text()).toBe('Global administrator')
+        expect(byId(w, 'seat-user-outside-c@x.io').text()).toBe('')
+        expect(byId(w, 'seat-counts-outside').text()).toBe('Outside the limit: 1')
+    })
+
+    it('the admission cell reads admission only, and the marker reads globalAdmin only', () => {
+        const source = readFileSync(resolve(__dirname, 'LicenseSeatUsers.vue'), 'utf8')
+        const template = source.slice(0, source.indexOf('</template>'))
+        const start = template.indexOf(`<td :data-testid="'seat-user-outside-' + r.email">`)
+        expect(start).toBeGreaterThan(-1)
+        const cell = template.slice(start, template.indexOf('</td>', start))
+        expect(cell).toContain('r.admission === SeatAdmission.OUTSIDE')
+        expect(cell).not.toContain('globalAdmin')
+        const marker = template.split('\n').find(l => l.includes("'seat-user-global-admin-'")) ?? ''
+        expect(marker).toContain('v-if="r.globalAdmin"')
+        expect(marker).not.toContain('admission')
     })
 })
 
