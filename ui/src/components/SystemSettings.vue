@@ -12,13 +12,8 @@
                     <p><strong>Base URI:</strong> {{ licenseData.baseUri }}</p>
                     <p><strong>Valid From:</strong> {{ formatDate(licenseData.validFrom) }}</p>
                     <p><strong>Valid To:</strong> {{ formatDate(licenseData.validTo) }}</p>
-                    <p><strong>Write Users:</strong> {{ licenseData.globalUserCounts?.writeUsers || 0 }} / {{ licenseData.maxWriteUsers }}</p>
-                    <p><strong>Read Users:</strong> {{ licenseData.globalUserCounts?.readUsers || 0 }}</p>
-                    <p><strong>Total Users:</strong> {{ licenseData.globalUserCounts?.totalUsers || 0 }} / {{ (licenseData.maxWriteUsers || 0) + (licenseData.maxReadUsers || 0) }}</p>
-                    <p data-testid="license-no-role-users"><strong>Users Without a Role (not counted):</strong> {{ licenseData.globalUserCounts?.noRoleUsers || 0 }}</p>
-                    <p data-testid="license-outside-limit"><strong>Outside the Limit:</strong> {{ licenseData.globalUserCounts?.outsideLimit || 0 }}</p>
                     <n-button type="warning" @click="showLicenseModal = true">Update License</n-button>
-                    <LicenseSeatUsers @license="onSeatLicense" />
+                    <LicenseSeatUsers ref="seatUsers" />
                 </div>
                 <div v-else>
                     <p>No valid license found.</p>
@@ -147,6 +142,8 @@ onMounted(async () => {
 const systemInfoIsSet: Ref<any> = ref({})
 const defaultOrganization = ref('')
 const licenseData: Ref<any> = ref(null)
+// The instance seat figures live only in the seat view's counts header (TPF-166 D2); reloaded after an upload.
+const seatUsers = ref<InstanceType<typeof LicenseSeatUsers> | null>(null)
 const showLicenseModal: Ref<boolean> = ref(false)
 const licenseString: Ref<string> = ref('')
 
@@ -181,16 +178,6 @@ async function initLoad() {
                         baseUri
                         validFrom
                         validTo
-                        maxWriteUsers
-                        maxReadUsers
-                        globalUserCounts {
-                            writeUsers
-                            readUsers
-                            totalUsers
-                            noRoleUsers
-                            outsideLimit
-                            countedAt
-                        }
                     }
                 }
                 `,
@@ -198,12 +185,6 @@ async function initLoad() {
         })
         licenseData.value = licenseResp.data.license
     }
-}
-
-/** The seat view re-counted (Refresh, Remove accounts with no role): its fresh counts replace the block's. */
-function onSeatLicense(fresh: any) {
-    if (!fresh) return
-    licenseData.value = { ...(licenseData.value || {}), ...fresh }
 }
 
 function formatDate(dateString: string) {
@@ -220,16 +201,6 @@ async function uploadLicense() {
                         baseUri
                         validFrom
                         validTo
-                        maxWriteUsers
-                        maxReadUsers
-                        globalUserCounts {
-                            writeUsers
-                            readUsers
-                            totalUsers
-                            noRoleUsers
-                            outsideLimit
-                            countedAt
-                        }
                     }
                 }`,
             variables: {
@@ -237,6 +208,8 @@ async function uploadLicense() {
             }
         })
         licenseData.value = resp.data.uploadLicense
+        // the seat view's header is the page's only copy of the instance figures: re-count it now (its Refresh path)
+        await seatUsers.value?.reload()
         showLicenseModal.value = false
         licenseString.value = ''
         Swal.fire('Success!', 'License uploaded successfully.', 'success')

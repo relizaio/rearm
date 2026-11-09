@@ -76,14 +76,41 @@ describe('System Settings: license seat users', () => {
         expect(byId(w, 'seat-user-global-admin-w2@x.io').exists()).toBe(false)
     })
 
-    it('shows the counts header from globalUserCounts and emits the fresh license', async () => {
+    it('shows the counts header from globalUserCounts and emits nothing', async () => {
         const w = await mountView()
         expect(byId(w, 'seat-counts-write').text()).toBe('Write: 2 / 1')
         expect(byId(w, 'seat-counts-read').text()).toBe('Read: 1 / 1')
-        expect(byId(w, 'seat-counts-norole').text()).toBe('No role (not counted): 1')
+        expect(byId(w, 'seat-counts-total').text()).toBe('Total: 3 / 2')
+        expect(byId(w, 'seat-counts-norole').text()).toBe('Users without a role (not counted): 1')
         expect(byId(w, 'seat-counts-outside').text()).toBe('Outside the limit: 1')
         expect(byId(w, 'seat-counts-at').text()).toBe('counted ' + dateText('2026-11-08T10:00:00Z'))
-        expect(w.emitted('license')?.[0]).toEqual([LICENSE])
+        expect(w.emitted('license')).toBeUndefined()
+    })
+
+    // TPF-166 U3 (D2): the one counts header of the page, with the shared-capacity Total line.
+    it('U3: the header lines exactly, and Total unlimited when either limit is null', async () => {
+        const counts = { writeUsers: 3, readUsers: 2, totalUsers: 5, noRoleUsers: 4, outsideLimit: 1, countedAt: '2026-11-09T08:00:00Z' }
+        const header = (w: VueWrapper) => byId(w, 'seat-counts').findAll('span').map(e => e.text())
+        query.mockImplementation(async () => ({ data: { licenseSeatUsers: [],
+            license: { maxWriteUsers: 2, maxReadUsers: 2, globalUserCounts: structuredClone(counts) } } }))
+        const w = await mountView()
+        expect(header(w)).toEqual(['Write: 3 / 2', 'Read: 2 / 2', 'Total: 5 / 4',
+            'Users without a role (not counted): 4', 'Outside the limit: 1', 'counted ' + dateText('2026-11-09T08:00:00Z')])
+        for (const limits of [{ maxWriteUsers: 2, maxReadUsers: null }, { maxWriteUsers: null, maxReadUsers: 2 }]) {
+            query.mockImplementation(async () => ({ data: { licenseSeatUsers: [],
+                license: { ...limits, globalUserCounts: structuredClone(counts) } } }))
+            const v = await mountView()
+            expect(byId(v, 'seat-counts-total').text()).toBe('Total: 5 / unlimited')
+        }
+    })
+
+    it('U3: the view exposes reload, the Refresh path (a no-cache re-query)', async () => {
+        const w = await mountView()
+        expect(typeof (w.vm as any).reload).toBe('function')
+        await (w.vm as any).reload()
+        expect(query).toHaveBeenCalledTimes(2)
+        expect(query.mock.calls[1][0].query).toBe(LICENSE_SEAT_USERS_QUERY)
+        expect(query.mock.calls[1][0].fetchPolicy).toBe('no-cache')
     })
 
     it('Refresh re-queries with no-cache and shows the new rows', async () => {
@@ -236,12 +263,32 @@ describe('T-1 (U8): a global administrator beyond the write limit', () => {
 
 describe('SystemSettings mounts the view in the license block', () => {
     const page = readFileSync(resolve(__dirname, 'SystemSettings.vue'), 'utf8')
-    it('inside the licensed branch, after Update License, and merges the counts it emits', () => {
+    const view = readFileSync(resolve(__dirname, 'LicenseSeatUsers.vue'), 'utf8')
+    const documentOf = (name: string) => {
+        const start = page.indexOf(name)
+        expect(start).toBeGreaterThan(-1)
+        return page.slice(start, page.indexOf('`', start))
+    }
+    it('inside the licensed branch, after Update License, holding a ref to reload it (TPF-166 U3)', () => {
         const licensed = page.slice(page.indexOf('<div v-if="licenseData">'), page.indexOf('<div v-else>'))
-        expect(licensed).toMatch(/Update License<\/n-button>\s*<LicenseSeatUsers @license="onSeatLicense" \/>/)
-        expect(licensed).toContain('licenseData.globalUserCounts?.noRoleUsers')
-        expect(licensed).toContain('licenseData.globalUserCounts?.outsideLimit')
+        expect(licensed).toMatch(/Update License<\/n-button>\s*<LicenseSeatUsers ref="seatUsers" \/>/)
         expect(page).toMatch(/import LicenseSeatUsers from '\.\/LicenseSeatUsers\.vue'/)
-        expect(page).toMatch(/licenseData\.value = \{ \.\.\.\(licenseData\.value \|\| \{\}\), \.\.\.fresh \}/)
+        expect(page).toContain('const seatUsers = ref<InstanceType<typeof LicenseSeatUsers> | null>(null)')
+        expect(page).toContain('await seatUsers.value?.reload()')
+    })
+    it('shows no second copy of the instance figures (TPF-166 D2)', () => {
+        for (const gone of ['globalUserCounts', 'maxWriteUsers', 'maxReadUsers', 'license-no-role-users',
+            'license-outside-limit', 'onSeatLicense', '@license']) {
+            expect(page).not.toContain(gone)
+        }
+        for (const name of ['query getLicense', 'mutation uploadLicense']) {
+            const doc = documentOf(name)
+            expect(doc.split('{').length - 1).toBe(2)
+            const selection = doc.slice(doc.lastIndexOf('{') + 1, doc.indexOf('}')).split(/\s+/).filter(Boolean)
+            expect(selection).toEqual(['baseUri', 'validFrom', 'validTo'])
+        }
+        expect(view).not.toContain('defineEmits')
+        expect(view).not.toContain("emit('license'")
+        expect(view).toContain('defineExpose({ reload: load })')
     })
 })

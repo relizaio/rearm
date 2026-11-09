@@ -215,8 +215,11 @@ remove them from any user group that grants more.
 
 Global administrators see the seats in **System Settings** > **License**:
 
-- the counts: write users and read users against the limits, users without a
-  role (not counted), and the number of accounts outside the limit;
+- the counts: write users and read users against the limits, the **Total** line
+  (`Total: T / (maxWrite + maxRead)`: read users may use spare write capacity),
+  users without a role (not counted), the number of accounts outside the limit,
+  and when they were counted. Global administrators count as write users here,
+  whatever their role in each organization;
 - **License Seats**: one row per person with email, seat type (`WRITE`, `READ` or
   `NONE`), account creation date, last login, and an `outside the limit` flag for
   everyone who would be refused at sign-in. Global administrators are marked;
@@ -225,6 +228,8 @@ Global administrators see the seats in **System Settings** > **License**:
   in any organization, after a confirmation that names how many. Global
   administrators and your own account are never inactivated. These accounts
   hold no seat, so this tidies the list but frees no seat.
+
+Each organization's **Statistics** page shows the organization's own **Users Without a Role** beside its write and read-only users: members whose effective permission in that organization is NONE; they hold no seat there. A global administrator with no role in the organization is counted there too, while System Settings counts them as a write user.
 
 When accounts are outside the limit, global administrators and administrators of
 the default organization see a banner at the top of every page:
