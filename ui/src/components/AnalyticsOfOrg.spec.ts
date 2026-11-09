@@ -211,6 +211,55 @@ describe('AnalyticsOfOrg cached totals', () => {
     })
 })
 
+// Task TPF-166 D3: the third user figure, members whose effective permission in this organization is NONE.
+const NO_ROLE = Object.freeze({ ...FULL, users_without_role: 2 })
+const NO_ROLE_LABELS = ['Admin & Write Users', 'Artifacts', 'Branches', 'Commits', 'Components',
+    'Deliverables', 'Feature sets', 'Products', 'Read-Only Users', 'Releases', 'Users Without a Role',
+    'VCS Repositories']
+
+describe('AnalyticsOfOrg users without a role', () => {
+    let errorSpy: any
+
+    beforeEach(() => {
+        query.mockReset()
+        errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+        while (mounted.length) mounted.pop().unmount()
+        errorSpy.mockRestore()
+    })
+
+    it('U1: the key renders one labelled row in alphabetical order, everything else as before', async () => {
+        const w = await mountWith(NO_ROLE)
+        expect(labels(w)).toEqual(NO_ROLE_LABELS)
+        expect(byId(w, 'totals-value-users_without_role').text()).toBe('2')
+        expect(w.text()).not.toContain('Inactive')
+        expect(w.text()).not.toContain('Users without role')
+        expectLiveCells(w)
+        expectFullCachedCells(w)
+        expect(byId(w, 'totals-counted-at-note').text()).toBe(SENTENCE + fmt('2026-11-02T00:00:03.512417Z'))
+        expect(errorSpy).not.toHaveBeenCalled()
+    })
+
+    it('U1: a zero renders as 0, not as an empty cell', async () => {
+        const w = await mountWith({ ...NO_ROLE, users_without_role: 0 })
+        expect(byId(w, 'totals-value-users_without_role').text()).toBe('0')
+    })
+
+    it('U2: a backend without the key (LEGACY, LIVE) renders no such row and no error', async () => {
+        for (const map of [LEGACY, LIVE]) {
+            const w = await mountWith(map)
+            expect(labels(w)).not.toContain('Users Without a Role')
+            expect(byId(w, 'totals-value-users_without_role').exists()).toBe(false)
+            expectLiveCells(w)
+        }
+        const legacy = mounted[0]
+        expect(labels(legacy)).toEqual(LABELS)
+        expect(errorSpy).not.toHaveBeenCalled()
+    })
+})
+
 describe('AnalyticsOfOrg source pins', () => {
     const source = readFileSync(resolve(__dirname, 'AnalyticsOfOrg.vue'), 'utf8')
     const count = (needle: string) => source.split(needle).length - 1

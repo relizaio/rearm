@@ -4,7 +4,8 @@
         <div v-if="counts" class="seat-counts" data-testid="seat-counts">
             <span data-testid="seat-counts-write"><strong>Write:</strong> {{ counts.writeUsers ?? 0 }} / {{ limitText(maxWrite) }}</span>
             <span data-testid="seat-counts-read"><strong>Read:</strong> {{ counts.readUsers ?? 0 }} / {{ limitText(maxRead) }}</span>
-            <span data-testid="seat-counts-norole"><strong>No role (not counted):</strong> {{ counts.noRoleUsers ?? 0 }}</span>
+            <span data-testid="seat-counts-total"><strong>Total:</strong> {{ counts.totalUsers ?? 0 }} / {{ totalLimitText }}</span>
+            <span data-testid="seat-counts-norole"><strong>Users without a role (not counted):</strong> {{ counts.noRoleUsers ?? 0 }}</span>
             <span data-testid="seat-counts-outside"><strong>Outside the limit:</strong> {{ counts.outsideLimit ?? 0 }}</span>
             <span v-if="counts.countedAt" class="text-muted" data-testid="seat-counts-at">counted {{ dateText(counts.countedAt) }}</span>
         </div>
@@ -39,7 +40,7 @@
 // The license seat view (task TPF-168, TPF-165 D10): every seat holder of the instance, one row per
 // email (type READ/WRITE/NONE, created, last login, outside-limit flag), the counts header, Refresh
 // and "Remove accounts with no role". Rendered by SystemSettings.vue for global administrators on
-// Pro. Every read is a fresh count on the server; the client never caches it. Every number and flag
+// Pro; its counts header is the page's only copy of the instance seat figures (task TPF-166 D2). Every read is a fresh count on the server; the client never caches it. Every number and flag
 // is the server's field as given: the outside-limit flag reads `admission` alone and the
 // Global administrator marker reads `globalAdmin` alone (no UI rule combines them). Server texts go
 // to Swal as `text`, never as the positional shorthand, whose second argument is HTML.
@@ -52,8 +53,6 @@ import {
     LICENSE_SEAT_USERS_QUERY, REMOVE_ACCOUNTS_WITHOUT_ROLE, SeatAdmission, removeNoRoleConfirmText
 } from '@/utils/licenseSeats'
 
-const emit = defineEmits<{ (e: 'license', license: any): void }>()
-
 const rows: Ref<any[]> = ref([])
 const license: Ref<any> = ref(null)
 const loading = ref(false)
@@ -65,6 +64,12 @@ const maxWrite = computed(() => license.value?.maxWriteUsers)
 const maxRead = computed(() => license.value?.maxReadUsers)
 
 const limitText = (n: any): string => (n === null || n === undefined) ? 'unlimited' : String(n)
+// the shared capacity (TPF-165 D2: read may use spare write capacity): maxWrite + maxRead, unlimited when either is
+const totalLimitText = computed(() => {
+    const w = maxWrite.value
+    const r = maxRead.value
+    return (w === null || w === undefined || r === null || r === undefined) ? 'unlimited' : String(w + r)
+})
 const dateText = (d: string): string => d ? new Date(d).toLocaleString('en-CA') : ''
 
 async function load () {
@@ -75,7 +80,6 @@ async function load () {
         rows.value = resp?.data?.licenseSeatUsers ?? []
         license.value = resp?.data?.license ?? null
         loadError.value = ''
-        if (license.value) emit('license', license.value)
     } catch (err: any) {
         loadError.value = graphqlRefusalText(err)
     } finally {
@@ -108,6 +112,9 @@ async function removeNoRole () {
 }
 
 onMounted(load)
+
+// SystemSettings.vue reloads the header after a license upload, through the Refresh path
+defineExpose({ reload: load })
 </script>
 
 <style scoped lang="scss">
