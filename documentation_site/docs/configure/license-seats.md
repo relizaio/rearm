@@ -13,8 +13,12 @@ seat, how ReARM decides who may sign in when there are more people than seats,
 how single sign-on users without a role are handled, and what to do when an
 instance is over its license.
 
-A license without user limits enforces nothing described here. API keys and AI
-agents never take a seat.
+A license without user limits enforces no seat limits: no change is refused for
+lack of a seat, and nobody is refused at sign-in or flagged as outside the
+limit. The
+[SSO users without a role](#sso-users-without-a-role) setting, and its `NO-ROLE`
+refusal of a first sign-in, applies on every license, with or without user
+limits. API keys and AI agents never take a seat.
 
 ## Who holds a seat
 
@@ -88,17 +92,27 @@ person joins; if no seat is free then, the join is refused with:
 ReARM has no free user seat for this membership. Please contact your ReARM administrator. Reference: SEAT-FULL.
 ```
 
-When single sign-on would add a user to a group with a write permission at
-sign-in and no write seat is free, ReARM skips that one change instead of
+When single sign-on would add a user to a group that raises their seat (from
+no seat to a read or write seat, or from a read seat to a write seat) at sign-in,
+and the license has no room for it, ReARM skips that one change instead of
 refusing the sign-in: the user keeps the access they had, every other change from
 the identity provider (including removals) still applies, and administrators get
-an event:
+an event. When the write limit is the one reached, the event reads:
 
 ```
 SSO group sync did not add <user> to <group>: no free write seat (W of M). The user keeps read access.
 ```
 
-(A user who had no read seat either is told they keep their current access.)
+When the total is the limit that is reached (this can happen for a read group,
+or for a write group while write seats are still free), it reads:
+
+```
+SSO group sync did not add <user> to <group>: no free seat (T of X). The user keeps read access.
+```
+
+Here `T` is the number of seats in use in total and `X` is `N + M`. A user who
+had no seat before the change is told instead: `The user keeps their current
+access.`
 
 ## Admission by creation date
 
