@@ -13,12 +13,12 @@ import io.reliza.model.AnalysisResponse;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
 import io.reliza.model.FindingType;
+import io.reliza.model.ImportMode;
 import io.reliza.model.IssuerClass;
 import io.reliza.model.LocationType;
 import io.reliza.model.ProposalStatus;
 import io.reliza.model.SignatureStatus;
 import io.reliza.model.SourceFormat;
-import io.reliza.model.VexImportMode;
 import io.reliza.model.VexStatementProposalData;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import lombok.Data;
@@ -55,7 +55,7 @@ public class VexStatementProposalWebDto {
 	private UUID actedBy;
 	private List<String> translationNotes;
 	private IssuerClass issuerClass;
-	private VexImportMode userImportMode;
+	private ImportMode userImportMode;
 	private IssuerClass userIssuerClassOverride;
 	private String demotionReason;
 

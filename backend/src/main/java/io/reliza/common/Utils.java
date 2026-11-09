@@ -6,6 +6,7 @@ package io.reliza.common;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
@@ -485,6 +486,14 @@ public class Utils {
 			// SHA-256 is required of every JRE.
 			throw new IllegalStateException("SHA-256 unavailable", e);
 		}
+	}
+
+	/**
+	 * Lowercase hex SHA-256 of the UTF-8 bytes of {@code value}. Import dedupe hashes and
+	 * stored CLI session codes depend on this exact rendering.
+	 */
+	public static String sha256Hex (String value) {
+		return bytesToHexSha256(value.getBytes(StandardCharsets.UTF_8));
 	}
 
 	  /**

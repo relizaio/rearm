@@ -27,6 +27,7 @@ import io.reliza.model.ArtifactData.InventoryType;
 import io.reliza.model.ArtifactData.SerializationFormat;
 import io.reliza.model.ArtifactData.SpecVersion;
 import io.reliza.model.ArtifactData.StoredIn;
+import io.reliza.model.ImportMode;
 import io.reliza.model.IssuerClass;
 import io.reliza.model.VexImportMode;
 import io.reliza.model.Link;
@@ -83,7 +84,15 @@ public class ArtifactDto {
 	@JsonProperty("digestRecords")
 	private Set<DigestRecord> digestRecords = new HashSet<>();
 
-	// v1.2 VEX-only — populated by the upload form when type=VEX, ignored otherwise.
+	// Inbound import controls, read by the import handler of the artifact's type (VEX today),
+	// ignored for other types. Not persisted on ArtifactData.
+	@JsonProperty("importScope")
+	private AnalysisScope importScope;
+
+	@JsonProperty("importMode")
+	private ImportMode importMode;
+
+	// Deprecated aliases of importScope / importMode; see resolveImportAliases.
 	@JsonProperty("vexScope")
 	private AnalysisScope vexScope;
 
@@ -129,4 +138,14 @@ public class ArtifactDto {
 	 */
 	@JsonIgnore
 	private Boolean bomCopy;
+
+	/**
+	 * Folds the deprecated {@code vexScope} / {@code vexImportMode} upload fields into
+	 * {@code importScope} / {@code importMode}; a generic field that was sent wins. Called once
+	 * where each upload path builds its DTO, so import handlers read the generic fields only.
+	 */
+	public void resolveImportAliases() {
+		if (importScope == null) importScope = vexScope;
+		if (importMode == null && vexImportMode != null) importMode = ImportMode.valueOf(vexImportMode.name());
+	}
 }

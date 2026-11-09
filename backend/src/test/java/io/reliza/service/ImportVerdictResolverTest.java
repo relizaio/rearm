@@ -6,6 +6,7 @@ package io.reliza.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -15,41 +16,41 @@ import org.junit.jupiter.api.Test;
 
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
+import io.reliza.model.ImportMode;
 import io.reliza.model.IssuerClass;
 import io.reliza.model.TrustAction;
-import io.reliza.model.VexImportMode;
 import io.reliza.model.VulnAnalysisData;
 
-class VexVerdictResolverTest {
+class ImportVerdictResolverTest {
 
-    private final VexVerdictResolver r = new VexVerdictResolver();
+    private final ImportVerdictResolver r = new ImportVerdictResolver();
 
     @Test
     void selfAutoAcceptPolicyAndAutoAcceptUserStaysAuto() {
-        var v = r.resolve(IssuerClass.SELF, AnalysisState.NOT_AFFECTED, VexImportMode.AUTO_ACCEPT);
+        var v = r.resolve(IssuerClass.SELF, AnalysisState.NOT_AFFECTED, ImportMode.AUTO_ACCEPT);
         assertEquals(TrustAction.AUTO_ACCEPT, v.action());
         assertNull(v.demotionReason());
     }
 
     @Test
     void selfAutoAcceptPolicyDemotedByUserStage() {
-        var v = r.resolve(IssuerClass.SELF, AnalysisState.NOT_AFFECTED, VexImportMode.STAGE);
+        var v = r.resolve(IssuerClass.SELF, AnalysisState.NOT_AFFECTED, ImportMode.STAGE);
         assertEquals(TrustAction.STAGE, v.action());
     }
 
     @Test
     void thirdPartyStagePolicyStaysStageRegardlessOfUser() {
         assertEquals(TrustAction.STAGE,
-            r.resolve(IssuerClass.THIRD_PARTY, AnalysisState.EXPLOITABLE, VexImportMode.AUTO_ACCEPT).action());
+            r.resolve(IssuerClass.THIRD_PARTY, AnalysisState.EXPLOITABLE, ImportMode.AUTO_ACCEPT).action());
         assertEquals(TrustAction.STAGE,
-            r.resolve(IssuerClass.THIRD_PARTY, AnalysisState.NOT_AFFECTED, VexImportMode.AUTO_ACCEPT).action());
+            r.resolve(IssuerClass.THIRD_PARTY, AnalysisState.NOT_AFFECTED, ImportMode.AUTO_ACCEPT).action());
     }
 
     @Test
     void userRejectIsSticky() {
         // Even SELF + EXPLOITABLE (auto-accept by policy) reduces to REJECT when user picks REJECT.
         assertEquals(TrustAction.REJECT,
-            r.resolve(IssuerClass.SELF, AnalysisState.EXPLOITABLE, VexImportMode.REJECT).action());
+            r.resolve(IssuerClass.SELF, AnalysisState.EXPLOITABLE, ImportMode.REJECT).action());
     }
 
     @Test
@@ -65,31 +66,31 @@ class VexVerdictResolverTest {
     void vendorLoudAutoQuietStaged() {
         // Vendor + EXPLOITABLE → AUTO; vendor + NOT_AFFECTED → STAGE (regardless of user picking AUTO).
         assertEquals(TrustAction.AUTO_ACCEPT,
-            r.resolve(IssuerClass.VENDOR, AnalysisState.EXPLOITABLE, VexImportMode.AUTO_ACCEPT).action());
+            r.resolve(IssuerClass.VENDOR, AnalysisState.EXPLOITABLE, ImportMode.AUTO_ACCEPT).action());
         assertEquals(TrustAction.STAGE,
-            r.resolve(IssuerClass.VENDOR, AnalysisState.NOT_AFFECTED, VexImportMode.AUTO_ACCEPT).action());
+            r.resolve(IssuerClass.VENDOR, AnalysisState.NOT_AFFECTED, ImportMode.AUTO_ACCEPT).action());
     }
 
     @Test
     void leastPermissiveOrderingHoldsForAllCombinations() {
         // policy=AUTO, user=AUTO → AUTO
         assertEquals(TrustAction.AUTO_ACCEPT,
-            r.resolve(IssuerClass.SELF, AnalysisState.EXPLOITABLE, VexImportMode.AUTO_ACCEPT).action());
+            r.resolve(IssuerClass.SELF, AnalysisState.EXPLOITABLE, ImportMode.AUTO_ACCEPT).action());
         // policy=AUTO, user=STAGE → STAGE
         assertEquals(TrustAction.STAGE,
-            r.resolve(IssuerClass.SELF, AnalysisState.EXPLOITABLE, VexImportMode.STAGE).action());
+            r.resolve(IssuerClass.SELF, AnalysisState.EXPLOITABLE, ImportMode.STAGE).action());
         // policy=STAGE, user=AUTO → STAGE  (user can't widen past policy)
         assertEquals(TrustAction.STAGE,
-            r.resolve(IssuerClass.THIRD_PARTY, AnalysisState.EXPLOITABLE, VexImportMode.AUTO_ACCEPT).action());
+            r.resolve(IssuerClass.THIRD_PARTY, AnalysisState.EXPLOITABLE, ImportMode.AUTO_ACCEPT).action());
         // policy=STAGE, user=STAGE → STAGE
         assertEquals(TrustAction.STAGE,
-            r.resolve(IssuerClass.THIRD_PARTY, AnalysisState.EXPLOITABLE, VexImportMode.STAGE).action());
+            r.resolve(IssuerClass.THIRD_PARTY, AnalysisState.EXPLOITABLE, ImportMode.STAGE).action());
         // policy=STAGE, user=REJECT → REJECT
         assertEquals(TrustAction.REJECT,
-            r.resolve(IssuerClass.THIRD_PARTY, AnalysisState.EXPLOITABLE, VexImportMode.REJECT).action());
+            r.resolve(IssuerClass.THIRD_PARTY, AnalysisState.EXPLOITABLE, ImportMode.REJECT).action());
         // policy=AUTO, user=REJECT → REJECT
         assertEquals(TrustAction.REJECT,
-            r.resolve(IssuerClass.SELF, AnalysisState.EXPLOITABLE, VexImportMode.REJECT).action());
+            r.resolve(IssuerClass.SELF, AnalysisState.EXPLOITABLE, ImportMode.REJECT).action());
     }
 
     @Test
@@ -97,9 +98,9 @@ class VexVerdictResolverTest {
         // ORG row says NOT_AFFECTED (suppressing); incoming RELEASE proposal says EXPLOITABLE (loud).
         VulnAnalysisData broader = analysis(AnalysisScope.ORG, AnalysisState.NOT_AFFECTED);
         var v = r.resolveWithConflictCheck(IssuerClass.SELF, AnalysisState.EXPLOITABLE,
-            VexImportMode.AUTO_ACCEPT, AnalysisScope.RELEASE, List.of(broader));
+            ImportMode.AUTO_ACCEPT, AnalysisScope.RELEASE, List.of(broader));
         assertEquals(TrustAction.STAGE, v.action());
-        assertEquals(VexVerdictResolver.DEMOTION_REASON_BROADER_SCOPE, v.demotionReason());
+        assertEquals(ImportVerdictResolver.DEMOTION_REASON_BROADER_SCOPE, v.demotionReason());
     }
 
     @Test
@@ -107,7 +108,7 @@ class VexVerdictResolverTest {
         // Both suppressing (NOT_AFFECTED ↔ FALSE_POSITIVE): no metric impact, no demotion.
         VulnAnalysisData broader = analysis(AnalysisScope.ORG, AnalysisState.NOT_AFFECTED);
         var v = r.resolveWithConflictCheck(IssuerClass.SELF, AnalysisState.FALSE_POSITIVE,
-            VexImportMode.AUTO_ACCEPT, AnalysisScope.RELEASE, List.of(broader));
+            ImportMode.AUTO_ACCEPT, AnalysisScope.RELEASE, List.of(broader));
         assertEquals(TrustAction.AUTO_ACCEPT, v.action());
         assertNull(v.demotionReason());
     }
@@ -117,7 +118,7 @@ class VexVerdictResolverTest {
         // Existing RELEASE row, incoming COMPONENT proposal — RELEASE is NOT broader than COMPONENT.
         VulnAnalysisData narrower = analysis(AnalysisScope.RELEASE, AnalysisState.NOT_AFFECTED);
         var v = r.resolveWithConflictCheck(IssuerClass.SELF, AnalysisState.EXPLOITABLE,
-            VexImportMode.AUTO_ACCEPT, AnalysisScope.COMPONENT, List.of(narrower));
+            ImportMode.AUTO_ACCEPT, AnalysisScope.COMPONENT, List.of(narrower));
         assertEquals(TrustAction.AUTO_ACCEPT, v.action());
     }
 
@@ -126,7 +127,7 @@ class VexVerdictResolverTest {
         // Already STAGE (e.g., user picked STAGE) — no demotion, no reason needed.
         VulnAnalysisData broader = analysis(AnalysisScope.ORG, AnalysisState.NOT_AFFECTED);
         var v = r.resolveWithConflictCheck(IssuerClass.SELF, AnalysisState.EXPLOITABLE,
-            VexImportMode.STAGE, AnalysisScope.RELEASE, List.of(broader));
+            ImportMode.STAGE, AnalysisScope.RELEASE, List.of(broader));
         assertEquals(TrustAction.STAGE, v.action());
         assertNull(v.demotionReason());
     }
@@ -134,7 +135,7 @@ class VexVerdictResolverTest {
     @Test
     void conflictGuardEmptyExistingRowsLetsAutoThrough() {
         var v = r.resolveWithConflictCheck(IssuerClass.SELF, AnalysisState.EXPLOITABLE,
-            VexImportMode.AUTO_ACCEPT, AnalysisScope.RELEASE, List.of());
+            ImportMode.AUTO_ACCEPT, AnalysisScope.RELEASE, List.of());
         assertEquals(TrustAction.AUTO_ACCEPT, v.action());
     }
 
@@ -145,7 +146,7 @@ class VexVerdictResolverTest {
         VulnAnalysisData orgRow = analysis(AnalysisScope.ORG, AnalysisState.NOT_AFFECTED);
         VulnAnalysisData componentRow = analysis(AnalysisScope.COMPONENT, AnalysisState.NOT_AFFECTED);
         var v = r.resolveWithConflictCheck(IssuerClass.SELF, AnalysisState.EXPLOITABLE,
-            VexImportMode.AUTO_ACCEPT, AnalysisScope.RELEASE, List.of(orgRow, componentRow));
+            ImportMode.AUTO_ACCEPT, AnalysisScope.RELEASE, List.of(orgRow, componentRow));
         assertEquals(TrustAction.STAGE, v.action());
         assertNotNull(v.demotionReason());
     }
@@ -155,5 +156,17 @@ class VexVerdictResolverTest {
         when(d.getScope()).thenReturn(scope);
         when(d.getAnalysisState()).thenReturn(state);
         return d;
+    }
+
+    @Test
+    void genericGateIsCombinedWithTheUserModeLeastPermissiveWins() {
+        assertEquals(TrustAction.AUTO_ACCEPT, r.resolve(TrustAction.AUTO_ACCEPT, ImportMode.AUTO_ACCEPT).action());
+        assertEquals(TrustAction.AUTO_ACCEPT, r.resolve(TrustAction.AUTO_ACCEPT, null).action());
+        assertEquals(TrustAction.STAGE, r.resolve(TrustAction.AUTO_ACCEPT, ImportMode.STAGE).action());
+        assertEquals(TrustAction.STAGE, r.resolve(TrustAction.STAGE, ImportMode.AUTO_ACCEPT).action());
+        assertEquals(TrustAction.REJECT, r.resolve(TrustAction.STAGE, ImportMode.REJECT).action());
+        assertEquals(TrustAction.REJECT, r.resolve(TrustAction.REJECT, ImportMode.AUTO_ACCEPT).action());
+        assertNull(r.resolve(TrustAction.AUTO_ACCEPT, ImportMode.AUTO_ACCEPT).demotionReason());
+        assertThrows(NullPointerException.class, () -> r.resolve((TrustAction) null, ImportMode.AUTO_ACCEPT));
     }
 }

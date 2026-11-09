@@ -118,6 +118,7 @@ import io.reliza.model.DownloadLogData.DownloadSubjectType;
 import io.reliza.model.DownloadLogData.DownloadType;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactAttachmentGuard;
+import io.reliza.service.ArtifactImportRegistry;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.SbomUpdateGuard;
 import io.reliza.service.SbomWriteAuthority;
@@ -155,9 +156,6 @@ import io.reliza.service.SupportInjectionService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
-import io.reliza.model.dto.VexImportResult;
-import io.reliza.model.dto.VexImportSummary;
-import io.reliza.service.VexImportService;
 import io.reliza.service.oss.OssPerspectiveService;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.service.RebomService.BomMediaType;
@@ -274,7 +272,7 @@ public class ReleaseDatafetcher {
 	private io.reliza.service.tea.TeaTransformerService teaTransformerService;
 
 	@Autowired
-	private VexImportService vexImportService;
+	private ArtifactImportRegistry importRegistry;
 
 	/**
 	 * Dual-lane: {@code release} is declared once (programmatic.graphqls) and the
@@ -1881,6 +1879,7 @@ public class ReleaseDatafetcher {
 			throw new RelizaException("artifactInput.artifact.artifacts: nested artifacts are not accepted by addArtifactManual; add each artifact with its own call");
 		}
 		ArtifactDto artDto = InputConversion.convert(artifact, ArtifactDto.class, "artifactInput.artifact");
+		artDto.resolveImportAliases();
 		artDto.setOrg(rd.getOrg());
 		if(null!= inputArtifactUuid){
 			artDto.setUuid(inputArtifactUuid);
@@ -1919,8 +1918,9 @@ public class ReleaseDatafetcher {
 			throw new RelizaException(validationErrors.stream().collect(Collectors.joining(", ")));
 		}
 
-		if (ArtifactType.VEX.equals(artDto.getType()) && multipartFile != null) {
-			vexImportService.verifyDispatchPreconditions(rd);
+		boolean runsImport = importRegistry.isImportable(artDto.getType()) && multipartFile != null;
+		if (runsImport) {
+			importRegistry.verifyPreconditions(List.of(artDto.getType()), rd);
 		}
 
 		UUID artId = null;
@@ -2003,17 +2003,16 @@ public class ReleaseDatafetcher {
 			UUID reconcileReleaseUuid = rd.getUuid();
 			TxUtils.afterCommitOrNow(() -> releaseService.reconcileMergedSbomRoutine(reconcileReleaseUuid, wu));
 
-			if (ArtifactType.VEX.equals(artDto.getType()) && multipartFile != null) {
+			if (runsImport) {
+				byte[] content = null;
 				try {
-					VexImportResult vexResult = vexImportService.dispatchFromArtifact(
-						artId, artDto, rd, belongsTo,
-						multipartFile.getBytes(), wu);
-					// Stamp the outcome on the artifact so the UI can report
-					// matched / unmatched counts instead of a silently empty VEX tab.
-					artifactService.saveArtifactVexImportSummary(artId, VexImportSummary.fromResult(vexResult), wu);
-				} catch (Exception e) {
-					log.warn("VEX import dispatch failed for artifact {} on release {}: {}",
-						artId, rd.getUuid(), e.getMessage());
+					content = multipartFile.getBytes();
+				} catch (IOException e) {
+					log.warn("Failed to read {} upload for import of artifact {}: {}",
+						artDto.getType(), artId, e.getMessage());
+				}
+				if (content != null) {
+					importRegistry.dispatchAndRecord(artId, artDto, rd, belongsTo, content, wu);
 				}
 			}
 		}

@@ -21,10 +21,10 @@ import org.mockito.ArgumentCaptor;
 
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
+import io.reliza.model.ImportMode;
 import io.reliza.model.IssuerClass;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.SourceFormat;
-import io.reliza.model.VexImportMode;
 import io.reliza.model.VexStatementProposalData;
 import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.VulnerabilityRecordData;
@@ -150,14 +150,14 @@ class VexImportServiceTest {
         when(otherRd.getComponent()).thenReturn(componentB);
         when(srs.getReleaseDataLight(boundRelease, org)).thenReturn(Optional.of(boundRd));
         when(srs.getReleaseDataLight(otherRelease, org)).thenReturn(Optional.of(otherRd));
-        VexMatcher matcher = new VexMatcher();
+        PurlScopeMatcher matcher = new PurlScopeMatcher();
         matcher.purlReleaseResolver = purlResolver;
         matcher.scopeTargetResolver = new ScopeTargetResolver();
         matcher.scopeTargetResolver.sharedReleaseService = srs;
         svc.matcher = matcher;
 
         svc.vulnAnalysisService = mock(VulnAnalysisService.class);
-        svc.verdictResolver = new VexVerdictResolver();
+        svc.verdictResolver = new ImportVerdictResolver();
         VexStatementProposalService proposals = mock(VexStatementProposalService.class);
         ArgumentCaptor<VexStatementProposalData> created =
             ArgumentCaptor.forClass(VexStatementProposalData.class);
@@ -172,7 +172,7 @@ class VexImportServiceTest {
         input.setIssuerClass(IssuerClass.VENDOR);
         input.setRestrictToRelease(boundRelease);
         input.setVexScope(AnalysisScope.COMPONENT);
-        input.setVexImportMode(VexImportMode.STAGE);
+        input.setVexImportMode(ImportMode.STAGE);
 
         VexImportResult result = svc.importPipeline(input, null);
 

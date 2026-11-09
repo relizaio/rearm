@@ -93,8 +93,6 @@ import io.reliza.model.VulnerabilityRecordData;
 import io.reliza.model.VulnerabilityRecordData.AffectedRange;
 import io.reliza.model.VulnerabilityRecordData.CvssScore;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
-import io.reliza.model.dto.VexImportResult;
-import io.reliza.model.dto.VexImportSummary;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -264,7 +262,7 @@ public class ReleaseService {
 	private SbomComponentService sbomComponentService;
 
 	@Autowired
-	private VexImportService vexImportService;
+	private ArtifactImportRegistry importRegistry;
 
 	@Autowired
 	private SupportInjectionService supportInjectionService;
@@ -2239,104 +2237,92 @@ public class ReleaseService {
 	}
 
 	/**
-	 * Per-VEX-artifact capture taken before {@link ArtifactService#uploadListOfArtifacts}
+	 * Per-import-artifact capture taken before {@link ArtifactService#uploadListOfArtifacts}
 	 * runs: the raw document {@code content} (the upload strips the {@code MultipartFile}
 	 * off the map) plus the {@code inputDto} parsed from the input map.
 	 *
-	 * <p>The input DTO is the only carrier of the VEX import-control fields —
-	 * {@code vexScope} / {@code vexImportMode} / {@code userIssuerClassOverride}. Those
+	 * <p>The input DTO is the only carrier of the import-control fields --
+	 * {@code importScope} / {@code importMode} / {@code userIssuerClassOverride}. Those
 	 * are transient: they are <em>not</em> columns on {@link ArtifactData}, so once the
 	 * artifact is persisted they cannot be recovered from the stored row. They must be
 	 * read off the input before upload and threaded into the dispatch DTO by hand.
 	 */
-	private record VexUpload(byte[] content, ArtifactDto inputDto) {}
+	private record ImportUpload(byte[] content, ArtifactDto inputDto) {}
 
 	/**
-	 * Capture the raw bytes and input DTO of every VEX artifact in an upload batch
-	 * <em>before</em> {@link ArtifactService#uploadListOfArtifacts} consumes the
-	 * {@code MultipartFile} entries, and verify the VEX-import precondition once if the
-	 * batch contains any VEX. addArtifactProgrammatic checks the same precondition for the
-	 * whole input up front in {@link #resolveProgrammaticArtifactTargets}, before any part is
-	 * uploaded; this guard keeps the public {@code process*Artifacts} methods from storing a VEX
-	 * the import will never run on when a caller skips that check.
+	 * Capture the raw bytes and input DTO of every importable artifact (VEX today) in an
+	 * upload batch <em>before</em> {@link ArtifactService#uploadListOfArtifacts} consumes the
+	 * {@code MultipartFile} entries, and verify each import type's precondition once.
+	 * addArtifactProgrammatic checks the same preconditions for the whole input up front in
+	 * {@link #resolveProgrammaticArtifactTargets}, before any part is uploaded; this guard keeps
+	 * the public {@code process*Artifacts} methods from storing an artifact the import will never
+	 * run on when a caller skips that check.
 	 *
-	 * <p>The returned list is index-aligned with {@code artifactsList} — {@code null}
-	 * for non-VEX entries — and is meant to be handed to {@link #dispatchVexArtifacts}
-	 * after the upload completes.
+	 * <p>The returned list is index-aligned with {@code artifactsList} -- {@code null}
+	 * for entries that run no import -- and is meant to be handed to
+	 * {@link #dispatchImportArtifacts} after the upload completes.
 	 */
-	private List<VexUpload> captureVexUploads(List<Map<String, Object>> artifactsList, ReleaseData rd) throws RelizaException {
-		List<VexUpload> vexByIndex = new ArrayList<>(artifactsList.size());
+	private List<ImportUpload> captureImportUploads(List<Map<String, Object>> artifactsList, ReleaseData rd) throws RelizaException {
+		List<ImportUpload> importByIndex = new ArrayList<>(artifactsList.size());
 		for (Map<String, Object> a : artifactsList) {
-			VexUpload vu = null;
-			if (isVexUpload(a)) {
+			ImportUpload iu = null;
+			if (isImportUpload(a)) {
 				byte[] bytes = null;
 				try { bytes = ((MultipartFile) a.get("file")).getBytes(); }
 				catch (IOException e) {
-					log.warn("Failed to capture VEX bytes for downstream dispatch: {}", e.getMessage());
+					log.warn("Failed to capture import bytes for downstream dispatch: {}", e.getMessage());
 				}
-				// The same DTO the upload makes of this entry, for the VEX control fields.
+				// The same DTO the upload makes of this entry, for the import control fields.
 				ArtifactDto inputDto = ArtifactService.uploadDtoOf(a);
-				vu = new VexUpload(bytes, inputDto);
+				iu = new ImportUpload(bytes, inputDto);
 			}
-			vexByIndex.add(vu);
+			importByIndex.add(iu);
 		}
-		if (vexByIndex.stream().anyMatch(Objects::nonNull)) {
-			vexImportService.verifyDispatchPreconditions(rd);
-		}
-		return vexByIndex;
+		importRegistry.verifyPreconditions(artifactsList.stream().filter(this::isImportUpload)
+				.map(a -> parseArtifactType(a.get("type"))).toList(), rd);
+		return importByIndex;
 	}
 
 	/**
-	 * Dispatch the inbound VEX import pipeline
-	 * ({@link io.reliza.service.VexImportService#dispatchFromArtifact}) for every VEX
-	 * artifact in an uploaded batch — the same hook the multipart {@code addArtifactManual}
-	 * path runs (see {@code ReleaseDatafetcher#addArtifact}). Without this the CLI /
-	 * rearm-actions upload path silently bypasses VEX import, so vendor VEX submitted
-	 * through automation never produces proposals. See ai-plans/vex_imports/00_overview.md
-	 * §"What VEX import does, in three stages".
+	 * Dispatch the inbound import ({@link ArtifactImportRegistry#dispatchAndRecord}) for every
+	 * importable artifact in an uploaded batch -- the same hook the multipart
+	 * {@code addArtifactManual} path runs (see {@code ReleaseDatafetcher#addArtifact}). Without
+	 * this the CLI / rearm-actions upload path silently bypasses the import, so vendor VEX
+	 * submitted through automation never produces proposals. See
+	 * ai-plans/vex_imports/00_overview.md section "What VEX import does, in three stages".
 	 *
-	 * <p>{@code vexUploads} comes from {@link #captureVexUploads} and is index-aligned
-	 * with {@code artIds}. Best-effort — a dispatch failure is logged, never blocks the
+	 * <p>{@code importUploads} comes from {@link #captureImportUploads} and is index-aligned
+	 * with {@code artIds}. Best-effort -- a dispatch failure is logged, never blocks the
 	 * upload result.
 	 *
 	 * @param belongsTo binding of the uploaded artifacts (RELEASE / DELIVERABLE / SCE);
-	 *                  drives issuer-class derivation inside {@link VexImportService}.
+	 *                  drives issuer-class derivation inside the import handler.
 	 */
-	private void dispatchVexArtifacts(List<VexUpload> vexUploads, List<UUID> artIds,
+	private void dispatchImportArtifacts(List<ImportUpload> importUploads, List<UUID> artIds,
 			ReleaseData rd, ArtifactBelongsTo belongsTo, WhoUpdated wu) {
-		for (int i = 0; i < artIds.size() && i < vexUploads.size(); i++) {
-			VexUpload vu = vexUploads.get(i);
-			if (vu == null || vu.content() == null) continue;
+		for (int i = 0; i < artIds.size() && i < importUploads.size(); i++) {
+			ImportUpload iu = importUploads.get(i);
+			if (iu == null || iu.content() == null) continue;
 			UUID artId = artIds.get(i);
 			Optional<ArtifactData> oad = artifactService.getArtifactData(artId);
 			if (oad.isEmpty()) continue;
-			// ArtifactDto has no factory from ArtifactData — round-trip through Jackson.
-			// dispatchFromArtifact reads bomFormat / displayIdentifier off the persisted
-			// artifact, plus vexScope / vexImportMode / userIssuerClassOverride — which
-			// are NOT persisted on ArtifactData, so overlay them from the input DTO.
-			ArtifactDto dispatchDto = io.reliza.common.Utils.OM.convertValue(
-				oad.get(), ArtifactDto.class);
-			dispatchDto.setVexScope(vu.inputDto().getVexScope());
-			dispatchDto.setVexImportMode(vu.inputDto().getVexImportMode());
-			dispatchDto.setUserIssuerClassOverride(vu.inputDto().getUserIssuerClassOverride());
-			try {
-				VexImportResult vexResult = vexImportService.dispatchFromArtifact(
-					artId, dispatchDto, rd, belongsTo, vu.content(), wu);
-				// Stamp the outcome on the artifact so consumers can report
-				// matched / unmatched counts (mirrors the manual upload path).
-				artifactService.saveArtifactVexImportSummary(artId, VexImportSummary.fromResult(vexResult), wu);
-			} catch (Exception e) {
-				log.warn("VEX import dispatch failed for artifact {} on release {}: {}",
-					artId, rd.getUuid(), e.getMessage());
-			}
+			// ArtifactDto has no factory from ArtifactData -- round-trip through Jackson.
+			// Handlers read bomFormat / displayIdentifier off the persisted artifact, plus
+			// importScope / importMode / userIssuerClassOverride -- which are NOT persisted
+			// on ArtifactData, so overlay them from the (alias-resolved) input DTO.
+			ArtifactDto dispatchDto = Utils.OM.convertValue(oad.get(), ArtifactDto.class);
+			dispatchDto.setImportScope(iu.inputDto().getImportScope());
+			dispatchDto.setImportMode(iu.inputDto().getImportMode());
+			dispatchDto.setUserIssuerClassOverride(iu.inputDto().getUserIssuerClassOverride());
+			importRegistry.dispatchAndRecord(artId, dispatchDto, rd, belongsTo, iu.content(), wu);
 		}
 	}
 
 	/**
 	 * Process and upload release artifacts, then attach them to the release.
 	 *
-	 * <p>VEX artifacts additionally trigger the inbound import pipeline — see
-	 * {@link #dispatchVexArtifacts}.
+	 * <p>Importable artifacts (VEX today) additionally trigger their inbound import - see
+	 * {@link #dispatchImportArtifacts}.
 	 */
 	@Transactional
 	public void processReleaseArtifacts(List<Map<String, Object>> artifactsList, ReleaseData rd,
@@ -2349,8 +2335,8 @@ public class ReleaseService {
 		String purl = SidPurlUtils.pickPreferredPurl(rd.getIdentifiers())
 				.map(RearmIdentifier::getIdValue).orElse(null);
 
-		// Capture VEX uploads before uploadListOfArtifacts consumes the MultipartFile entries.
-		List<VexUpload> vexUploads = captureVexUploads(artifactsList, rd);
+		// Capture import uploads before uploadListOfArtifacts consumes the MultipartFile entries.
+		List<ImportUpload> importUploads = captureImportUploads(artifactsList, rd);
 
 		// Upload artifacts
 		List<UUID> artIds = artifactService.uploadListOfArtifacts(
@@ -2365,7 +2351,7 @@ public class ReleaseService {
 			addArtifact(artId, rd.getUuid(), wu);
 		}
 
-		dispatchVexArtifacts(vexUploads, artIds, rd, ArtifactBelongsTo.RELEASE, wu);
+		dispatchImportArtifacts(importUploads, artIds, rd, ArtifactBelongsTo.RELEASE, wu);
 	}
 	
 	/** One {@code deliverableArtifacts} entry, its deliverable resolved in the release's organization. */
@@ -2438,7 +2424,7 @@ public class ReleaseService {
 	 * <li>release artifacts on a release whose component or branch is locked (where the lock
 	 * applied before; deliverable and SCE artifacts are not lock-gated here);</li>
 	 * <li>any artifact the upload itself would refuse ({@link ArtifactService#validateUploadInput});</li>
-	 * <li>when any part carries a VEX upload, a release the VEX import cannot run against.</li>
+	 * <li>when any part carries an importable upload (VEX today), a release its import cannot run against.</li>
 	 * </ul>
 	 */
 	public ProgrammaticArtifactTargets resolveProgrammaticArtifactTargets(Map<String, Object> artifactInput,
@@ -2489,9 +2475,8 @@ public class ReleaseService {
 		for (Map<String, Object> artifact : allArtifacts) {
 			artifactService.validateUploadInput(artifact);
 		}
-		if (allArtifacts.stream().anyMatch(ReleaseService::isVexUpload)) {
-			vexImportService.verifyDispatchPreconditions(rd);
-		}
+		importRegistry.verifyPreconditions(allArtifacts.stream().filter(this::isImportUpload)
+				.map(a -> parseArtifactType(a.get("type"))).toList(), rd);
 		return new ProgrammaticArtifactTargets(releaseArtifacts, deliverableArtifacts, sceArtifacts);
 	}
 
@@ -2502,20 +2487,20 @@ public class ReleaseService {
 	}
 
 	/**
-	 * An entry {@link #captureVexUploads} hands to the VEX import: a VEX artifact with a file. The
-	 * same predicate decides whether {@link #resolveProgrammaticArtifactTargets} checks the VEX
-	 * precondition.
+	 * An entry {@link #captureImportUploads} hands to an import: an importable artifact type
+	 * (VEX today) with a file. The same predicate decides which import preconditions
+	 * {@link #resolveProgrammaticArtifactTargets} checks.
 	 */
-	private static boolean isVexUpload(Map<String, Object> artifact) {
-		return ArtifactType.VEX == parseArtifactType(artifact.get("type"))
+	private boolean isImportUpload(Map<String, Object> artifact) {
+		return importRegistry.isImportable(parseArtifactType(artifact.get("type")))
 				&& artifact.get("file") instanceof MultipartFile;
 	}
 
 	/**
 	 * Process and upload deliverable artifacts, then attach them to the deliverable.
 	 *
-	 * <p>VEX artifacts additionally trigger the inbound import pipeline — see
-	 * {@link #dispatchVexArtifacts}. {@code rd} is the release the upload targets;
+	 * <p>Importable artifacts (VEX today) additionally trigger their inbound import - see
+	 * {@link #dispatchImportArtifacts}. {@code rd} is the release the upload targets;
 	 * the VEX matcher and the SBOM precondition are release-scoped, so a
 	 * deliverable-bound VEX still resolves against {@code rd}'s inventory — the
 	 * same {@code rd} the multipart manual path passes for DELIVERABLE bindings.
@@ -2547,8 +2532,8 @@ public class ReleaseService {
 				}
 			}
 			
-			// Capture VEX uploads before uploadListOfArtifacts consumes the MultipartFile entries.
-			List<VexUpload> vexUploads = captureVexUploads(artifactsList, rd);
+			// Capture import uploads before uploadListOfArtifacts consumes the MultipartFile entries.
+			List<ImportUpload> importUploads = captureImportUploads(artifactsList, rd);
 
 			// Upload artifacts
 			List<UUID> artIds = artifactService.uploadListOfArtifacts(
@@ -2563,15 +2548,15 @@ public class ReleaseService {
 				deliverableService.addArtifact(deliverableId, artId, wu);
 			}
 
-			dispatchVexArtifacts(vexUploads, artIds, rd, ArtifactBelongsTo.DELIVERABLE, wu);
+			dispatchImportArtifacts(importUploads, artIds, rd, ArtifactBelongsTo.DELIVERABLE, wu);
 		}
 	}
 	
 	/**
 	 * Process and upload SCE artifacts, then attach them to the source code entry.
 	 *
-	 * <p>VEX artifacts additionally trigger the inbound import pipeline — see
-	 * {@link #dispatchVexArtifacts}. {@code rd} is the release the upload targets;
+	 * <p>Importable artifacts (VEX today) additionally trigger their inbound import - see
+	 * {@link #dispatchImportArtifacts}. {@code rd} is the release the upload targets;
 	 * the VEX matcher and the SBOM precondition are release-scoped, so an
 	 * SCE-bound VEX still resolves against {@code rd}'s inventory — the same
 	 * {@code rd} the multipart manual path passes for SCE bindings.
@@ -2588,8 +2573,8 @@ public class ReleaseService {
 			UUID sceUuid = sced.getUuid();
 			List<Map<String, Object>> artifactsList = sceArts.artifacts();
 			
-			// Capture VEX uploads before uploadListOfArtifacts consumes the MultipartFile entries.
-			List<VexUpload> vexUploads = captureVexUploads(artifactsList, rd);
+			// Capture import uploads before uploadListOfArtifacts consumes the MultipartFile entries.
+			List<ImportUpload> importUploads = captureImportUploads(artifactsList, rd);
 
 			// Upload artifacts
 			List<UUID> artIds = artifactService.uploadListOfArtifacts(
@@ -2608,7 +2593,7 @@ public class ReleaseService {
 				sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
 			}
 
-			dispatchVexArtifacts(vexUploads, artIds, rd, ArtifactBelongsTo.SCE, wu);
+			dispatchImportArtifacts(importUploads, artIds, rd, ArtifactBelongsTo.SCE, wu);
 			// Auto-fire signature verification when a SIGNATURE artifact
 			// tagged signatureSubject=COMMIT was just attached. Pairs with
 			// the SIGNED_PAYLOAD sibling carrying the same signedCommitSha
