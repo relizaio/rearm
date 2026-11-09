@@ -64,6 +64,12 @@ export function mayReadLicense (myUser: any): boolean {
 
 const limitText = (n: any): string => (n === null || n === undefined) ? 'unlimited' : String(n)
 
+/** "1 read user", "2 read users", "0 read users": a count with its noun in the right number. */
+export function countText (n: number | null | undefined, singular: string, plural: string = singular + 's'): string {
+    const v = Number(n) || 0
+    return `${v} ${v === 1 ? singular : plural}`
+}
+
 /**
  * The admin banner text when the instance has accounts outside its license, else null.
  * Numbers from `license { maxReadUsers maxWriteUsers globalUserCounts { readUsers writeUsers outsideLimit } }`.
@@ -71,9 +77,36 @@ const limitText = (n: any): string => (n === null || n === undefined) ? 'unlimit
 export function overLicenseBannerText (license: any): string | null {
     const counts = license?.globalUserCounts
     if (!counts || !(Number(counts.outsideLimit) > 0)) return null
-    return `This instance is over its license: ${counts.readUsers ?? 0} read users of ${limitText(license.maxReadUsers)}, `
-        + `${counts.writeUsers ?? 0} write users of ${limitText(license.maxWriteUsers)}. `
-        + 'Accounts outside the limit, by creation date, cannot sign in.'
+    return `This instance is over its license: ${countText(counts.readUsers, 'read user')} of ${limitText(license.maxReadUsers)}, `
+        + `${countText(counts.writeUsers, 'write user')} of ${limitText(license.maxWriteUsers)}. `
+        + 'Accounts outside the limit, by creation date, cannot sign in. Please contact support.'
+}
+
+/**
+ * A user a mutation returned (updateUserName, acceptUserPolicies), keeping the combined permissions
+ * the `user` query stored: those mutations answer the account's direct permissions only, so a
+ * user whose role comes from a user group would otherwise read as having no permission.
+ */
+export function withCombinedPermissionsOf (stored: any, returned: any): any {
+    if (!returned || !stored?.permissions || stored.uuid !== returned.uuid) return returned
+    return { ...returned, permissions: stored.permissions }
+}
+
+/** The banner of a signed-in user with no organization-wide permission in the current organization. */
+export const NO_ORG_PERMISSION_TEXT = 'You were granted no permissions in this organization. Please contact your administrator.'
+
+/**
+ * Whether the signed-in user holds no organization-wide permission above NONE in `orgUuid`. The
+ * `user` query returns the combined permissions (direct and through every user group) of each
+ * organization, so the stored myuser is enough. A global administrator never counts; missing data
+ * (no user, no organization, no permissions block) never shows the banner.
+ */
+export function hasNoOrgPermission (myUser: any, orgUuid: string | null | undefined): boolean {
+    if (!myUser?.uuid || !orgUuid || myUser.isGlobalAdmin) return false
+    const perms = myUser.permissions?.permissions
+    if (!perms) return false
+    return !Object.values(perms).some((p: any) => p && p.org === orgUuid && p.scope === 'ORGANIZATION'
+        && p.object === orgUuid && !!p.type && p.type !== 'NONE')
 }
 
 export const LICENSE_BANNER_QUERY = gql`
@@ -138,10 +171,70 @@ export const SeatAdmission = {
 } as const
 export type SeatAdmission = typeof SeatAdmission[keyof typeof SeatAdmission]
 
-/** The confirmation text of "Remove accounts with no role", naming how many accounts hold no role. */
-export function removeNoRoleConfirmText (noRoleUsers: number | null | undefined): string {
-    const n = Number(noRoleUsers) || 0
-    return `Deactivate ${n} account${n === 1 ? '' : 's'} with no role in any organization? `
+// ---------- seat view sorting (UI side, over the rows of one read) ----------
+
+const ADMISSION_RANK: Record<string, number> = { OUTSIDE: 0, INSIDE: 1, NOT_COUNTED: 2 }
+const SEAT_TYPE_RANK: Record<string, number> = { WRITE: 0, READ: 1, NONE: 2 }
+const rankOf = (ranks: Record<string, number>, v: any): number => ranks[v] ?? Object.keys(ranks).length
+const timeOf = (d: any): number => {
+    const t = d ? new Date(d).getTime() : NaN
+    return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t
+}
+const textOf = (v: any): string => String(v ?? '').toLowerCase()
+const byText = (a: any, b: any): number => {
+    const x = textOf(a)
+    const y = textOf(b)
+    return x < y ? -1 : x > y ? 1 : 0
+}
+
+/** Column comparators of the seat view, ascending; each falls back to the email so the order is stable. */
+export const seatUserCompare = {
+    email: (a: any, b: any): number => byText(a.email, b.email),
+    // a missing name sorts after every name
+    name: (a: any, b: any): number => (!a.name !== !b.name ? (a.name ? -1 : 1) : byText(a.name, b.name)) || byText(a.email, b.email),
+    seatType: (a: any, b: any): number => (rankOf(SEAT_TYPE_RANK, a.seatType) - rankOf(SEAT_TYPE_RANK, b.seatType)) || byText(a.email, b.email),
+    createdDate: (a: any, b: any): number => (timeOf(a.createdDate) - timeOf(b.createdDate) || 0) || byText(a.email, b.email),
+    // never signed in sorts after every sign-in
+    lastLoginDate: (a: any, b: any): number => (timeOf(a.lastLoginDate) - timeOf(b.lastLoginDate) || 0) || byText(a.email, b.email),
+    // outside the limit first, then counted inside, then not counted; by creation date within each
+    admission: (a: any, b: any): number => (rankOf(ADMISSION_RANK, a.admission) - rankOf(ADMISSION_RANK, b.admission))
+        || seatUserCompare.createdDate(a, b)
+}
+
+/** The seat view's default order: accounts outside the limit first, then by creation date (oldest first). */
+export function sortSeatUsersDefault (rows: any[] | null | undefined): any[] {
+    return [...(rows || [])].sort(seatUserCompare.admission)
+}
+
+/** How many emails the "Remove accounts with no role" confirmation lists before "and N more". */
+export const NO_ROLE_EMAILS_SHOWN = 20
+
+/**
+ * The emails "Remove accounts with no role" deactivates, from the loaded seat view rows, by the
+ * server's rule (LicenseSeatService.removeAccountsWithoutRole): a holder of seat type NONE that is
+ * not a global administrator, never the caller (matched by account uuid or email).
+ */
+export function noRoleDeactivationEmails (rows: any[] | null | undefined, caller: { uuid?: string, email?: string } | null | undefined): string[] {
+    const callerEmail = (caller?.email || '').toLowerCase()
+    return (rows || [])
+        .filter((r: any) => r && r.seatType === SeatType.NONE && !r.globalAdmin)
+        .filter((r: any) => !(caller?.uuid && (r.userUuids || []).includes(caller.uuid)))
+        .filter((r: any) => !(callerEmail && String(r.email || '').toLowerCase() === callerEmail))
+        .map((r: any) => String(r.email))
+}
+
+/** The confirmation text of "Remove accounts with no role", naming the accounts it deactivates. */
+export function removeNoRoleConfirmText (emails: string[] | null | undefined): string {
+    const list = emails || []
+    const n = list.length
+    const shown = list.slice(0, NO_ROLE_EMAILS_SHOWN)
+    const more = n - shown.length
+    const listText = n === 0
+        ? ''
+        : `${n === 1 ? 'Account' : 'Accounts'} to deactivate: ${shown.join(', ')}`
+            + (more > 0 ? ` and ${countText(more, 'more', 'more')}. ` : '. ')
+    return `Deactivate ${countText(n, 'account')} with no role in any organization? `
+        + listText
         + 'Global administrators and your own account are never deactivated. '
         + 'A deactivated account can be reactivated later.'
 }

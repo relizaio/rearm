@@ -7,7 +7,7 @@ import graphqlQueries from './utils/graphqlQueries'
 import { SOFTWARE_KINDS } from './utils/agentDocumentsView'
 import { loadWithSchemaDriftFallback, sendWithLatchedFallback, sendWithLatchedTiers, withoutAdditiveFields, artifactScanStateLatch, releaseBomScanLatch } from './utils/graphqlDriftFallback'
 import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './utils/organizationsQuery'
-import { seatRefusalOf } from './utils/licenseSeats'
+import { seatRefusalOf, withCombinedPermissionsOf } from './utils/licenseSeats'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
 import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
 import { withExpectedRevision } from '@/utils/componentRevision'
@@ -709,7 +709,7 @@ const storeObject : any = {
                         }`,
                 variables: obj
             })
-            context.commit('SET_MY_USER', data.data.acceptUserPolicies)
+            context.commit('SET_MY_USER', withCombinedPermissionsOf(context.state.iam.user, data.data.acceptUserPolicies))
             return data.data.acceptUserPolicies
         },
         async archiveBranch (context: any, params: any) {
@@ -2690,7 +2690,7 @@ const storeObject : any = {
                     name
                 }
             })
-            context.commit('SET_MY_USER', response.data.updateUserName)
+            context.commit('SET_MY_USER', withCombinedPermissionsOf(context.state.iam.user, response.data.updateUserName))
             return response.data.updateUserName
         },
         async approveRelease (context: any, approveProps: any) {

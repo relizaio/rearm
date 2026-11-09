@@ -15,24 +15,16 @@
         </n-space>
         <div v-if="loadError" class="text-danger" data-testid="seat-users-error">{{ loadError }}</div>
         <div v-else-if="loading && !rows.length" data-testid="seat-users-loading">Loading seat users...</div>
-        <table v-else class="table seat-users-table" data-testid="seat-users-table">
-            <thead><tr><th>Email</th><th>Type</th><th>Created</th><th>Last login</th><th>Outside limit</th></tr></thead>
-            <tbody>
-                <tr v-for="r in rows" :key="r.email" :data-testid="'seat-user-row-' + r.email">
-                    <td>
-                        <div>{{ r.email }}</div>
-                        <div v-if="r.name" class="text-muted small">{{ r.name }}</div>
-                        <n-tag v-if="r.globalAdmin" size="small" type="info" :data-testid="'seat-user-global-admin-' + r.email">Global administrator</n-tag>
-                    </td>
-                    <td :data-testid="'seat-user-type-' + r.email">{{ r.seatType }}</td>
-                    <td :data-testid="'seat-user-created-' + r.email">{{ dateText(r.createdDate) }}</td>
-                    <td :data-testid="'seat-user-last-login-' + r.email">{{ r.lastLoginDate ? dateText(r.lastLoginDate) : 'never' }}</td>
-                    <td :data-testid="'seat-user-outside-' + r.email">
-                        <n-tag v-if="r.admission === SeatAdmission.OUTSIDE" size="small" type="error">outside the limit</n-tag>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
+        <n-data-table
+            v-else
+            class="seat-users-table"
+            data-testid="seat-users-table"
+            :columns="columns"
+            :data="sortedRows"
+            :row-key="rowKey"
+            :pagination="pagination"
+            size="small"
+        />
     </div>
 </template>
 
@@ -42,16 +34,22 @@
 // and "Remove accounts with no role". Rendered by SystemSettings.vue for global administrators on
 // Pro; its counts header is the page's only copy of the instance seat figures (task TPF-166 D2). Every read is a fresh count on the server; the client never caches it. Every number and flag
 // is the server's field as given: the outside-limit flag reads `admission` alone and the
-// Global administrator marker reads `globalAdmin` alone (no UI rule combines them). Server texts go
+// Global administrator marker reads `globalAdmin` alone (no UI rule combines them). The table
+// sorts and pages UI side; the no-role confirmation names the accounts the server will deactivate,
+// from the loaded rows under the server's rule (noRoleDeactivationEmails). Server texts go
 // to Swal as `text`, never as the positional shorthand, whose second argument is HTML.
-import { computed, onMounted, ref, type Ref } from 'vue'
-import { NButton, NSpace, NTag } from 'naive-ui'
+import { computed, h, onMounted, reactive, ref, type Ref } from 'vue'
+import { NButton, NDataTable, NSpace, NTag, type DataTableColumns } from 'naive-ui'
+import { useStore } from 'vuex'
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import {
-    LICENSE_SEAT_USERS_QUERY, REMOVE_ACCOUNTS_WITHOUT_ROLE, SeatAdmission, removeNoRoleConfirmText
+    LICENSE_SEAT_USERS_QUERY, REMOVE_ACCOUNTS_WITHOUT_ROLE, SeatAdmission, countText, noRoleDeactivationEmails,
+    removeNoRoleConfirmText, seatUserCompare, sortSeatUsersDefault
 } from '@/utils/licenseSeats'
+
+const store = useStore()
 
 const rows: Ref<any[]> = ref([])
 const license: Ref<any> = ref(null)
@@ -72,12 +70,47 @@ const totalLimitText = computed(() => {
 })
 const dateText = (d: string): string => d ? new Date(d).toLocaleString('en-CA') : ''
 
+// Sorting and pagination are UI side, over the rows of one read. The rows arrive in the default
+// order (outside the limit first, then by creation date); a column sorter reorders them, and
+// clearing it returns to the default order.
+const sortedRows = computed(() => sortSeatUsersDefault(rows.value))
+const rowKey = (r: any) => r.email
+const pagination = reactive({
+    page: 1,
+    pageSize: 20,
+    showSizePicker: true,
+    pageSizes: [10, 20, 50, 100],
+    onUpdatePage: (page: number) => { pagination.page = page },
+    onUpdatePageSize: (size: number) => { pagination.pageSize = size; pagination.page = 1 }
+})
+const testid = (prefix: string, r: any) => prefix + r.email
+// The admission cell reads `admission` alone and the Global administrator marker `globalAdmin` alone.
+const outsideCell = (r: any) => h('span', { 'data-testid': testid('seat-user-outside-', r) },
+    r.admission === SeatAdmission.OUTSIDE ? [h(NTag, { size: 'small', type: 'error' }, { default: () => 'outside the limit' })] : [])
+const globalAdminMarker = (r: any) => r.globalAdmin
+    ? h(NTag, { size: 'small', type: 'info', 'data-testid': testid('seat-user-global-admin-', r) }, { default: () => 'Global administrator' })
+    : null
+const columns: DataTableColumns<any> = [
+    { key: 'email', title: 'Email', sorter: seatUserCompare.email,
+        render: (r: any) => h('div', { 'data-testid': testid('seat-user-email-', r) }, [h('div', r.email), globalAdminMarker(r)]) },
+    { key: 'name', title: 'Name', sorter: seatUserCompare.name,
+        render: (r: any) => h('span', { 'data-testid': testid('seat-user-name-', r) }, r.name || '') },
+    { key: 'seatType', title: 'Type', sorter: seatUserCompare.seatType,
+        render: (r: any) => h('span', { 'data-testid': testid('seat-user-type-', r) }, r.seatType) },
+    { key: 'createdDate', title: 'Created', sorter: seatUserCompare.createdDate,
+        render: (r: any) => h('span', { 'data-testid': testid('seat-user-created-', r) }, dateText(r.createdDate)) },
+    { key: 'lastLoginDate', title: 'Last login', sorter: seatUserCompare.lastLoginDate,
+        render: (r: any) => h('span', { 'data-testid': testid('seat-user-last-login-', r) }, r.lastLoginDate ? dateText(r.lastLoginDate) : 'never') },
+    { key: 'admission', title: 'Outside limit', sorter: seatUserCompare.admission, render: outsideCell }
+]
+
 async function load () {
     loading.value = true
     busy.value = true
     try {
         const resp: any = await graphqlClient.query({ query: LICENSE_SEAT_USERS_QUERY, fetchPolicy: 'no-cache' })
         rows.value = resp?.data?.licenseSeatUsers ?? []
+        pagination.page = Math.min(pagination.page, Math.max(1, Math.ceil(rows.value.length / pagination.pageSize)))
         license.value = resp?.data?.license ?? null
         loadError.value = ''
     } catch (err: any) {
@@ -91,7 +124,7 @@ async function load () {
 async function removeNoRole () {
     const confirm = await Swal.fire({
         title: 'Remove accounts with no role',
-        text: removeNoRoleConfirmText(counts.value?.noRoleUsers),
+        text: removeNoRoleConfirmText(noRoleDeactivationEmails(rows.value, store?.getters?.myuser)),
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Deactivate',
@@ -102,7 +135,7 @@ async function removeNoRole () {
     try {
         const resp: any = await graphqlClient.mutate({ mutation: REMOVE_ACCOUNTS_WITHOUT_ROLE, fetchPolicy: 'no-cache' })
         const n = Number(resp?.data?.removeAccountsWithoutRole) || 0
-        Swal.fire({ title: 'Done', text: `${n} account${n === 1 ? '' : 's'} deactivated.`, icon: 'success' })
+        Swal.fire({ title: 'Done', text: `${countText(n, 'account')} deactivated.`, icon: 'success' })
     } catch (err: any) {
         Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
     } finally {

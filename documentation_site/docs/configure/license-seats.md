@@ -13,12 +13,12 @@ seat, how ReARM decides who may sign in when there are more people than seats,
 how single sign-on users without a role are handled, and what to do when an
 instance is over its license.
 
-A license without user limits enforces no seat limits: no change is refused for
-lack of a seat, and nobody is refused at sign-in or flagged as outside the
-limit. The
+An instance with no user limits set, for example one where no license has been
+uploaded yet, enforces no seat limits: no change is refused for lack of a seat,
+and nobody is refused at sign-in or flagged as outside the limit. The
 [SSO users without a role](#sso-users-without-a-role) setting, and its `NO-ROLE`
-refusal of a first sign-in, applies on every license, with or without user
-limits. API keys and AI agents never take a seat.
+refusal of a first sign-in, applies regardless, with or without user limits.
+API keys and AI agents never take a seat.
 
 ## Who holds a seat
 
@@ -79,12 +79,14 @@ A change that does not fit is refused, and nothing is saved. An administrator
 sees a message that starts with:
 
 ```
-License limit reached: this change needs K more write seat(s); W of M write seats are in use. Free a seat or extend the license.
+License limit reached: this change needs K more write seats; W of M write seats are in use. Free a seat or extend the license.
 ```
 
 Here `K` is how many write seats the change goes over the limit by, and `W` is
 the number of write seats the change would bring. (When the total is the limit
 that is reached, the message names the seats in total the change would bring.)
+Each number takes the singular or plural noun it reads with, for example
+`needs 1 more write seat` and `1 of 1 write seat is in use`.
 
 Creating an invitation does not reserve a seat. The seat is checked when the
 person joins; if no seat is free then, the join is refused with:
@@ -180,6 +182,11 @@ organization:
   naming the setting.
 - **Create account without a role**: the account is created with permission
   `None`. It holds no seat until an administrator gives it a role.
+  Until then, the person sees a banner at the top of every page:
+  `You were granted no permissions in this organization. Please contact your administrator.`
+  The same banner shows to anyone whose organization-wide permission in the
+  current organization is `None`, set directly and through every user group;
+  global administrators never see it.
 
 The setting is in **Organization Settings** > **Admin Settings** > **General**,
 and is shown only on the default organization. An organization that has never
@@ -208,7 +215,7 @@ identity provider also reach ReARM only through the person's own sign-in, which
 no longer happens.
 
 To free the seat, inactivate the user in ReARM (in the default organization,
-Organization Settings > Users, edit the user, **Inactivate User**), or lower their permissions to `None` and
+Organization Settings > Users, edit the user, **Danger zone** tab, **Inactivate User**), or lower their permissions to `None` and
 remove them from any user group that grants more.
 
 ## Seat view and administrator tools
@@ -221,11 +228,14 @@ Global administrators see the seats in **System Settings** > **License**:
   and when they were counted. Global administrators count as write users here,
   whatever their role in each organization;
 - **License Seats**: one row per person with email, seat type (`WRITE`, `READ` or
-  `NONE`), account creation date, last login, and an `outside the limit` flag for
-  everyone who would be refused at sign-in. Global administrators are marked;
+  `NONE`), name, account creation date, last login, and an `outside the limit` flag for
+  everyone who would be refused at sign-in. Global administrators are marked.
+  The list opens with the accounts outside the limit first, then by creation
+  date; click a column heading to sort by it, and page through long lists;
 - **Refresh**, which counts again;
 - **Remove accounts with no role**, which inactivates every account with no role
-  in any organization, after a confirmation that names how many. Global
+  in any organization, after a confirmation that names how many and lists their
+  email addresses (the first 20, then `and K more`). Global
   administrators and your own account are never inactivated. These accounts
   hold no seat, so this tidies the list but frees no seat.
 
@@ -235,8 +245,10 @@ When accounts are outside the limit, global administrators and administrators of
 the default organization see a banner at the top of every page:
 
 ```
-This instance is over its license: R read users of N, W write users of M. Accounts outside the limit, by creation date, cannot sign in.
+This instance is over its license: R read users of N, W write users of M. Accounts outside the limit, by creation date, cannot sign in. Please contact support.
 ```
+
+A count of one reads in the singular, for example `1 read user of 1`.
 
 ### Events
 

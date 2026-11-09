@@ -17,6 +17,7 @@ vi.mock('@/utils/graphql', () => ({ default: { query: (...a: any[]) => query(...
 vi.mock('@/utils/keycloak', () => ({ default: { token: 'test', updateToken: vi.fn(), login: vi.fn(), logout: vi.fn() } }))
 vi.mock('sweetalert2', () => ({ default: { fire: (...a: any[]) => fire(...a) } }))
 
+const store = (await import('@/store')).default.store
 const { default: LicenseSeatUsers } = await import('./LicenseSeatUsers.vue')
 const { LICENSE_SEAT_USERS_QUERY, REMOVE_ACCOUNTS_WITHOUT_ROLE } = await import('@/utils/licenseSeats')
 
@@ -36,8 +37,10 @@ const LICENSE = { maxWriteUsers: 1, maxReadUsers: 1,
 const MARKUP_REFUSAL = 'Not <b>authorized</b>'
 
 const mounted: VueWrapper[] = []
-async function mountView () {
-    const w = mount(LicenseSeatUsers)
+const ME = { uuid: 'me-id', email: 'me@x.io', installationType: 'MANAGED_SERVICE', isGlobalAdmin: true, permissions: { permissions: [] } }
+async function mountView (me: any = ME) {
+    store.commit('SET_MY_USER', structuredClone(me))
+    const w = mount(LicenseSeatUsers, { global: { plugins: [store] } })
     mounted.push(w)
     await flushPromises()
     return w
@@ -62,7 +65,7 @@ describe('System Settings: license seat users', () => {
         expect(query).toHaveBeenCalledTimes(1)
         expect(query.mock.calls[0][0].query).toBe(LICENSE_SEAT_USERS_QUERY)
         expect(query.mock.calls[0][0].fetchPolicy).toBe('no-cache')
-        expect(w.findAll('thead th').map(t => t.text())).toEqual(['Email', 'Type', 'Created', 'Last login', 'Outside limit'])
+        expect(w.findAll('thead th').map(t => t.text())).toEqual(['Email', 'Name', 'Type', 'Created', 'Last login', 'Outside limit'])
         expect(w.findAll('tbody tr')).toHaveLength(4)
         expect(byId(w, 'seat-user-type-w1@x.io').text()).toBe('WRITE')
         expect(byId(w, 'seat-user-type-r1@x.io').text()).toBe('READ')
@@ -74,6 +77,8 @@ describe('System Settings: license seat users', () => {
         for (const e of ['w1@x.io', 'r1@x.io', 'n1@x.io']) expect(byId(w, 'seat-user-outside-' + e).text()).toBe('')
         expect(byId(w, 'seat-user-global-admin-w1@x.io').text()).toBe('Global administrator')
         expect(byId(w, 'seat-user-global-admin-w2@x.io').exists()).toBe(false)
+        expect(byId(w, 'seat-user-name-w1@x.io').text()).toBe('Writer One')
+        expect(byId(w, 'seat-user-name-w2@x.io').text()).toBe('')
     })
 
     it('shows the counts header from globalUserCounts and emits nothing', async () => {
@@ -128,7 +133,8 @@ describe('System Settings: license seat users', () => {
         mutate.mockResolvedValue({ data: { removeAccountsWithoutRole: 1 } })
         await click(w, 'seat-users-remove-no-role')
         expect(fire.mock.calls[0][0].title).toBe('Remove accounts with no role')
-        expect(fire.mock.calls[0][0].text).toMatch(/^Deactivate 1 account with no role in any organization\?/)
+        expect(fire.mock.calls[0][0].text).toBe('Deactivate 1 account with no role in any organization? Account to deactivate: n1@x.io. '
+            + 'Global administrators and your own account are never deactivated. A deactivated account can be reactivated later.')
         expect(fire.mock.calls[0][0].showCancelButton).toBe(true)
         expect(mutate).toHaveBeenCalledTimes(1)
         expect(mutate.mock.calls[0][0].mutation).toBe(REMOVE_ACCOUNTS_WITHOUT_ROLE)
@@ -249,15 +255,116 @@ describe('T-1 (U8): a global administrator beyond the write limit', () => {
 
     it('the admission cell reads admission only, and the marker reads globalAdmin only', () => {
         const source = readFileSync(resolve(__dirname, 'LicenseSeatUsers.vue'), 'utf8')
-        const template = source.slice(0, source.indexOf('</template>'))
-        const start = template.indexOf(`<td :data-testid="'seat-user-outside-' + r.email">`)
-        expect(start).toBeGreaterThan(-1)
-        const cell = template.slice(start, template.indexOf('</td>', start))
+        const cell = source.split('\n').filter(l => l.includes("testid('seat-user-outside-'")).join('\n')
+            + source.split('\n').find(l => l.startsWith('    r.admission === SeatAdmission.OUTSIDE'))
         expect(cell).toContain('r.admission === SeatAdmission.OUTSIDE')
         expect(cell).not.toContain('globalAdmin')
-        const marker = template.split('\n').find(l => l.includes("'seat-user-global-admin-'")) ?? ''
-        expect(marker).toContain('v-if="r.globalAdmin"')
+        const marker = source.slice(source.indexOf('const globalAdminMarker'), source.indexOf('const columns'))
+        expect(marker).toContain('r.globalAdmin')
         expect(marker).not.toContain('admission')
+    })
+})
+
+// License seats review follow-up: the no-role confirmation lists the emails the server deactivates.
+describe('Remove accounts with no role: the listed accounts', () => {
+    beforeEach(() => {
+        query.mockReset()
+        mutate.mockReset()
+        fire.mockReset()
+    })
+    afterEach(() => {
+        while (mounted.length) mounted.pop()?.unmount()
+    })
+    const none = (email: string, globalAdmin = false, userUuids = [email + '-id']) => ({ email, name: null, userUuids,
+        organizations: [], seatType: 'NONE', admission: 'NOT_COUNTED', createdDate: '2026-01-01T00:00:00Z', lastLoginDate: null, globalAdmin })
+
+    it('lists seat type NONE rows, never a global administrator, never the caller', async () => {
+        query.mockImplementation(async () => ({ data: { license: structuredClone(LICENSE), licenseSeatUsers: [
+            ...structuredClone(ROWS), none('ga@x.io', true), none('me@x.io', false, ['me-id']), none('z@x.io')] } }))
+        const w = await mountView()
+        fire.mockResolvedValue({ isConfirmed: false })
+        await click(w, 'seat-users-remove-no-role')
+        expect(fire.mock.calls[0][0].text).toMatch(/^Deactivate 2 accounts with no role in any organization\? Accounts to deactivate: (n1@x\.io, z@x\.io|z@x\.io, n1@x\.io)\. Global/)
+        expect(fire.mock.calls[0][0].text).not.toContain('ga@x.io')
+        expect(fire.mock.calls[0][0].text).not.toContain('me@x.io')
+        expect(fire.mock.calls[0][0]).not.toHaveProperty('html')
+    })
+
+    it('a long list: the first 20, then "and N more"', async () => {
+        const many = Array.from({ length: 23 }, (_, i) => none(`n${String(i + 1).padStart(2, '0')}@x.io`))
+        query.mockImplementation(async () => ({ data: { license: structuredClone(LICENSE), licenseSeatUsers: many } }))
+        const w = await mountView()
+        fire.mockResolvedValue({ isConfirmed: false })
+        await click(w, 'seat-users-remove-no-role')
+        const text = fire.mock.calls[0][0].text
+        expect(text).toMatch(/^Deactivate 23 accounts with no role/)
+        expect(text).toContain(' and 3 more. Global administrators')
+        expect((text.match(/@x\.io/g) || []).length).toBe(20)
+    })
+})
+
+// License seats review follow-up: UI-side sorting and pagination of the seat view.
+describe('the seat view table: default order, sorting and pagination', () => {
+    beforeEach(() => {
+        query.mockReset()
+        mutate.mockReset()
+        fire.mockReset()
+    })
+    afterEach(() => {
+        while (mounted.length) mounted.pop()?.unmount()
+    })
+    const row = (email: string, admission: string, createdDate: string, extra: any = {}) => ({ email, name: null, userUuids: [email],
+        organizations: ['o'], seatType: 'WRITE', admission, createdDate, lastLoginDate: null, globalAdmin: false, ...extra })
+    const shown = (w: VueWrapper) => w.findAll('tbody tr').map(tr => tr.find('[data-testid^="seat-user-email-"]').attributes('data-testid')
+        ?.replace('seat-user-email-', ''))
+    const header = (w: VueWrapper, title: string) => w.findAll('thead th').find(t => t.text() === title)!
+
+    it('opens with the accounts outside the limit first, then by creation date', async () => {
+        query.mockImplementation(async () => ({ data: { license: structuredClone(LICENSE), licenseSeatUsers: [
+            row('a@x.io', 'INSIDE', '2025-01-01T00:00:00Z'), row('b@x.io', 'OUTSIDE', '2026-02-01T00:00:00Z'),
+            row('c@x.io', 'NOT_COUNTED', '2020-01-01T00:00:00Z', { seatType: 'NONE' }), row('d@x.io', 'OUTSIDE', '2026-01-01T00:00:00Z'),
+            row('e@x.io', 'INSIDE', '2024-01-01T00:00:00Z')] } }))
+        const w = await mountView()
+        expect(shown(w)).toEqual(['d@x.io', 'b@x.io', 'e@x.io', 'a@x.io', 'c@x.io'])
+    })
+
+    it('every column sorts on a header click', async () => {
+        query.mockImplementation(async () => ({ data: { license: structuredClone(LICENSE), licenseSeatUsers: [
+            row('b@x.io', 'INSIDE', '2025-01-01T00:00:00Z', { name: 'Zed', seatType: 'READ', lastLoginDate: '2026-05-01T00:00:00Z' }),
+            row('a@x.io', 'OUTSIDE', '2026-01-01T00:00:00Z', { name: 'Adam', seatType: 'WRITE', lastLoginDate: '2026-01-01T00:00:00Z' }),
+            row('c@x.io', 'NOT_COUNTED', '2024-01-01T00:00:00Z', { seatType: 'NONE' })] } }))
+        const expected: Record<string, string[]> = {
+            'Email': ['a@x.io', 'b@x.io', 'c@x.io'],
+            'Name': ['a@x.io', 'b@x.io', 'c@x.io'],
+            'Type': ['a@x.io', 'b@x.io', 'c@x.io'],
+            'Created': ['c@x.io', 'b@x.io', 'a@x.io'],
+            'Last login': ['a@x.io', 'b@x.io', 'c@x.io'],
+            'Outside limit': ['a@x.io', 'b@x.io', 'c@x.io'],
+        }
+        for (const [title, order] of Object.entries(expected)) {
+            const w = await mountView()
+            // naive-ui cycles descending, ascending, then back to the default order
+            await header(w, title).trigger('click')
+            await flushPromises()
+            expect(shown(w), title + ' descending').toEqual([...order].reverse())
+            await header(w, title).trigger('click')
+            await flushPromises()
+            expect(shown(w), title + ' ascending').toEqual(order)
+        }
+    })
+
+    it('pages 20 rows at a time by default', async () => {
+        const many = Array.from({ length: 45 }, (_, i) => row(`u${String(i + 1).padStart(2, '0')}@x.io`, 'INSIDE',
+            new Date(Date.UTC(2020, 0, i + 1)).toISOString()))
+        query.mockImplementation(async () => ({ data: { license: structuredClone(LICENSE), licenseSeatUsers: many } }))
+        const w = await mountView()
+        expect(w.findAll('tbody tr')).toHaveLength(20)
+        expect(shown(w)[0]).toBe('u01@x.io')
+        expect(w.find('.n-pagination').exists()).toBe(true)
+        const page3 = w.findAll('.n-pagination-item').find(i => i.text() === '3')!
+        await page3.trigger('click')
+        await flushPromises()
+        expect(shown(w)).toEqual(['u41@x.io', 'u42@x.io', 'u43@x.io', 'u44@x.io', 'u45@x.io'])
     })
 })
 
