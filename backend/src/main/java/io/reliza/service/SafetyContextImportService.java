@@ -3,6 +3,15 @@
 */
 package io.reliza.service;
 
+import org.springframework.transaction.annotation.Propagation;
+import io.reliza.common.Utils.ArtifactBelongsTo;
+import io.reliza.exceptions.RelizaException;
+import io.reliza.model.ArtifactData.ArtifactType;
+import io.reliza.model.ReleaseData;
+import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.ArtifactDto;
+import io.reliza.model.dto.ImportSummary;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -37,7 +46,7 @@ import io.reliza.repositories.SafetyContextProposalRepository;
  * proposals with an explicit match state for review.
  */
 @Service
-public class SafetyContextImportService {
+public class SafetyContextImportService implements ArtifactImportHandler {
     private final SafetyContextParser parser;
     private final SbomComponentService sbomComponentService;
     private final SafetyContextProposalRepository proposalRepository;
@@ -49,7 +58,49 @@ public class SafetyContextImportService {
         this.sbomComponentService = sbomComponentService;
         this.proposalRepository = proposalRepository;
     }
+    
+    @Override
+    public ArtifactType type() {
+        return ArtifactType.SAFETY_CONTEXT;
+    }
 
+    @Override
+    public void verifyPreconditions(ReleaseData rd) throws RelizaException {
+        if (rd != null && !sbomComponentService.releaseHasSbomComponents(
+                rd.getUuid(), rd.getOrg())) {
+            throw new RelizaException(
+                "Cannot import SAFETY_CONTEXT: release has no SBOM components yet. "
+                + "Upload an SBOM/BOM artifact for this release first.");
+        }
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ImportSummary dispatch(
+            UUID artifactUuid,
+            ArtifactDto artDto,
+            ReleaseData rd,
+            ArtifactBelongsTo belongsTo,
+            byte[] content,
+            WhoUpdated wu) throws RelizaException {
+
+        verifyPreconditions(rd);
+
+        SafetyContextImportResult result = createProposals(
+                rd.getOrg(),
+                rd.getUuid(),
+                artifactUuid,
+                new String(content, StandardCharsets.UTF_8));
+
+        ImportSummary summary = new ImportSummary();
+        summary.setStatementsTotal(result.total());
+        summary.setProposalsCreated(result.proposalUuids().size());
+        summary.setStatementsUnmatched(result.unmatched());
+        summary.setStatementsErrored(result.invalid());
+        summary.setErrorMessages(result.errors());
+
+        return summary;
+    }
     @Transactional
     public SafetyContextImportResult createProposals(
             UUID org, UUID releaseUuid, UUID sourceArtifact, String documentJson) {
