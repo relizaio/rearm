@@ -1448,19 +1448,35 @@ type Artifact {
 	# rebom). The UI uses this to render PENDING / COMPLETED / FAILED / SKIPPED
 	# pills next to the artifact row.
 	enrichmentStatus: EnrichmentStatus
-	# Outcome of the VEX import this artifact triggered (VEX artifacts only;
-	# null otherwise). Lets the UI report matched / unmatched statement counts
-	# instead of leaving the user with a silently empty VEX tab.
-	vexImportSummary: VexImportSummary
+	# Outcome of the inbound import this artifact triggered (importable types
+	# only, VEX today; null otherwise). Lets the UI report matched / unmatched
+	# statement counts instead of leaving the user with a silently empty tab.
+	importSummary: ImportSummary
+	vexImportSummary: VexImportSummary @deprecated(reason: "Use importSummary")
 	"The artifact's TEA id, minted when a TEA publication first names it; read-only"
 	teaUuid: ID
 }
 
-# Counts from a single VEX import, persisted on the VEX artifact that produced
+# Counts from a single inbound import, persisted on the artifact that produced
 # it. proposalsCreated = statements staged for review (PENDING);
 # proposalsAutoAccepted = statements applied immediately; statementsUnmatched =
 # statements whose product did not match any component in the release's SBOM
-# inventory (these produce no proposal).
+# inventory (these produce no proposal). attestationsDeferred is VEX only.
+type ImportSummary {
+	statementsTotal: Int
+	proposalsCreated: Int
+	proposalsAutoAccepted: Int
+	proposalsAutoRejected: Int
+	# Subset of proposalsAutoAccepted whose Finding Analysis write is deferred
+	# behind a PENDING MitigationAttestation (conditional claims: environmental
+	# justifications like requires_environment, or exploitable-with-workaround).
+	attestationsDeferred: Int
+	statementsUnmatched: Int
+	statementsErrored: Int
+	errorMessages: [String]
+}
+
+# Deprecated: same fields as ImportSummary, served by Artifact.vexImportSummary.
 type VexImportSummary {
 	statementsTotal: Int
 	proposalsCreated: Int
@@ -3277,12 +3293,21 @@ input ArtifactInput {
 	stripBom: StripBomEnum
 	digestRecords: [DigestRecordInput]
 	artifacts: [ArtifactInput]
-# v1.2 VEX-only: how broadly the VEX claim applies. Default COMPONENT when type=VEX.
-	vexScope: AnalysisScope
-# v1.2 VEX-only: AUTO_ACCEPT (default) / STAGE / REJECT.
-	vexImportMode: VexImportMode
-# v1.2 VEX-only: override the heuristic-derived issuer class.
+# Inbound import controls, for importable artifact types (VEX today); ignored otherwise.
+# How broadly the imported claims apply. Default COMPONENT.
+	importScope: AnalysisScope
+# AUTO_ACCEPT (default) / STAGE / REJECT.
+	importMode: ImportMode
+	vexScope: AnalysisScope @deprecated(reason: "Use importScope; importScope wins if both are sent")
+	vexImportMode: VexImportMode @deprecated(reason: "Use importMode; importMode wins if both are sent")
+# Override the heuristic-derived issuer class.
 	userIssuerClassOverride: IssuerClass
+}
+
+enum ImportMode {
+	AUTO_ACCEPT
+	STAGE
+	REJECT
 }
 
 enum VexImportMode {

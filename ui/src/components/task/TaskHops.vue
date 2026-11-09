@@ -11,6 +11,8 @@
                     </n-tag>
                     <span v-if="e.rec.reviewedBy || !e.rec.session" class="hist__role">{{ e.rec.role }}</span>
                     <n-tag v-if="e.rec.reviewedBy" size="tiny" :bordered="false" type="info">human</n-tag>
+                    <!-- The architect's sign-off said the design fits one coder pass (task TPF-153): the server's noSplit. -->
+                    <n-tag v-if="e.rec.noSplit" size="tiny" :bordered="false" type="warning" data-testid="hop-no-split">--no-split</n-tag>
                     <!-- The session that worked the hop, role first and linked (RD2-11); a person's verdict by name. -->
                     <span class="hist__agent"><actor-ref v-if="e.rec.reviewedBy" :actor="e.rec.reviewedBy"/><session-ref
                         v-else-if="e.rec.session" :session="sessionOf(e.rec.session, e.rec.agent, agentDir, e.rec.role)"/><template
@@ -44,13 +46,17 @@
                     <n-tag size="tiny" :bordered="false" data-testid="hop-checkpoint" :type="e.phase === 'waiting' ? 'warning' : 'default'">design checkpoint</n-tag>
                     <span class="hist__role">before {{ e.rec.beforeRole }}</span>
                     <span class="hist__time"><agent-time :at="e.rec.reachedAt"/> · <template
-                        v-if="e.phase === 'waiting'">waiting for the coordinator</template><template
+                        v-if="e.phase === 'waiting'">waiting for the coordinator<template v-if="waiverIgnored(task)">; --no-split by
+                        {{ task.designCheckpointWaiver.role }} ignored: the board's architectCheckpointWaiver is off</template></template><template
                         v-else-if="e.phase === 'ahead'">now with {{ roleAhead(task) }}</template><template
                         v-else-if="e.phase === 'closed'">closed from the checkpoint</template><template
                         v-else-if="e.phase === 'lapsed'">not settled; the task went on to {{ roleAhead(task) }}</template><template
+                        v-else-if="checkpointWaiver(e.rec)">{{ waivedPhrase(e.rec) }}<template v-if="e.rec.settledBy"> by <actor-ref
+                        :actor="e.rec.settledBy" :task="task"/></template> <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template><template
                         v-else>{{ e.phase === 'split' ? 'split' : 'sent on' }}<template v-if="e.rec.settledBy"> by <actor-ref
                         :actor="e.rec.settledBy" :task="task"/></template> <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template></span>
-                    <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
+                    <!-- A waived record's note is the phrase above (task TPF-153), not printed twice. -->
+                    <div v-if="e.rec.note && !checkpointWaiver(e.rec)" class="hist__note">{{ e.rec.note }}</div>
                 </template>
                 <!-- The split request's one row (task SPLIT-13), in the words of its state. Its reason is the SPLIT return's
                      note just above; the proposed children follow as a numbered list. -->
@@ -66,10 +72,30 @@
                         :actor="e.rec.settledBy" :task="task"/></template> <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template><template
                         v-if="e.rec.state !== 'REQUESTED' && e.rec.note">: {{ e.rec.note }}</template></span>
                     <ol v-if="e.rec.proposedChildren?.length" class="hist__children" data-testid="split-request-children">
-                        <li v-for="(c, j) in e.rec.proposedChildren" :key="j" :title="c.description ?? undefined">{{ c.title }}<template
+                        <li v-for="(c, j) in e.rec.proposedChildren" :key="j" :title="c.description ?? undefined">{{ proposedChildTitle(c) }}<template
                             v-if="c.dependsOnSiblingIndexes?.length"> · after {{ c.dependsOnSiblingIndexes.map((x: number) => x + 1).join(', ') }}</template><template
                             v-if="c.workLevel != null"> · level {{ c.workLevel }}</template></li>
                     </ol>
+                </template>
+                <!-- A role routing passed over because its runWhen was not met (task TPF-156): muted, one row per entry; the
+                     reason is routing's text, never a worker's. -->
+                <template v-else-if="e.kind === 'condition_skip'">
+                    <n-tag size="tiny" :bordered="false" data-testid="hop-passed-over" class="hist__muted"
+                           :class="{ 'hist__history': e.rec.live === false }">passed over</n-tag>
+                    <span class="hist__role hist__muted" :class="{ 'hist__history': e.rec.live === false }">{{ e.rec.role }}</span>
+                    <span class="hist__time hist__time--wrap hist__muted" :class="{ 'hist__history': e.rec.live === false }"><agent-time :at="e.rec.at"/> &middot; by routing: {{ e.rec.reason }}<template
+                        v-if="e.rec.waives?.length">; waives {{ e.rec.waives.join(', ') }}</template><template
+                        v-if="e.rec.live === false"> (since ran)</template></span>
+                </template>
+                <!-- A split child's carried design (task TPF-164): its own row at the record's at, by the seat that split; the
+                     words come from the record, one shared phrase per carried pass, and no session is printed. -->
+                <template v-else-if="e.kind === 'carried_design'">
+                    <n-tag size="tiny" :bordered="false" data-testid="hop-carried-design"
+                           :class="{ 'hist__history': e.rec.standing === false }">design carried</n-tag>
+                    <span class="hist__role">from {{ e.rec.parentKey }}</span>
+                    <span class="hist__time hist__time--wrap"><agent-time :at="e.rec.at"/><template v-if="e.rec.by"> &middot; by <actor-ref
+                        :actor="e.rec.by" :task="task"/></template></span>
+                    <div class="hist__note" data-testid="carried-design">{{ carriedDesignLine(task) }}</div>
                 </template>
                 <template v-else>
                     <n-tag size="tiny" :bordered="false" type="warning">returned</n-tag>
@@ -106,13 +132,21 @@ import { actorLabel } from '@/utils/agentActors'
 import { costLabel, formatTokenSplit, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { DocumentRelease, documentFileUrl, documentLabel, outputsOfHop } from '@/utils/agentDocuments'
 import { agentName, dur, hopHistory } from '@/utils/agentTaskFormat'
-import { childCount, roleAhead, splitRequestWaits } from '@/utils/agentTaskLabels'
+import { checkpointWaiver, childCount, proposedChildTitle, roleAhead, splitRequestWaits, waiverIgnored } from '@/utils/agentTaskLabels'
+import { carriedDesignLine } from '@/utils/agentCarriedDesign'
 import { enumWord, outcomeWord } from '@/utils/agentWords'
 import { reviewedChips } from '@/utils/agentReviewed'
 
 const props = defineProps<{ task: any, agentNames: Record<string, string>, agentDir?: Record<string, AgentName> }>()
 
 const history = computed(() => hopHistory(props.task))
+
+/** A waived checkpoint's phrase (task TPF-153): the role and the note, or the role alone for a blind reader. */
+function waivedPhrase (rec: any): string {
+    const w = checkpointWaiver(rec)
+    if (!w) return ''
+    return w.note ? `checkpoint waived by ${w.role}: ${w.note}` : `checkpoint waived by ${w.role}`
+}
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
 
 // The documents a hop recorded as its outputs. A hop stores uuids and the task carries the

@@ -3,16 +3,8 @@
 // language. Access is unchanged (board-permissions.md D18); this is presentation only.
 import { lifecycleWord, specWord } from './agentWords'
 
-/** The kinds the component lists and pickers show: software. BOARD_DOCUMENT components are shown inside their board. */
+/** The kinds the component lists, the pickers and the most-recent-releases lists (home widget and full page, RD4-10 and TPF-157) show: software. BOARD_DOCUMENT components are shown inside their board. */
 export const SOFTWARE_KINDS = ['GENERIC', 'HELM']
-
-/**
- * The componentKinds the most-recent-releases widget sends (RD4-10): the software kinds, so a board's
- * document rounds stay off the home page; null, every kind, for a caller that wants the rounds too.
- */
-export function recentReleasesKinds (includeDocuments: boolean): string[] | null {
-    return includeDocuments ? null : SOFTWARE_KINDS
-}
 
 export function isDocumentComponent (c: { kind?: string | null } | null | undefined): boolean {
     return c?.kind === 'BOARD_DOCUMENT'

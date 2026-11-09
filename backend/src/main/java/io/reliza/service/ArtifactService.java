@@ -73,7 +73,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.OASResponseDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
-import io.reliza.model.dto.VexImportSummary;
+import io.reliza.model.dto.ImportSummary;
 import io.reliza.model.DigestAlgorithm;
 import io.reliza.model.Rebom.InternalBom;
 import io.reliza.model.Rebom.RebomOptions;
@@ -456,14 +456,14 @@ public class ArtifactService {
 	 * @throws RelizaException if artifact not found or validation fails
 	 */
 	/**
-	 * Persist the VEX import outcome onto the artifact that triggered it, so the
+	 * Persist an inbound import outcome onto the artifact that triggered it, so the
 	 * upload UI can report matched / unmatched counts (see the
-	 * {@code Artifact.vexImportSummary} GraphQL field). Best-effort at the call
+	 * {@code Artifact.importSummary} GraphQL field). Best-effort at the call
 	 * site: a failure here must not fail the artifact upload -- the proposals
 	 * (if any) are already committed by the REQUIRES_NEW import.
 	 */
 	@Transactional
-	public void saveArtifactVexImportSummary(UUID artifactUuid, VexImportSummary summary, WhoUpdated wu) throws RelizaException {
+	public void saveArtifactImportSummary(UUID artifactUuid, ImportSummary summary, WhoUpdated wu) throws RelizaException {
 		Optional<Artifact> oa = sharedArtifactService.getArtifact(artifactUuid);
 		if (oa.isEmpty()) {
 			throw new RelizaException("Artifact not found: " + artifactUuid);
@@ -632,7 +632,10 @@ public class ArtifactService {
 		}
 	}
 
-	/** The DTO an upload-list entry becomes: file and nested artifacts aside, stored in ReARM unless it says otherwise. */
+	/**
+	 * The DTO an upload-list entry becomes: file and nested artifacts aside, stored in ReARM unless
+	 * it says otherwise, deprecated import aliases resolved into the generic import fields.
+	 */
 	static ArtifactDto uploadDtoOf(Map<String, Object> artMap) {
 		Map<String, Object> dtoMap = new HashMap<>(artMap);
 		dtoMap.remove("artifacts");
@@ -640,7 +643,9 @@ public class ArtifactService {
 		if (!dtoMap.containsKey("storedIn") || StringUtils.isEmpty((String) dtoMap.get("storedIn"))) {
 			dtoMap.put("storedIn", StoredIn.REARM.name());
 		}
-		return Utils.OM.convertValue(dtoMap, ArtifactDto.class);
+		ArtifactDto dto = Utils.OM.convertValue(dtoMap, ArtifactDto.class);
+		dto.resolveImportAliases();
+		return dto;
 	}
 
 	/**

@@ -125,7 +125,7 @@ import GqlQueries from '@/utils/graphqlQueries'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { isDtrackConfiguredForOrg, getReleaseScanStatus, showsScanBadge, scanBadgeBackground, ownNotScannableNote, NOT_SCANNABLE_GREY, type ReleaseScanStatus, type ReleaseNotScannableNote } from '@/utils/releaseScanStatus'
-import { recentReleasesKinds } from '@/utils/agentDocumentsView'
+import { SOFTWARE_KINDS } from '@/utils/agentDocumentsView'
 import { lifecycleLabel } from '@/utils/lifecycle'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 
@@ -145,15 +145,9 @@ const props = withDefaults(defineProps<{
      * `componentType` in to keep the URL the source of truth.
      */
     componentType?: 'COMPONENT' | 'PRODUCT' | null
-    /**
-     * RD4-10: the widget lists software only, so a board's document rounds stay off the home page.
-     * A caller that wants the rounds too (the full most-recent-releases page) passes true.
-     */
-    includeDocuments?: boolean
 }>(), {
     showFullPageIcon: true,
-    componentType: null,
-    includeDocuments: false
+    componentType: null
 })
 
 const store = useStore()
@@ -228,7 +222,7 @@ async function fetchReleases() {
                 endDate: endDate.toISOString(),
                 limit: effectiveLimit.value,
                 componentType: effectiveComponentType.value,
-                componentKinds: recentReleasesKinds(props.includeDocuments)
+                componentKinds: SOFTWARE_KINDS
             }
             const { data: response } = await sendWithLatchedTiers<any>({
                 tiers: [
@@ -246,7 +240,7 @@ async function fetchReleases() {
                 endDate: endDate.toISOString(),
                 limit: effectiveLimit.value,
                 componentType: effectiveComponentType.value,
-                componentKinds: recentReleasesKinds(props.includeDocuments)
+                componentKinds: SOFTWARE_KINDS
             }
             const { data: response } = await sendWithLatchedTiers<any>({
                 tiers: [
@@ -304,7 +298,6 @@ function formatDateTime(dateStr: string): string {
 watch(() => props.perspectiveUuid, () => fetchReleases())
 watch(() => [props.startDate, props.endDate], () => fetchReleases())
 watch(() => props.limit, () => fetchReleases())
-watch(() => props.includeDocuments, () => fetchReleases())
 watch(() => props.componentType, (val) => {
     if (val !== undefined) localComponentType.value = val
     fetchReleases()

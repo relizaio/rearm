@@ -4,20 +4,21 @@
 package io.reliza.service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.AnalysisState;
+import io.reliza.model.ImportMode;
 import io.reliza.model.IssuerClass;
 import io.reliza.model.TrustAction;
-import io.reliza.model.VexImportMode;
 import io.reliza.model.VexTrustGate;
 import io.reliza.model.VulnAnalysisData;
 
 /**
- * Resolves the per-statement verdict (AUTO_ACCEPT / STAGE / REJECT) by composing the
+ * Resolves the per-statement verdict (AUTO_ACCEPT / STAGE / REJECT) for an inbound import by composing the
  * trust-gate default with the user's per-upload import mode and broader-scope conflict guard.
  *
  * Precedence chain (full design in ai-plans/vex_imports/09_scope_and_conflict.md §3.B):
@@ -31,26 +32,36 @@ import io.reliza.model.VulnAnalysisData;
  *           demotionReason = BROADER_SCOPE_CONFLICT
  * </pre>
  *
+ * Shared by inbound artifact imports. VEX is the first user, with {@link VexTrustGate}
+ * as its gate; other import types supply their own gate result. Formerly VexVerdictResolver.
+ *
  * The resolver is pure: existing-VulnAnalysis lookup happens in the caller and the
  * (possibly empty) candidate row + its scope is passed into {@link #resolveWithConflictCheck}.
  */
 @Service
-public class VexVerdictResolver {
+public class ImportVerdictResolver {
 
     public static final String DEMOTION_REASON_BROADER_SCOPE = "BROADER_SCOPE_CONFLICT";
     public static final String DEMOTION_REASON_SEVERITY_MISSING = "SEVERITY_MISSING";
 
-    /** Steps 1-3 of the precedence chain — gate × user-mode only, no conflict check. */
-    public Verdict resolve(IssuerClass issuerClass, AnalysisState state, VexImportMode userMode) {
-        TrustAction policy = VexTrustGate.defaultAction(issuerClass, state);
-        TrustAction user = toAction(userMode);
-        TrustAction combined = leastPermissive(policy, user);
-        return new Verdict(combined, null);
+    /**
+     * Steps 2-3 for any import type: the type's own trust-gate default combined with the user's
+     * import mode, least permissive wins. A null mode counts as AUTO_ACCEPT, so the gate decides;
+     * the gate result is required, since a missing one must never read as AUTO_ACCEPT.
+     */
+    public Verdict resolve(TrustAction gateDefault, ImportMode userMode) {
+        Objects.requireNonNull(gateDefault, "gateDefault");
+        return new Verdict(leastPermissive(gateDefault, toAction(userMode)), null);
+    }
+
+    /** Steps 1-3 for VEX: {@link VexTrustGate} default x user mode, no conflict check. */
+    public Verdict resolve(IssuerClass issuerClass, AnalysisState state, ImportMode userMode) {
+        return resolve(VexTrustGate.defaultAction(issuerClass, state), userMode);
     }
 
     /** Full v1.2 precedence chain including step 4 (broader-scope conflict guard). */
     public Verdict resolveWithConflictCheck(
-            IssuerClass issuerClass, AnalysisState state, VexImportMode userMode,
+            IssuerClass issuerClass, AnalysisState state, ImportMode userMode,
             AnalysisScope candidateScope, List<VulnAnalysisData> existingRows) {
         Verdict initial = resolve(issuerClass, state, userMode);
         if (initial.action() != TrustAction.AUTO_ACCEPT) return initial;
@@ -76,7 +87,7 @@ public class VexVerdictResolver {
             .min((a, b) -> Integer.compare(scopeRank(a.getScope()), scopeRank(b.getScope())));
     }
 
-    private TrustAction toAction(VexImportMode mode) {
+    private TrustAction toAction(ImportMode mode) {
         if (mode == null) return TrustAction.AUTO_ACCEPT;
         return switch (mode) {
             case AUTO_ACCEPT -> TrustAction.AUTO_ACCEPT;

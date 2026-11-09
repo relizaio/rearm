@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: ReARM Build And Submit Documentation Release
-        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.14.1
+        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.15.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit Documentation Helm metadata action
-        uses: relizaio/rearm-helm-action@eb6aa8be30c8de5b5549e8e96f9210a85103c7d5 # v1.11.1
+        uses: relizaio/rearm-helm-action@eb6aa8be30c8de5b5549e8e96f9210a85103c7d5 # v1.12.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -93,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: RelizaHub Build And Submit ReARM Landing Helm metadata action
-        uses: relizaio/rearm-helm-action@eb6aa8be30c8de5b5549e8e96f9210a85103c7d5 # v1.11.1
+        uses: relizaio/rearm-helm-action@eb6aa8be30c8de5b5549e8e96f9210a85103c7d5 # v1.12.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Build And Submit ReARM Helm to ReARM
-        uses: relizaio/rearm-helm-action@eb6aa8be30c8de5b5549e8e96f9210a85103c7d5 # v1.11.1
+        uses: relizaio/rearm-helm-action@eb6aa8be30c8de5b5549e8e96f9210a85103c7d5 # v1.12.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -141,7 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Build And Submit ReARM Helm to ReARM
-        uses: relizaio/rearm-helm-action@eb6aa8be30c8de5b5549e8e96f9210a85103c7d5 # v1.11.1
+        uses: relizaio/rearm-helm-action@eb6aa8be30c8de5b5549e8e96f9210a85103c7d5 # v1.12.1
         with:
           registry_username: ${{ secrets.REARM_REGISTRY_LOGIN }}
           registry_password: ${{ secrets.REARM_REGISTRY_TOKEN }}
@@ -201,7 +201,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: ReARM Build And Submit UI Release
-        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.14.1
+        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.15.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -230,7 +230,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Build And Submit Backend Release to ReARM
-        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.14.1
+        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.15.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -259,7 +259,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: ReARM Build And Submit ReARM OCI Service Release
-        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.14.1
+        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.15.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -288,7 +288,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Build And Submit ReARM Keycloak Release to ReARM
-        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.14.1
+        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.15.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -315,7 +315,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: ReARM Build And Submit ReARM Landing Release
-        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.14.1
+        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.15.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}
@@ -340,7 +340,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: ReARM Build And Submit Rebom Backend Release
-        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.14.1
+        uses: relizaio/rearm-docker-action@93cb347cb43ea772ff980e23694b8ec8f1d011aa # v1.15.1
         with:
           registry_username: ${{ secrets.DOCKER_LOGIN }}
           registry_password: ${{ secrets.DOCKER_TOKEN }}

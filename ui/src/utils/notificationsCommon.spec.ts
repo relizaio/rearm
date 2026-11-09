@@ -33,6 +33,11 @@ import {
     hasUneditableMultiRoute,
     LIST_GROUPS_QUERY, LIST_GROUPS_CORE_QUERY,
     LIST_SUBSCRIPTIONS_QUERY, LIST_SUBSCRIPTIONS_CORE_QUERY,
+    AGENT_BOARD_EVENT_TYPES,
+    BOARD_DOCUMENT_BEARING_EVENT_TYPES,
+    boardDocumentsApplyTo,
+    includesBoardDocuments,
+    includeBoardDocumentsInput,
 } from './notificationsCommon'
 
 // Pin the CORE vs ENRICHMENT split of the drift-fallback list queries: CORE
@@ -54,13 +59,17 @@ describe('notification list query CORE / FULL split', () => {
     })
 
     const SUB_CORE = ['uuid', 'org', 'resourceGroup', 'name', 'status', 'eventTypes', 'revision']
-    const SUB_ENRICHMENT = ['filter', 'routes', 'dedupWindowMinutes', 'rateLimit', 'managedByTeam']
+    const SUB_ENRICHMENT = ['filter', 'routes', 'dedupWindowMinutes', 'rateLimit', 'managedByTeam', 'includeBoardDocuments']
     it('subscriptions CORE has the render essentials and no enrichment fields', () => {
         SUB_CORE.forEach(f => expect(has(LIST_SUBSCRIPTIONS_CORE_QUERY, f), `core should have ${f}`).toBe(true))
         SUB_ENRICHMENT.forEach(f => expect(has(LIST_SUBSCRIPTIONS_CORE_QUERY, f), `core should NOT have ${f}`).toBe(false))
     })
     it('subscriptions FULL has both core and enrichment fields', () => {
         [...SUB_CORE, ...SUB_ENRICHMENT].forEach(f => expect(has(LIST_SUBSCRIPTIONS_QUERY, f), `full should have ${f}`).toBe(true))
+    })
+    it('T-5 (TPF-159): FULL selects includeBoardDocuments after managedByTeam', () => {
+        const printed = print(LIST_SUBSCRIPTIONS_QUERY)
+        expect(printed.indexOf('includeBoardDocuments')).toBeGreaterThan(printed.indexOf('managedByTeam'))
     })
 })
 
@@ -276,6 +285,60 @@ describe('buildNotificationFilterInput', () => {
     })
     it('tolerates a null/undefined rawFilter (Create path)', () => {
         expect(buildNotificationFilterInput(null, 'PRESET', '')).toEqual({ mode: 'PRESET', celExpression: null })
+    })
+    it('T-6 (TPF-159): a presetConfig includeBoardDocuments key passes through unread and unstripped', () => {
+        const out = buildNotificationFilterInput({ mode: 'PRESET', presetConfig: { includeBoardDocuments: true } }, 'PRESET', '')
+        expect(out).toEqual({ mode: 'PRESET', celExpression: null, presetConfigJson: '{"includeBoardDocuments":true}' })
+        expect('includeBoardDocuments' in out).toBe(false)
+    })
+})
+
+describe('board document releases (TPF-159)', () => {
+    const NINE = ['RELEASE_CREATED', 'RELEASE_LIFECYCLE_CHANGED', 'RELEASE_BOM_DIFF', 'RELEASE_TEA_PUBLISHED',
+        'RELEASE_TEA_HIDDEN', 'RELEASE_SUBMISSION_CREATED', 'RELEASE_SUBMISSION_WITHDRAWN', 'APPROVAL_REQUESTED',
+        'APPROVAL_RESOLVED']
+
+    it('T-1: the nine release-shaped types, in order, all offered, none of the others', () => {
+        expect(BOARD_DOCUMENT_BEARING_EVENT_TYPES).toEqual(NINE)
+        const offered = eventTypeOptions.map(o => o.value)
+        NINE.forEach(t => expect(offered, `${t} offered`).toContain(t))
+        const others = ['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED', 'VEX_STATE_CHANGED',
+            'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED', ...AGENT_BOARD_EVENT_TYPES]
+        expect(AGENT_BOARD_EVENT_TYPES).toHaveLength(4)
+        others.forEach(t => expect(BOARD_DOCUMENT_BEARING_EVENT_TYPES, `${t} not release-shaped`).not.toContain(t))
+    })
+
+    it('T-2: boardDocumentsApplyTo is true with any release-shaped type and false otherwise', () => {
+        NINE.forEach(t => expect(boardDocumentsApplyTo([t]), t).toBe(true))
+        expect(boardDocumentsApplyTo(['NEW_VULN_AFFECTS_RELEASES', 'APPROVAL_RESOLVED'])).toBe(true)
+        expect(boardDocumentsApplyTo([])).toBe(false)
+        expect(boardDocumentsApplyTo(null)).toBe(false)
+        expect(boardDocumentsApplyTo(undefined)).toBe(false)
+        expect(boardDocumentsApplyTo(['NEW_VULN_AFFECTS_RELEASES'])).toBe(false)
+        expect(boardDocumentsApplyTo(['INSTANCE_DEPLOYMENT_FAILED'])).toBe(false)
+        expect(boardDocumentsApplyTo(['AGENT_BOARD_ALERT'])).toBe(false)
+        expect(boardDocumentsApplyTo(['VEX_STATE_CHANGED'])).toBe(false)
+    })
+
+    it('T-3: includesBoardDocuments is true only for exactly true', () => {
+        expect(includesBoardDocuments({ includeBoardDocuments: true })).toBe(true)
+        expect(includesBoardDocuments({ includeBoardDocuments: false })).toBe(false)
+        expect(includesBoardDocuments({ includeBoardDocuments: null })).toBe(false)
+        expect(includesBoardDocuments({ includeBoardDocuments: undefined })).toBe(false)
+        expect(includesBoardDocuments({})).toBe(false)
+        expect(includesBoardDocuments({ includeBoardDocuments: 'true' as any })).toBe(false)
+        expect(includesBoardDocuments({ includeBoardDocuments: 1 as any })).toBe(false)
+        expect(includesBoardDocuments(null as any)).toBe(false)
+        expect(includesBoardDocuments(undefined as any)).toBe(false)
+    })
+
+    it('T-4: includeBoardDocumentsInput always carries the key, true only for true', () => {
+        const cases: Array<[any, boolean]> = [[true, true], [false, false], [undefined, false], [null, false], ['true', false]]
+        cases.forEach(([v, want]) => {
+            const out = includeBoardDocumentsInput(v)
+            expect(out, String(v)).toEqual({ includeBoardDocuments: want })
+            expect('includeBoardDocuments' in out, `key present for ${String(v)}`).toBe(true)
+        })
     })
 })
 

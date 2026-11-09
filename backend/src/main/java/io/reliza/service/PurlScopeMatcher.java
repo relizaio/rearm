@@ -19,7 +19,7 @@ import io.reliza.model.dto.MatchCandidate;
  * independently — purl matching is a data lookup, scope targeting is pure compute.
  */
 @Service
-public class VexMatcher {
+public class PurlScopeMatcher {
 
     @Autowired PurlReleaseResolver purlReleaseResolver;
     @Autowired ScopeTargetResolver scopeTargetResolver;

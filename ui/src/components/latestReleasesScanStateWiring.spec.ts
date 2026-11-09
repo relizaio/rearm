@@ -93,6 +93,16 @@ describe('MostRecentReleasesWidget loads through the latched fallback and draws 
         const line = widget.importLine('@/utils/releaseScanStatus')
         for (const name of ['scanBadgeBackground', 'ownNotScannableNote', 'NOT_SCANNABLE_GREY']) expect(line).toContain(name)
     })
+
+    it('sends the software kinds on both reads from the one constant (TPF-157)', () => {
+        const line = widget.importLine('@/utils/agentDocumentsView')
+        expect(line).toContain('SOFTWARE_KINDS')
+        expect(line).not.toContain('recentReleasesKinds')
+        expect(count(widget.fn('fetchReleases'), 'componentKinds: SOFTWARE_KINDS')).toBe(2)
+        expect(widget.script).not.toContain('recentReleasesKinds')
+        expect(widget.script).not.toContain('includeDocuments')
+        expect(widget.source).not.toContain('include-documents')
+    })
 })
 
 describe('BranchView is untouched (TPF-127, D18)', () => {

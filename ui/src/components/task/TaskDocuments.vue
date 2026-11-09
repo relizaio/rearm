@@ -1,6 +1,16 @@
 <template>
-    <div class="dsec" v-if="taskDocuments.length">
+    <div class="dsec" v-if="taskDocuments.length || carried">
         <div class="dsec__h">Documents</div>
+        <!-- A split child's carried design (task TPF-164): the parent's reviewed rounds that stand as this task's design,
+             above its own documents. They are the parent's releases, so they are read from the record, not from documents. -->
+        <div v-if="carried" class="dcarried" data-testid="carried-documents">
+            <div class="dcarried__h">Carried from <router-link :to="taskPagePath(carried.parentTask)"
+                data-testid="carried-parent">{{ carried.parentKey }}</router-link></div>
+            <div v-for="r in carried.rounds ?? []" :key="r.release" class="drow" data-testid="carried-round">
+                <router-link :to="`/release/show/${r.release}`" class="drow__label">{{ carriedRoundLabel(r) }}</router-link>
+                <code v-if="r.path" class="drow__path drow__path--plain">{{ r.path }}</code>
+            </div>
+        </div>
         <template v-for="d in listedDocuments" :key="d.uuid ?? ''">
         <!-- A version the same hop replaced by publishing the path again stays listed, greyed (task RD4-7). -->
         <div class="drow" :class="{ 'drow--superseded': !!replacedByLabel(d, taskDocuments) }">
@@ -55,6 +65,8 @@ import { DocumentRelease, advisoryLabel, documentFileUrl, documentLabel, documen
 import { outcomeWord } from '@/utils/agentWords'
 import { documentDefining, elementsOf } from '@/utils/agentElements'
 import { answeredByLabel, questionRounds, questionStateLabel, questionStateType } from '@/utils/agentQuestionRounds'
+import { carriedDesignOf, carriedRoundLabel } from '@/utils/agentCarriedDesign'
+import { taskPagePath } from '@/utils/agentTaskFormat'
 
 const props = defineProps<{
     task: any
@@ -65,6 +77,7 @@ const props = defineProps<{
 }>()
 
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
+const carried = computed(() => carriedDesignOf(props.task))
 // The rows of the Documents list: a BOARD_ELEMENT_CHECK_REPORT round is read under the document it is about.
 const listedDocuments = computed(() => taskDocuments.value.filter(d => d?.document?.specification !== 'BOARD_ELEMENT_CHECK_REPORT'))
 // Each BOARD_QUESTIONS round's state and what answered it (gaps §1.27), by release.
@@ -101,5 +114,10 @@ watch(() => props.focus, (f) => {
 
 .drow--superseded {
     opacity: 0.5;
+}
+
+.dcarried {
+    margin-bottom: 6px;
+    &__h { font-size: 12px; color: #777; margin-bottom: 2px; }
 }
 </style>

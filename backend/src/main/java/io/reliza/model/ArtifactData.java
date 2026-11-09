@@ -22,8 +22,8 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
 import io.reliza.model.dto.ArtifactDto;
+import io.reliza.model.dto.ImportSummary;
 import io.reliza.model.dto.ReleaseMetricsDto;
-import io.reliza.model.dto.VexImportSummary;
 import io.reliza.model.Link;
 import io.reliza.model.Rebom.InternalBom;
 import io.reliza.model.DigestAlgorithm;
@@ -397,10 +397,11 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	private String version; // FIGURE OUT VERSIONING 
 	@JsonIgnore
 	private DependencyTrackIntegration metrics = new DependencyTrackIntegration();
-	// Outcome of the VEX import this artifact triggered (VEX artifacts only;
-	// null otherwise). Persisted so the upload UI can report matched / unmatched
-	// counts instead of leaving the user with a silently empty VEX tab.
-	private VexImportSummary vexImportSummary;
+	// Outcome of the inbound import this artifact triggered (importable types only, VEX
+	// today; null otherwise). Persisted so the upload UI can report matched / unmatched
+	// counts instead of a silently empty tab. The JSONB key stays vexImportSummary so
+	// existing rows read unchanged; GraphQL serves it as importSummary too.
+	private ImportSummary vexImportSummary;
 	/**
 	 * Artifact may have its own artifacts - this is for signature related artifacts, maybe there will be more use cases discovered later
 	 */
@@ -586,5 +587,11 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		// Then add the replaced artifact itself as a version
 		ArtifactVersionSnapshot replacedSnapshot = ArtifactVersionSnapshot.fromArtifactData(replacedArtifact);
 		this.previousVersions.add(replacedSnapshot);
+	}
+
+	/** The import outcome under its generic name, for the {@code Artifact.importSummary} GraphQL field. Not stored. */
+	@JsonIgnore
+	public ImportSummary getImportSummary() {
+		return vexImportSummary;
 	}
 }

@@ -166,15 +166,60 @@ export function checkpointPhase (task: any): CheckpointPhase | null {
     return reachedBeforeRole(task, rec) ? 'lapsed' : 'ahead'
 }
 
+/** The prefix of the note the server writes on a checkpoint the architect waived with --no-split (task TPF-152). */
+const WAIVED_NOTE_PREFIX = 'waived by '
+
+/** The longest waiver note the header chip carries; the tooltip and the hop row carry the whole note. */
+const WAIVER_CHIP_NOTE_MAX = 80
+
+/**
+ * The waiver a SENT_ON record carries (task TPF-153), or null: its note reads "waived by <role>: <note>" as the
+ * server wrote it. A blind reader's copy reads "waived by <role>" alone, so its note is null, and so is an empty
+ * tail. Text only: callers interpolate it into text nodes.
+ */
+export function checkpointWaiver (rec: any): { role: string, note: string | null } | null {
+    if (rec?.state !== 'SENT_ON' || typeof rec.note !== 'string' || !rec.note.startsWith(WAIVED_NOTE_PREFIX)) return null
+    const rest = rec.note.slice(WAIVED_NOTE_PREFIX.length)
+    const i = rest.indexOf(': ')
+    if (i < 0) return { role: rest, note: null }
+    const note = rest.slice(i + 2)
+    return { role: rest.slice(0, i), note: note || null }
+}
+
+/**
+ * True when the task stopped at the checkpoint although the architect said --no-split on the stopped round: the
+ * board's architectCheckpointWaiver is off. Read off the record and the server's standing, never recomputed.
+ */
+export function waiverIgnored (task: any): boolean {
+    const waiver = task?.designCheckpointWaiver
+    if (checkpointPhase(task) !== 'waiting' || !waiver || waiver.standing !== false) return false
+    return (task.designCheckpoint.design ?? []).includes(waiver.designRound)
+}
+
+/** "checkpoint waived by <role>: <note>", or the role alone when the note is null (a blind reader). */
+function waivedText (w: { role: string, note: string | null }, note: string | null = w.note): string {
+    return note ? `checkpoint waived by ${w.role}: ${note}` : `checkpoint waived by ${w.role}`
+}
+
 /**
  * The task header's checkpoint chip, or null. None for a closed or lapsed record: the status tag says the
  * one, the other is history, and the hop log keeps both.
  */
 export function checkpointTag (task: any): { text: string, type: 'warning' | 'default' } | null {
     switch (checkpointPhase(task)) {
-    case 'waiting': return { text: 'at the design checkpoint', type: 'warning' }
+    case 'waiting': return {
+        text: waiverIgnored(task) ? 'at the design checkpoint (--no-split ignored)' : 'at the design checkpoint',
+        type: 'warning'
+    }
     case 'ahead': return { text: 'design checkpoint ahead', type: 'default' }
     case 'sent_on': {
+        const waiver = checkpointWaiver(task.designCheckpoint)
+        if (waiver) {
+            const note = waiver.note && waiver.note.length > WAIVER_CHIP_NOTE_MAX
+                ? waiver.note.slice(0, WAIVER_CHIP_NOTE_MAX) + '...'
+                : waiver.note
+            return { text: waivedText(waiver, note), type: 'default' }
+        }
         const by = actorLabel(task.designCheckpoint.settledBy)
         return { text: by ? `sent on by ${by}` : 'sent on', type: 'default' }
     }
@@ -190,11 +235,20 @@ export function checkpointTooltip (task: any): string {
     const rec = task.designCheckpoint
     const head = `design checkpoint before ${rec.beforeRole}, reached after ${rec.afterRole ?? 'the design'} ${rec.reachedAt}`
     switch (phase) {
-    case 'waiting': return `${head}; waiting for the coordinator`
+    case 'waiting': return `${head}; waiting for the coordinator` +
+        (waiverIgnored(task) ? '; the architect\'s --no-split on this round was ignored: the board\'s architectCheckpointWaiver is off' : '')
     case 'ahead': return `${head}; now with ${roleAhead(task)}; the task stops at the checkpoint again before ${rec.beforeRole}`
     case 'closed': return `${head}; closed from the checkpoint, not settled`
     case 'lapsed': return `${head}; not settled; the task went on to ${roleAhead(task)}`
     default: {
+        const waiver = checkpointWaiver(rec)
+        if (waiver) {
+            const at = rec.settledAt ? ' ' + rec.settledAt : ''
+            const notStanding = task.designCheckpointWaiver?.standing === false
+                ? '; the waiver no longer stands (a newer design round, an advisory round or a reopen since)'
+                : ''
+            return `${head}; checkpoint waived by ${waiver.role}${at}${waiver.note ? ': ' + waiver.note : ''}${notStanding}`
+        }
         const by = actorLabel(rec.settledBy)
         const verb = phase === 'split' ? 'split' : 'sent on'
         return `${head}; ${verb}${by ? ' by ' + by : ''}${rec.settledAt ? ' ' + rec.settledAt : ''}${rec.note ? ': ' + rec.note : ''}`
@@ -223,6 +277,14 @@ export function childCount (n: number): string {
 }
 
 /**
+ * A proposed child's title as the split request shows it (task TPF-164): " [design from parent]" after the title of
+ * a child proposed to build from the parent's reviewed design. Only a true designFromParent marks it.
+ */
+export function proposedChildTitle (child: any): string {
+    return child?.designFromParent === true ? `${child.title} [design from parent]` : `${child?.title ?? ''}`
+}
+
+/**
  * The chip's tooltip: the requester's reason and the children it proposes, titles whole (the server bounds
  * them). A blind read has no description; it then reads as the redacted request does. '' without a record.
  */
@@ -230,7 +292,7 @@ export function splitRequestTooltip (task: any): string {
     const rec = task?.splitRequest
     if (!rec) return ''
     const head = rec.description ?? `split requested by ${rec.role}`
-    const titles = (rec.proposedChildren ?? []).map((c: any) => c.title)
+    const titles = (rec.proposedChildren ?? []).map(proposedChildTitle)
     if (!titles.length) return `${head}; proposes no children`
     return `${head}; proposes ${childCount(titles.length)}: ${titles.join('; ')}`
 }
