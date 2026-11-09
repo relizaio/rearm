@@ -7,6 +7,7 @@ import graphqlQueries from './utils/graphqlQueries'
 import { SOFTWARE_KINDS } from './utils/agentDocumentsView'
 import { loadWithSchemaDriftFallback, sendWithLatchedFallback, sendWithLatchedTiers, withoutAdditiveFields, artifactScanStateLatch, releaseBomScanLatch } from './utils/graphqlDriftFallback'
 import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './utils/organizationsQuery'
+import { seatRefusalOf } from './utils/licenseSeats'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
 import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
 import { withExpectedRevision } from '@/utils/componentRevision'
@@ -888,6 +889,12 @@ const storeObject : any = {
                 })
                 if (!data.data || !data.data.user) {
                     if (data.error && data.error.errors && data.error.errors.length) {
+                        // A typed license seat refusal (TPF-168): the server's text and reason,
+                        // before the generic branches, so it never reads as inactive or offline.
+                        const seatRefusal = seatRefusalOf((data.error as any).errors)
+                        if (seatRefusal) {
+                            return { _seatRefused: seatRefusal.reason, _errorMessage: seatRefusal.message }
+                        }
                         const msg = data.error.errors[0].message
                         if (msg === 'Not authorized') {
                             return { _unauthorized: true, _errorMessage: msg }

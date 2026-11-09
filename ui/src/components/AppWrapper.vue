@@ -9,6 +9,7 @@
                                 <top-nav-bar />
                             </n-layout-content>
                         </n-layout>
+                        <license-over-limit-banner v-if="myUser && myUser.uuid" />
                         <n-layout>
                             <n-layout-content >
                                 <left-nav-bar />
@@ -35,6 +36,7 @@ import { NConfigProvider, NLayout, NSpace, NLayoutContent, NNotificationProvider
 import TopNavBar from './TopNavBar.vue'
 import LeftNavBar from './LeftNavBar.vue'
 import AppFooter from './AppFooter.vue'
+import LicenseOverLimitBanner from './LicenseOverLimitBanner.vue'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import SignUpFlow from '@/components/SignUpFlow.vue'
@@ -52,7 +54,7 @@ const store = useStore()
 // The branding is awaited so the first paint is already branded; loadBranding is bounded and never throws.
 await Promise.all([loadBranding(), fetchCsrfToken()])
 const fetchUserResult = await store.dispatch('fetchMyUser')
-if (!fetchUserResult || fetchUserResult._unauthorized || fetchUserResult._offline) {
+if (!fetchUserResult || fetchUserResult._seatRefused || fetchUserResult._unauthorized || fetchUserResult._offline) {
     console.log(fetchUserResult)
     store.commit('SET_FETCH_USER_STATUS', fetchUserResult || { _offline: true, _errorMessage: 'No response' })
     await commonFunctions.handleFetchUserResult(fetchUserResult)

@@ -15,7 +15,10 @@
                     <p><strong>Write Users:</strong> {{ licenseData.globalUserCounts?.writeUsers || 0 }} / {{ licenseData.maxWriteUsers }}</p>
                     <p><strong>Read Users:</strong> {{ licenseData.globalUserCounts?.readUsers || 0 }}</p>
                     <p><strong>Total Users:</strong> {{ licenseData.globalUserCounts?.totalUsers || 0 }} / {{ (licenseData.maxWriteUsers || 0) + (licenseData.maxReadUsers || 0) }}</p>
+                    <p data-testid="license-no-role-users"><strong>Users Without a Role (not counted):</strong> {{ licenseData.globalUserCounts?.noRoleUsers || 0 }}</p>
+                    <p data-testid="license-outside-limit"><strong>Outside the Limit:</strong> {{ licenseData.globalUserCounts?.outsideLimit || 0 }}</p>
                     <n-button type="warning" @click="showLicenseModal = true">Update License</n-button>
+                    <LicenseSeatUsers @license="onSeatLicense" />
                 </div>
                 <div v-else>
                     <p>No valid license found.</p>
@@ -132,6 +135,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
 import TeaDomainAssignments from './TeaDomainAssignments.vue'
+import LicenseSeatUsers from './LicenseSeatUsers.vue'
 
 
 const store = useStore()
@@ -183,6 +187,9 @@ async function initLoad() {
                             writeUsers
                             readUsers
                             totalUsers
+                            noRoleUsers
+                            outsideLimit
+                            countedAt
                         }
                     }
                 }
@@ -191,6 +198,12 @@ async function initLoad() {
         })
         licenseData.value = licenseResp.data.license
     }
+}
+
+/** The seat view re-counted (Refresh, Remove accounts with no role): its fresh counts replace the block's. */
+function onSeatLicense(fresh: any) {
+    if (!fresh) return
+    licenseData.value = { ...(licenseData.value || {}), ...fresh }
 }
 
 function formatDate(dateString: string) {
@@ -213,6 +226,9 @@ async function uploadLicense() {
                             writeUsers
                             readUsers
                             totalUsers
+                            noRoleUsers
+                            outsideLimit
+                            countedAt
                         }
                     }
                 }`,

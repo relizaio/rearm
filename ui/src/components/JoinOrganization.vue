@@ -14,6 +14,7 @@ import { useRoute } from 'vue-router'
 import Swal from 'sweetalert2'
 import commonFunctions from '@/utils/commonFunctions'
 import { brandingState, applySignUpBackground } from '@/utils/branding'
+import { seatRefusalOfError } from '@/utils/licenseSeats'
 
 applySignUpBackground()
 
@@ -21,6 +22,9 @@ const route = useRoute()
 
 let isError = false
 let errMsg = ''
+// A license seat refusal (TPF-168): the global Sign-in refused dialog already shows the server's
+// text, so this page shows no second dialog over it.
+let seatRefused = false
 
 try {
     const response = await graphqlClient.mutate({
@@ -40,6 +44,7 @@ try {
     console.log(error)
     errMsg = error.message
     isError = true
+    seatRefused = seatRefusalOfError(error) !== null
 }
 
 let swalResp: any = ''
@@ -51,7 +56,7 @@ if (!isError) {
         icon: 'info',
         confirmButtonText: 'OK'
     })
-} else {
+} else if (!seatRefused) {
     const errText = errMsg ? commonFunctions.parseGraphQLError(errMsg) : `Error joining organization, please retry or contact support at ${brandingState.supportEmail}`
     swalResp = await Swal.fire({
         title: 'Error!',
