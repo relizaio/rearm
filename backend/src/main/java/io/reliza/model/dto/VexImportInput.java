@@ -6,9 +6,9 @@ package io.reliza.model.dto;
 import java.util.UUID;
 
 import io.reliza.model.AnalysisScope;
+import io.reliza.model.ImportMode;
 import io.reliza.model.IssuerClass;
 import io.reliza.model.SourceFormat;
-import io.reliza.model.VexImportMode;
 import lombok.Data;
 
 /**
@@ -35,10 +35,12 @@ public class VexImportInput {
     /** Provenance binding to a release; restricts RELEASE-scoped matches to this release only. */
     private UUID restrictToRelease;
 
+    // vexScope / vexImportMode carry the upload's generic importScope / importMode
+    // (the names predate the generic fields).
     /** User-picked scope (RELEASE/BRANCH/COMPONENT/ORG). v1.1 parity: dispatch defaults to RELEASE. */
     private AnalysisScope vexScope;
     /** User-picked import mode (AUTO_ACCEPT/STAGE/REJECT). Default: AUTO_ACCEPT. */
-    private VexImportMode vexImportMode;
+    private ImportMode vexImportMode;
     /** User-supplied override for the derived issuerClass; when non-null, replaces the heuristic. */
     private IssuerClass userIssuerClassOverride;
 }

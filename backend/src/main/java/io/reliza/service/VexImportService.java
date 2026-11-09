@@ -4,32 +4,34 @@
 package io.reliza.service;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisScope;
+import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.FindingType;
+import io.reliza.model.ImportMode;
 import io.reliza.model.IssuerClass;
 import io.reliza.model.LocationType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.SourceFormat;
 import io.reliza.model.TrustAction;
-import io.reliza.model.VexImportMode;
 import io.reliza.model.VexStatementProposalData;
+import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.CdxVexStatement;
+import io.reliza.model.dto.ImportSummary;
 import io.reliza.model.dto.MatchCandidate;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.model.dto.VexImportInput;
@@ -44,9 +46,10 @@ import lombok.extern.slf4j.Slf4j;
  *
  * Two public entry points:
  *   <ul>
- *     <li>{@link #dispatchFromArtifact} — called from ReleaseDatafetcher.addArtifact after a
- *         VEX artifact has been persisted; performs the B1 precondition guard, derives
- *         IssuerClass from binding context, then runs the pipeline.</li>
+ *     <li>{@link #dispatch} - the {@link ArtifactImportHandler} entry, called through
+ *         {@link ArtifactImportRegistry} by both upload paths after a VEX artifact has been
+ *         persisted; performs the B1 precondition guard, derives IssuerClass from binding
+ *         context, then runs the pipeline.</li>
  *     <li>{@link #importPipeline} — pipeline entry, callable from tests or future direct
  *         programmatic paths with a fully-populated VexImportInput.</li>
  *   </ul>
@@ -54,30 +57,36 @@ import lombok.extern.slf4j.Slf4j;
  * Pipeline shape:
  *   <pre>
  *   parser   = VexFormatParser registry by SourceFormat
- *   matches  = VexMatcher → PurlReleaseResolver + ScopeTargetResolver
- *   verdict  = VexVerdictResolver  (gate + user-mode + conflict guard)
+ *   matches  = PurlScopeMatcher -> PurlReleaseResolver + ScopeTargetResolver
+ *   verdict  = ImportVerdictResolver  (gate + user-mode + conflict guard)
  *   commit   = VexStatementProposalService (createProposal + accept on AUTO_ACCEPT)
  *   </pre>
  */
 @Slf4j
 @Service
-public class VexImportService {
+public class VexImportService implements ArtifactImportHandler {
 
     @Autowired OpenVexParser openVexParser;
     @Autowired CdxVexParser cdxVexParser;
-    @Autowired VexMatcher matcher;
-    @Autowired VexVerdictResolver verdictResolver;
+    @Autowired PurlScopeMatcher matcher;
+    @Autowired ImportVerdictResolver verdictResolver;
     @Autowired VexStatementProposalService proposalService;
     @Autowired SbomComponentService sbomComponentService;
     @Autowired VulnAnalysisService vulnAnalysisService;
     @Autowired VulnerabilityRecordService vulnerabilityRecordService;
 
+    @Override
+    public ArtifactType type() {
+        return ArtifactType.VEX;
+    }
+
     /**
      * Pre-upload precondition: the release must already have SBOM inventory or the VEX has
-     * nothing to match against. Called from ReleaseDatafetcher before artifact persistence so
-     * a precondition failure fails loud without an orphan file.
+     * nothing to match against. Called through {@link ArtifactImportRegistry} before artifact
+     * persistence so a precondition failure fails loud without an orphan file.
      */
-    public void verifyDispatchPreconditions(ReleaseData rd) throws RelizaException {
+    @Override
+    public void verifyPreconditions(ReleaseData rd) throws RelizaException {
         if (rd != null && !sbomComponentService.releaseHasSbomComponents(rd.getUuid(), rd.getOrg())) {
             throw new RelizaException(
                 "Cannot import VEX: release has no SBOM components yet. "
@@ -88,8 +97,8 @@ public class VexImportService {
     /**
      * Entry point from the artifact-upload path. The VEX artifact has just been persisted;
      * this method derives IssuerClass from the binding context and dispatches the pipeline.
-     * Re-runs the precondition guard defensively (ReleaseDatafetcher already calls
-     * {@link #verifyDispatchPreconditions} pre-upload).
+     * Re-runs the precondition guard defensively ({@link ArtifactImportRegistry} already
+     * calls {@link #verifyPreconditions} pre-upload). Returns the summary the registry stores.
      *
      * <p>REQUIRES_NEW: the programmatic upload path runs this dispatch from inside
      * {@code ReleaseService.processReleaseArtifacts(@Transactional)} and catches/logs
@@ -100,12 +109,13 @@ public class VexImportService {
      * creates the new tx — an annotation on the internal {@link #importPipeline} alone
      * would be bypassed by the same-class call here.
      */
-    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
-    public VexImportResult dispatchFromArtifact(
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ImportSummary dispatch(
             UUID artifactUuid, ArtifactDto artDto, ReleaseData rd,
             ArtifactBelongsTo belongsTo, byte[] content, WhoUpdated wu) throws RelizaException {
 
-        verifyDispatchPreconditions(rd);
+        verifyPreconditions(rd);
 
         SourceFormat format = (artDto.getBomFormat() == BomFormat.CYCLONEDX)
             ? SourceFormat.CDX_VEX
@@ -119,8 +129,8 @@ public class VexImportService {
         input.setFormat(format);
         input.setIssuerClass(issuerClass);
         input.setRestrictToRelease(rd.getUuid());
-        input.setVexScope(artDto.getVexScope() != null ? artDto.getVexScope() : AnalysisScope.COMPONENT);
-        input.setVexImportMode(artDto.getVexImportMode() != null ? artDto.getVexImportMode() : VexImportMode.AUTO_ACCEPT);
+        input.setVexScope(artDto.getImportScope() != null ? artDto.getImportScope() : AnalysisScope.COMPONENT);
+        input.setVexImportMode(artDto.getImportMode() != null ? artDto.getImportMode() : ImportMode.AUTO_ACCEPT);
         input.setUserIssuerClassOverride(artDto.getUserIssuerClassOverride());
         input.setNote(artDto.getDisplayIdentifier());
 
@@ -131,7 +141,7 @@ public class VexImportService {
             result.getProposalsAutoAccepted(), result.getProposalsAutoRejected(),
             result.getStatementsUnmatched(), result.getStatementsErrored(),
             result.getErrorMessages().isEmpty() ? "" : " errors=" + result.getErrorMessages());
-        return result;
+        return ImportSummary.fromResult(result);
     }
 
     /**
@@ -148,9 +158,9 @@ public class VexImportService {
     }
 
     /**
-     * Joins the caller's transaction (typically the {@link #dispatchFromArtifact}'s REQUIRES_NEW
+     * Joins the caller's transaction (typically the {@link #dispatch}'s REQUIRES_NEW
      * boundary). The dispatch entry point owns the new-tx semantics; this method stays REQUIRED
-     * because the same-class call from {@code dispatchFromArtifact} bypasses Spring's AOP proxy
+     * because the same-class call from {@code dispatch} bypasses Spring's AOP proxy
      * and would ignore any annotation here anyway.
      */
     @Transactional
@@ -209,9 +219,9 @@ public class VexImportService {
             }
             anyPurlMatched = true;
             String location = Utils.minimizePurl(productPurl);
-            String hash = sha256(stmt.rawJson());
+            String hash = Utils.sha256Hex(stmt.rawJson());
             // Depends only on (org, location, findingId, type) — invariant across match candidates.
-            List<io.reliza.model.VulnAnalysisData> existingRows = vulnAnalysisService
+            List<VulnAnalysisData> existingRows = vulnAnalysisService
                 .findByOrgAndLocationAndFindingIdAndType(
                     input.getOrg(), location, stmt.vulnerabilityId(), FindingType.VULNERABILITY);
             VulnerabilitySeverity resolvedSeverity = resolveSeverity(
@@ -227,7 +237,7 @@ public class VexImportService {
                     entry.translationNotes(),
                     effectiveIssuerClass, input.getVexImportMode(), input.getUserIssuerClassOverride());
 
-                VexVerdictResolver.Verdict verdict = verdictResolver.resolveWithConflictCheck(
+                ImportVerdictResolver.Verdict verdict = verdictResolver.resolveWithConflictCheck(
                     effectiveIssuerClass, stmt.state(), input.getVexImportMode(),
                     mc.scope(), existingRows);
 
@@ -236,8 +246,8 @@ public class VexImportService {
                 if (finalAction == TrustAction.AUTO_ACCEPT && resolvedSeverity == null) {
                     finalAction = TrustAction.STAGE;
                     finalReason = finalReason == null
-                        ? VexVerdictResolver.DEMOTION_REASON_SEVERITY_MISSING
-                        : finalReason + ";" + VexVerdictResolver.DEMOTION_REASON_SEVERITY_MISSING;
+                        ? ImportVerdictResolver.DEMOTION_REASON_SEVERITY_MISSING
+                        : finalReason + ";" + ImportVerdictResolver.DEMOTION_REASON_SEVERITY_MISSING;
                 }
                 candidate.setDemotionReason(finalReason);
 
@@ -258,12 +268,12 @@ public class VexImportService {
      */
     VulnerabilitySeverity resolveSeverity(UUID org, VulnerabilitySeverity fromStatement,
                                                   String findingId,
-                                                  List<io.reliza.model.VulnAnalysisData> existingRows) {
+                                                  List<VulnAnalysisData> existingRows) {
         if (fromStatement != null) return fromStatement;
         if (existingRows != null && !existingRows.isEmpty()) {
             VulnerabilitySeverity fromAnalysis = existingRows.stream()
                 .sorted((a, b) -> Integer.compare(scopeRank(a.getScope()), scopeRank(b.getScope())))
-                .map(io.reliza.model.VulnAnalysisData::getSeverity)
+                .map(VulnAnalysisData::getSeverity)
                 .filter(s -> s != null)
                 .findFirst()
                 .orElse(null);
@@ -326,20 +336,5 @@ public class VexImportService {
             case CDX_VEX -> cdxVexParser;
             default -> throw new RelizaException("Unsupported VEX format: " + format);
         };
-    }
-
-    private String sha256(String s) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hash = md.digest(s.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(hash.length * 2);
-            for (byte b : hash) hex.append(String.format("%02x", b));
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-256 is a JDK guarantee; a miss here is a broken JVM, not a recoverable
-            // condition. Returning a sentinel would key dedupe on a shared hash and cascade
-            // mark every proposal SUPERSEDED — fail loud instead.
-            throw new IllegalStateException("SHA-256 not available", e);
-        }
     }
 }

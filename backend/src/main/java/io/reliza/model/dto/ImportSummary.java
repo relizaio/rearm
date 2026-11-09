@@ -10,13 +10,15 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 
 /**
- * Compact, durable outcome of a VEX import, persisted on the VEX
- * {@link io.reliza.model.ArtifactData} that produced it and surfaced to the UI
- * (see the {@code Artifact.vexImportSummary} GraphQL field). Unlike
- * {@link VexImportResult} -- the transient, per-dispatch working object that
- * also carries the created proposal UUIDs -- this holds only the counts a user
- * needs to understand what happened, so an upload that matched nothing shows
- * "N statements, 0 matched" instead of a silently empty VEX tab.
+ * Compact, durable outcome of an inbound artifact import (VEX today), returned by
+ * every {@code ArtifactImportHandler}, persisted on the
+ * {@code ArtifactData} that produced it and surfaced to the UI
+ * (see the {@code Artifact.importSummary} GraphQL field, and its deprecated
+ * alias {@code vexImportSummary}). Unlike {@link VexImportResult} -- VEX's
+ * transient, per-dispatch working object that also carries the created proposal
+ * UUIDs -- this holds only the counts a user needs to understand what happened,
+ * so an upload that matched nothing shows "N statements, 0 matched" instead of a
+ * silently empty tab. Formerly VexImportSummary.
  *
  * <p>{@code proposalsCreated} counts statements staged for review (PENDING);
  * {@code proposalsAutoAccepted} counts statements applied immediately. A
@@ -25,13 +27,13 @@ import lombok.Data;
  */
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class VexImportSummary {
+public class ImportSummary {
     private int statementsTotal;
     private int proposalsCreated;
     private int proposalsAutoAccepted;
     private int proposalsAutoRejected;
-    // Subset of proposalsAutoAccepted whose analysis write is deferred behind a
-    // PENDING MitigationAttestation (conditional claims).
+    // VEX only (0 for other types): subset of proposalsAutoAccepted whose analysis
+    // write is deferred behind a PENDING MitigationAttestation (conditional claims).
     private int attestationsDeferred;
     private int statementsUnmatched;
     private int statementsErrored;
@@ -40,8 +42,8 @@ public class VexImportSummary {
 
     public static final int MAX_ERROR_MESSAGES = 20;
 
-    public static VexImportSummary fromResult(VexImportResult r) {
-        VexImportSummary s = new VexImportSummary();
+    public static ImportSummary fromResult(VexImportResult r) {
+        ImportSummary s = new ImportSummary();
         s.setStatementsTotal(r.getStatementsTotal());
         s.setProposalsCreated(r.getProposalsCreated());
         s.setProposalsAutoAccepted(r.getProposalsAutoAccepted());

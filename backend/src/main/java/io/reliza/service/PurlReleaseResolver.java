@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Resolves a product PURL to the set of releases (within an org) whose inventory references it.
- * Pure data lookup over {@link SbomComponentService} — extracted from the v1 VexMatcher so
+ * Pure data lookup over {@link SbomComponentService} - extracted from the v1 VexMatcher (now PurlScopeMatcher) so
  * scope-target resolution can live in its own component.
  */
 @Slf4j

@@ -5,14 +5,10 @@
 
 package io.reliza.common;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.ZonedDateTime;
 import java.util.Base64;
-import java.util.HexFormat;
 
 /**
  * Pure helpers for the CLI browser login: codes, hashing and the sliding refresh expiry.
@@ -64,12 +60,9 @@ public final class CliSessionCodes {
 		return Base64.getUrlEncoder().withoutPadding().encodeToString(b);
 	}
 
+	/** Kept as the CLI session-code hashing entry point (CLI services call it); delegates to {@link Utils#sha256Hex}. */
 	public static String sha256Hex(String value) {
-		try {
-			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
-		} catch (NoSuchAlgorithmException e) {
-			throw new IllegalStateException("SHA-256 unavailable", e);
-		}
+		return Utils.sha256Hex(value);
 	}
 
 	/** The next expiry after a refresh: slide by {@link #REFRESH_SLIDE}, capped at {@link #HARD_CAP} from approval. */

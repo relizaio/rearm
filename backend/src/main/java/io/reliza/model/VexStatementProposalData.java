@@ -64,7 +64,7 @@ public class VexStatementProposalData extends RelizaDataParent implements Reliza
 
 	// Audit (v1.2 — user-controllable upload flow)
 	@JsonProperty("issuerClass") private IssuerClass issuerClass;
-	@JsonProperty("userImportMode") private VexImportMode userImportMode;
+	@JsonProperty("userImportMode") private ImportMode userImportMode;
 	@JsonProperty("userIssuerClassOverride") private IssuerClass userIssuerClassOverride;
 	@JsonProperty("demotionReason") private String demotionReason;
 
@@ -81,7 +81,7 @@ public class VexStatementProposalData extends RelizaDataParent implements Reliza
 			String details, VulnerabilitySeverity severity,
 			List<AnalysisResponse> responses, String recommendation, String workaround,
 			List<String> translationNotes,
-			IssuerClass issuerClass, VexImportMode userImportMode, IssuerClass userIssuerClassOverride) {
+			IssuerClass issuerClass, ImportMode userImportMode, IssuerClass userIssuerClassOverride) {
 		VexStatementProposalData d = new VexStatementProposalData();
 		d.uuid = UUID.randomUUID();
 		d.org = org;

@@ -4,7 +4,8 @@
 package io.reliza.model;
 
 /**
- * Classifies the relationship between the issuer of a VEX statement and the org receiving it.
+ * Classifies the relationship between the issuer of an imported statement (VEX today) and the org
+ * receiving it. Shared by inbound artifact imports.
  * Drives default trust policy: SELF is fully trusted, VENDOR is conditionally trusted,
  * THIRD_PARTY requires staging. See ai-plans/vex_imports/08_trust_policy.md.
  */
