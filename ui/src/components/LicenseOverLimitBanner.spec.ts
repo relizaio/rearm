@@ -27,12 +27,12 @@ const CE_ADMIN = { ...GLOBAL_ADMIN, installationType: 'OSS' }
 
 const OVER = { maxReadUsers: 1, maxWriteUsers: 2, globalUserCounts: { readUsers: 2, writeUsers: 3, outsideLimit: 2 } }
 const FITS = { maxReadUsers: 1, maxWriteUsers: 2, globalUserCounts: { readUsers: 1, writeUsers: 2, outsideLimit: 0 } }
-const BANNER = 'This instance is over its license: 2 read users of 1, 3 write users of 2. Accounts outside the limit, by creation date, cannot sign in.'
+const BANNER = 'This instance is over its license: 2 read users of 1, 3 write users of 2. Accounts outside the limit, by creation date, cannot sign in. Please contact support.'
 const U8_OVER_I = { maxReadUsers: 1, maxWriteUsers: 2,
     globalUserCounts: { writeUsers: 4, readUsers: 0, totalUsers: 4, noRoleUsers: 0, outsideLimit: 1 } }
 const U8_OVER_II = { maxReadUsers: 1, maxWriteUsers: 2,
     globalUserCounts: { writeUsers: 3, readUsers: 0, totalUsers: 3, noRoleUsers: 0, outsideLimit: 0 } }
-const U8_BANNER_I = 'This instance is over its license: 0 read users of 1, 4 write users of 2. Accounts outside the limit, by creation date, cannot sign in.'
+const U8_BANNER_I = 'This instance is over its license: 0 read users of 1, 4 write users of 2. Accounts outside the limit, by creation date, cannot sign in. Please contact support.'
 
 const mounted: VueWrapper[] = []
 async function mountAs (user: any) {
@@ -65,6 +65,14 @@ describe('the over-license admin banner', () => {
         expect(opts.query).toBe(LICENSE_BANNER_QUERY)
         expect(opts.fetchPolicy).toBe('no-cache')
         expect(opts.errorPolicy).toBe('all')
+    })
+
+    it('singular for a count of one, and the support sentence', async () => {
+        query.mockResolvedValue({ data: { license: { maxReadUsers: 1, maxWriteUsers: 232,
+            globalUserCounts: { readUsers: 1, writeUsers: 233, outsideLimit: 1 } } } })
+        const w = await mountAs(GLOBAL_ADMIN)
+        expect(banner(w).text()).toBe('This instance is over its license: 1 read user of 1, 233 write users of 232. '
+            + 'Accounts outside the limit, by creation date, cannot sign in. Please contact support.')
     })
 
     it('an organization ADMIN asks too', async () => {

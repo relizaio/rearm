@@ -10,6 +10,7 @@
                             </n-layout-content>
                         </n-layout>
                         <license-over-limit-banner v-if="myUser && myUser.uuid" />
+                        <no-org-permission-banner v-if="myUser && myUser.uuid" />
                         <n-layout>
                             <n-layout-content >
                                 <left-nav-bar />
@@ -37,6 +38,7 @@ import TopNavBar from './TopNavBar.vue'
 import LeftNavBar from './LeftNavBar.vue'
 import AppFooter from './AppFooter.vue'
 import LicenseOverLimitBanner from './LicenseOverLimitBanner.vue'
+import NoOrgPermissionBanner from './NoOrgPermissionBanner.vue'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import SignUpFlow from '@/components/SignUpFlow.vue'
