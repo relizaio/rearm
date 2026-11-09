@@ -136,6 +136,13 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		@JsonProperty
 		private SupportInjectionSetting supportInjection;
 
+		/**
+		 * Whether a package needs a second confirmer (FDAW-1 O4): a stored null is off, read through
+		 * {@link #isSubmissionSecondConfirmerOn()}.
+		 */
+		@JsonProperty
+		private Boolean submissionSecondConfirmer;
+
 		/** Null is treated as {@link SidPurlMode#DISABLED} at resolution time. */
 		@JsonProperty
 		private SidPurlMode sidPurlMode;
@@ -380,6 +387,12 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		 */
 		public SupportInjectionSetting getSupportInjectionOrDefault() {
 			return supportInjection != null ? supportInjection : SupportInjectionSetting.DISABLED;
+		}
+
+		/** @return whether the organization uses a second confirmer; unset and off are the same answer. */
+		@JsonIgnore
+		public boolean isSubmissionSecondConfirmerOn() {
+			return Boolean.TRUE.equals(submissionSecondConfirmer);
 		}
 
 		/**

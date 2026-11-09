@@ -480,6 +480,8 @@ type Settings {
 	security control and a content choice are not the same switch.
 	"""
 	supportInjection: SupportInjectionSetting
+	"Whether a package needs a second confirmer: Confirm is open and Finalize needs a second person. Unset reads as off."
+	submissionSecondConfirmer: Boolean
 	"""
 	Labeling VI.A.2: that patches and software updates may cease at end of support.
 	"""
@@ -1168,6 +1170,8 @@ type Release {
 	teaPublication: TeaPublication
 	"The release's regulatory submissions, every kind (task TEA-35); empty on an edition without submissions"
 	submissions: [Submission!]
+	"The release's drafts, at most one per kind; empty for an API key and on an edition without submissions"
+	drafts: [SubmissionDraft!]!
 	inboundDeliverables: [ID]
 	inboundDeliverableDetails: [Deliverable]
 	tickets: [ID]
@@ -2191,6 +2195,22 @@ enum SubmissionRefusal {
 	KIND_DISABLED
 	"A REFERENCED artifact left the release's inventory or was archived while the package was being composed; repeat the act"
 	INVENTORY_CHANGED
+	DRAFT_EXISTS
+	DRAFT_NOT_FOUND
+	DRAFT_AWAITING_CONFIRMATION
+	BUILD_IN_PROGRESS
+	NO_BUILD
+	REBUILD_FIRST
+	CONFIRMATION_REQUIRED
+	SAME_CONFIRMER
+	NOT_FINAL
+	REPLACES_NOT_FOUND
+	REPLACES_NOT_REPLACEABLE
+	SUPPORT_DISCLOSURE_OFF
+	SUPPORT_INJECTION_FAILED
+	PART_MISMATCH
+	PIN_MISMATCH
+	REBUILD_LIMIT
 }
 
 """The options of one package part; a null field takes the part's default."""
@@ -2419,11 +2439,144 @@ type SubmissionAct {
 	reasonText: String
 }
 
-"""What a submission act did: the head as the act left it and the version it wrote (null for a withdrawal and for UNCHANGED)."""
+"""What a submission act did: the head as the act left it (null while a draft has no version yet), the version it wrote (null for a withdrawal, for UNCHANGED and for a draft act), the act row and the draft as committed. A refusal is an error, never data."""
 type SubmissionActResult {
-	outcome: SubmissionActOutcome!
-	submission: Submission!
+	"Set by createSubmission, resubmitSubmission and withdrawSubmission only."
+	outcome: SubmissionActOutcome
+	act: SubmissionAct
+	submission: Submission
 	version: SubmissionVersion
+	draft: SubmissionDraft
+}
+
+"""Why a next version is being drafted."""
+enum NewVersionReason {
+	FIRST_VERSION
+	FDA_REQUEST_RESPONSE
+	CORRECTION
+	OTHER
+}
+
+"""Where a draft stands: EDITING, or held by a confirmation until it is finalized or returned."""
+enum SubmissionDraftState {
+	EDITING
+	AWAITING_CONFIRMATION
+}
+
+"""Where a draft's build job stands; NONE on a draft never rebuilt."""
+enum DraftBuildState {
+	NONE
+	REQUESTED
+	RUNNING
+	BUILT
+	FAILED
+}
+
+"""A person as recorded when they acted: their uuid, name and e-mail in the organization."""
+type DraftActor {
+	actor: ID!
+	actorName: String
+	actorEmail: String
+}
+
+"""The version a new version replaces."""
+type ReplacesRef {
+	submission: ID!
+	version: Int!
+}
+
+"""The SBOM profile row and revision a build used."""
+type SbomProfileRef {
+	uuid: ID
+	revision: Int
+}
+
+"""The package settings row and revision a build used."""
+type PackageSettingsRef {
+	uuid: ID
+	revision: Int
+}
+
+"""One component of a build: its key and the support row and revision it read."""
+type DraftComponentRef {
+	key: String!
+	supportRow: ID
+	supportRevision: Int
+}
+
+"""One part a build generated: an unbound artifact until the draft is finalized."""
+type DraftPart {
+	part: PackagePart!
+	artifact: ID!
+	sha256: String
+	sizeBytes: Long
+	documentSerial: String
+	documentVersion: Int
+}
+
+"""A draft's build job: the last request and how it stands. failureText names a refusal or a class, nothing else."""
+type DraftJob {
+	state: DraftBuildState!
+	requestedAt: DateTime
+	requestedBy: DraftActor
+	startedAt: DateTime
+	finishedAt: DateTime
+	attempt: Int!
+	failureRefusal: SubmissionRefusal
+	failureText: String
+}
+
+"""A draft's last successful build."""
+type DraftBuild {
+	builtAt: DateTime!
+	requestedBy: DraftActor
+	inputsFingerprint: String!
+	closure: [ID!]!
+	componentKeys: [String!]!
+	componentRefs: [DraftComponentRef!]!
+	releaseSbom: ReleaseSbomRef
+	releaseSbomNeedsBind: Boolean!
+	parts: [DraftPart!]!
+	sbomProfile: SbomProfileRef
+	settings: PackageSettingsRef
+}
+
+"""The confirmation a draft holds until it is finalized or returned, of the build buildFingerprint names."""
+type HeldConfirmation {
+	actor: ID!
+	actorName: String
+	actorEmail: String
+	capacity: ConfirmationCapacity!
+	statementId: String!
+	statementVersion: Int!
+	confirmedAt: DateTime!
+	buildFingerprint: String!
+}
+
+"""The working copy of a submission's next version: one per release and kind. Signed-in users only."""
+type SubmissionDraft {
+	uuid: ID!
+	org: ID!
+	release: ID!
+	component: ID!
+	kind: PackageKind!
+	"The head; null until the first version exists."
+	submission: ID
+	state: SubmissionDraftState!
+	"Moves on every write of the draft; the token Confirm takes."
+	revision: Int!
+	plannedSubmission: ID!
+	plannedVersion: Int!
+	startedAt: DateTime!
+	startedBy: DraftActor!
+	reasonCategory: NewVersionReason!
+	reasonText: String
+	replaces: ReplacesRef
+	job: DraftJob!
+	build: DraftBuild
+	confirmation: HeldConfirmation
+	"The draft's act record, oldest first."
+	acts: [SubmissionAct!]!
 }
 
 """One part of a submission preview's plan."""

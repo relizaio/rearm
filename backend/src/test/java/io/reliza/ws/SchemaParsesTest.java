@@ -4,6 +4,8 @@
 
 package io.reliza.ws;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -21,7 +23,12 @@ import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 
 import graphql.language.Document;
+import graphql.language.FieldDefinition;
+import graphql.language.ListType;
 import graphql.language.Node;
+import graphql.language.NonNullType;
+import graphql.language.ObjectTypeDefinition;
+import graphql.language.Type;
 import graphql.language.TypeDefinition;
 import graphql.language.TypeName;
 import graphql.parser.Parser;
@@ -136,6 +143,54 @@ class SchemaParsesTest {
 					+ " -- which is usually the whole point of having defined them -- or delete them."
 					+ " If a type is genuinely dead and staying, add it to KNOWN_DEAD with a reason.");
 		}
+	}
+
+	/** FDAW-29 row 8: the draft surface, on the user schema only, the existing ComponentRef beside its namesake. */
+	@Test
+	void theDraftTypesAndVerbsAreOnTheUserSchemaOnly() {
+		Document shared = parse(readResource("/schema/schema.graphqls"), "schema.graphqls");
+		Document programmatic = parse(readResource("/schema/programmatic.graphqls"), "programmatic.graphqls");
+
+		assertEquals(Map.of("key", "String!", "supportRow", "ID", "supportRevision", "Int"), fieldsOf(shared, "DraftComponentRef"));
+		assertEquals("[DraftComponentRef!]!", fieldsOf(shared, "DraftBuild").get("componentRefs"));
+		assertEquals(Set.of("uuid", "name", "type", "status", "org", "vcs"), fieldsOf(shared, "ComponentRef").keySet());
+
+		Map<String, String> result = fieldsOf(shared, "SubmissionActResult");
+		assertFalse(result.containsKey("refusal"));
+		assertEquals("Submission", result.get("submission"));
+		assertEquals("SubmissionAct", result.get("act"));
+		assertEquals("SubmissionDraft", result.get("draft"));
+
+		assertEquals("[SubmissionDraft!]!", fieldsOf(shared, "Release").get("drafts"));
+		assertFalse(fieldsOf(shared, "SubmissionDraft").containsKey("fingerprintLines"));
+		assertFalse(fieldsOf(shared, "DraftBuild").containsKey("fingerprintLines"));
+
+		for (var def : programmatic.getDefinitions()) {
+			if (def instanceof ObjectTypeDefinition o && Set.of("Query", "Mutation").contains(o.getName())) {
+				for (FieldDefinition f : o.getFieldDefinitions()) {
+					assertFalse(Set.of("startDraft", "discardDraft", "confirmDraft", "returnDraftToEditing",
+							"cancelSubmission", "draft").contains(f.getName()), f.getName() + " on the key schema");
+				}
+			}
+		}
+	}
+
+	/** A type's fields as written: name to type. */
+	private static Map<String, String> fieldsOf(Document doc, String type) {
+		for (var def : doc.getDefinitions()) {
+			if (def instanceof ObjectTypeDefinition o && type.equals(o.getName())) {
+				Map<String, String> out = new LinkedHashMap<>();
+				for (FieldDefinition f : o.getFieldDefinitions()) out.put(f.getName(), typeText(f.getType()));
+				return out;
+			}
+		}
+		return fail(type + " is not defined");
+	}
+
+	private static String typeText(Type<?> t) {
+		if (t instanceof NonNullType n) return typeText(n.getType()) + "!";
+		if (t instanceof ListType l) return "[" + typeText(l.getType()) + "]";
+		return ((TypeName) t).getName();
 	}
 
 	/**
