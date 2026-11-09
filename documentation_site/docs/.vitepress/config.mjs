@@ -36,6 +36,7 @@ function sidebar() {
         ]},
         {text: 'Configure', link: '/configure/', items: [
           {text: 'Users and User Groups Permissions', link: '/configure/user-and-user-group-permissions'},
+          {text: 'License Seats (ReARM Pro)', link: '/configure/license-seats'},
           {text: 'Teams', link: '/configure/teams'},
           {text: 'Programmatic Access', link: '/configure/programmatic-access'},
           {text: 'Component Ownership', link: '/configure/component-ownership'},
