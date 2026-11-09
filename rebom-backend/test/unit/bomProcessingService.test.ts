@@ -284,6 +284,73 @@ describe('BOM Processing Service - Unit Tests', () => {
             const bom = loadFixture('merge/glucoview-web.input.cdx.json');
             expect(BomProcessingService.extractDevFilteredBom(bom)).toStrictEqual(BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: true }).bom);
         });
+
+        describe('dropExcluded on the optional-runtime fixture (FDAW-19 row 1)', () => {
+            const ROOT = 'pkg:generic/Acme/optional-runtime@1.0.0';
+            const OPTIONAL = 'pkg:npm/optional-plugin@3.0.0';
+            const NESTED = 'pkg:npm/optional-plugin-core@3.0.0';
+            const EXCLUDED = 'pkg:npm/excluded-typings@4.0.0';
+            const RUNTIME = ['pkg:npm/required-one@1.0.0', 'pkg:npm/required-two@2.0.0', 'pkg:npm/maintained@5.0.0'];
+            const fixture = () => loadFixture('merge/optional-runtime.input.cdx.json');
+            const rootEntry = (bom: any) => bom.dependencies.find((d: any) => d.ref === ROOT);
+
+            it('{ dropOptional: false, dropExcluded: true } drops the excluded node only', () => {
+                const result = BomProcessingService.dropExcludedAndDevComponents(fixture(), { dropOptional: false, dropExcluded: true });
+                expect(refs(result.bom)).not.toContain(EXCLUDED);
+                expect(refs(result.bom)).toContain(OPTIONAL);
+                expect(result).toMatchObject({ devExcluded: 0, excludedScopeDropped: 1, optionalExcluded: 0 });
+                expect(rootEntry(result.bom).dependsOn).toStrictEqual([RUNTIME[0], RUNTIME[1], OPTIONAL, NESTED, RUNTIME[2]]);
+            });
+
+            it('{ dropOptional: true, dropExcluded: true } drops it and the optional node with its nested component, and their refs', () => {
+                const result = BomProcessingService.dropExcludedAndDevComponents(fixture(), { dropOptional: true, dropExcluded: true });
+                expect(refs(result.bom)).toStrictEqual(RUNTIME);
+                expect(result).toMatchObject({ devExcluded: 0, excludedScopeDropped: 1, optionalExcluded: 2 });
+                expect(rootEntry(result.bom).dependsOn).toStrictEqual(RUNTIME);
+                expect(result.bom.dependencies.map((d: any) => d.ref)).toStrictEqual([ROOT, ...RUNTIME]);
+            });
+
+            it('{ dropOptional: false, dropExcluded: false } returns the input itself (the fixture as specified, no dev-marked node)', () => {
+                const bom = fixture();
+                const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false, dropExcluded: false });
+                expect(result.bom).toBe(bom);
+                expect(result).toMatchObject({ devExcluded: 0, excludedScopeDropped: 0, optionalExcluded: 0 });
+            });
+
+            it('{ dropOptional: true, dropExcluded: false } keeps the excluded node and drops the optional one', () => {
+                const result = BomProcessingService.dropExcludedAndDevComponents(fixture(), { dropOptional: true, dropExcluded: false });
+                expect(refs(result.bom)).toContain(EXCLUDED);
+                expect(refs(result.bom)).not.toContain(OPTIONAL);
+                expect(result).toMatchObject({ devExcluded: 0, excludedScopeDropped: 0, optionalExcluded: 2 });
+            });
+
+            it('a dev-marked node added to the fixture is dropped under every combination', () => {
+                for (const dropOptional of [false, true]) {
+                    for (const dropExcluded of [false, true]) {
+                        const bom = fixture();
+                        bom.components.push({ type: 'library', name: 'tool', version: '1.0.0', 'bom-ref': 'tool', properties: [{ name: DEV, value: 'true' }] });
+                        const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional, dropExcluded });
+                        expect(refs(result.bom)).not.toContain('tool');
+                        expect(result.devExcluded).toBe(1);
+                    }
+                }
+            });
+
+            it('a kept excluded node that is dev-marked still goes, counted as dev', () => {
+                const bom = fixture();
+                bom.components.find((c: any) => c['bom-ref'] === EXCLUDED).properties = [{ name: DEV, value: 'true' }];
+                const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false, dropExcluded: false });
+                expect(refs(result.bom)).not.toContain(EXCLUDED);
+                expect(result).toMatchObject({ devExcluded: 1, excludedScopeDropped: 0 });
+            });
+
+            it('dropExcluded defaults to true, and extractDevFilteredBom is unchanged', () => {
+                const bom = fixture();
+                expect(BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false }))
+                    .toStrictEqual(BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false, dropExcluded: true }));
+                expect(refs(BomProcessingService.extractDevFilteredBom(bom))).toStrictEqual(RUNTIME);
+            });
+        });
     });
 
     describe('computeBomDigest', () => {

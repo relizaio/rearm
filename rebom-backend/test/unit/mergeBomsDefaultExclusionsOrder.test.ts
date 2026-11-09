@@ -42,8 +42,11 @@ import { mergeBoms } from '../../src/services/bom/bomMergeService';
 import {
     DEV_COMPONENTS_EXCLUDED_PROPERTY,
     EXCLUDED_SCOPE_DROPPED_PROPERTY,
+    PERSONAL_DATA_STRIPPED_PROPERTY,
+    LOCAL_PATHS_STRIPPED_PROPERTY,
     CREDENTIALS_STRIPPED_PROPERTY,
     ORPHAN_COMPONENTS_LINKED_PROPERTY,
+    OPTIONAL_SCOPE_DROPPED_PROPERTY,
     MERGE_COUNT_PROPERTIES
 } from '../../src/services/bom/bomProcessingService';
 
@@ -107,7 +110,7 @@ describe('mergeBoms: the FDAW-6 passes in the pipeline', () => {
         const at = (name: string) => passes.calls.find(c => c.name === name)!;
         // each per-input pass is handed what the one before it returned
         expect(at('dropExcludedAndDevComponents').args[0]).toBe(at('extractTldFromBom').result);
-        expect(at('dropExcludedAndDevComponents').args[1]).toStrictEqual({ dropOptional: false });
+        expect(at('dropExcludedAndDevComponents').args[1]).toStrictEqual({ dropOptional: false, dropExcluded: true });
         expect(at('stripPurlCredentials').args[0]).toBe(at('dropExcludedAndDevComponents').result.bom);
         expect(at('assignMissingBomRefs').args[0]).toBe(at('stripPurlCredentials').result.bom);
         expect(at('rekeyUnlistedInputs').args[1][0]).toBe(at('assignMissingBomRefs').result);
@@ -124,15 +127,83 @@ describe('mergeBoms: the FDAW-6 passes in the pipeline', () => {
         expect(property(bom, EXCLUDED_SCOPE_DROPPED_PROPERTY)).toBe('0');
         expect(property(bom, CREDENTIALS_STRIPPED_PROPERTY)).toBe('1');
         expect(property(bom, ORPHAN_COMPONENTS_LINKED_PROPERTY)).toBe('1');
-        for (const name of MERGE_COUNT_PROPERTIES) expect(property(bom, name)).toMatch(/^\d+$/);
+        const six = MERGE_COUNT_PROPERTIES.filter(n => n !== OPTIONAL_SCOPE_DROPPED_PROPERTY);
+        for (const name of six) expect(property(bom, name)).toMatch(/^\d+$/);
+        expect(property(bom, OPTIONAL_SCOPE_DROPPED_PROPERTY)).toBeUndefined();
+        expect(at('stripPersonalDataAndLocalPaths').args[1]).toStrictEqual({ personalData: true, localPaths: true });
+        expect(Object.keys(at('recordMergeCounts').args[1]).sort()).toStrictEqual([...six].sort());
     });
 
     it('drops optional scope only under ignoreDev, and assigns the keyless ref when the whole input is merged', async () => {
         const bom = await mergeBoms(['one'], { name: 'merged', group: 'Example', version: '1.0.0', purl: ROOT, structure: 'FLAT', tldOnly: false, ignoreDev: true } as any, 'org');
-        expect(passes.calls.find(c => c.name === 'dropExcludedAndDevComponents')!.args[1]).toStrictEqual({ dropOptional: true });
+        expect(passes.calls.find(c => c.name === 'dropExcludedAndDevComponents')!.args[1]).toStrictEqual({ dropOptional: true, dropExcluded: true });
         expect(mergeInputs.objs[0].components.map((c: any) => c['bom-ref'])).toStrictEqual(['pkg:npm/lib@1.0.0', CLEAN_PURL, 'vendored@2.0']);
         expect(property(bom, EXCLUDED_SCOPE_DROPPED_PROPERTY)).toBe('1');
         // the credentialed purl and the keyless node are in no entry of the fake engine's output
         expect(property(bom, ORPHAN_COMPONENTS_LINKED_PROPERTY)).toBe('2');
+        expect(property(bom, OPTIONAL_SCOPE_DROPPED_PROPERTY)).toBe('1');
+    });
+
+    it('FDAW-19 row 4: every knob on: the passes take the options, the strip still runs once, the records are the four that ran', async () => {
+        const second = { ...input(), components: [{ type: 'library', name: 'other', version: '1.0.0', purl: 'pkg:npm/other@1.0.0', 'bom-ref': 'pkg:npm/other@1.0.0' }], dependencies: [] };
+        findBomObjectById.mockImplementation(async (id: string) => (id === 'two' ? second : input()));
+        const bom = await mergeBoms(['one', 'two'], {
+            name: 'merged', group: 'Example', version: '1.0.0', purl: ROOT, structure: 'FLAT', tldOnly: false,
+            ignoreDev: true, keepExcludedScope: true, keepPersonalData: true, keepLocalPaths: true
+        } as any, 'org');
+
+        const all = (name: string) => passes.calls.filter(c => c.name === name);
+        expect(all('dropExcludedAndDevComponents').map(c => c.args[1])).toStrictEqual([
+            { dropOptional: true, dropExcluded: false }, { dropOptional: true, dropExcluded: false }
+        ]);
+        expect(all('stripPersonalDataAndLocalPaths').map(c => c.args[1])).toStrictEqual([{ personalData: false, localPaths: false }]);
+        expect(all('stripPurlCredentials')).toHaveLength(2);
+        const record = all('recordMergeCounts')[0];
+        expect(Object.keys(record.args[1]).sort()).toStrictEqual([
+            DEV_COMPONENTS_EXCLUDED_PROPERTY, CREDENTIALS_STRIPPED_PROPERTY, ORPHAN_COMPONENTS_LINKED_PROPERTY, OPTIONAL_SCOPE_DROPPED_PROPERTY
+        ].sort());
+        expect(record.args[3]).toBe(all('rekeyUnlistedInputs')[0].args[3]);
+
+        // the excluded node reached the engine, the optional one did not
+        expect(mergeInputs.objs[0].components.map((c: any) => c.name)).toContain('types');
+        expect(mergeInputs.objs[0].components.map((c: any) => c.name)).not.toContain('opt');
+        expect(property(bom, OPTIONAL_SCOPE_DROPPED_PROPERTY)).toBe('1');
+        expect(property(bom, CREDENTIALS_STRIPPED_PROPERTY)).toBe('1');
+        for (const name of [EXCLUDED_SCOPE_DROPPED_PROPERTY, PERSONAL_DATA_STRIPPED_PROPERTY, LOCAL_PATHS_STRIPPED_PROPERTY]) {
+            expect(property(bom, name)).toBeUndefined();
+        }
+    });
+
+    it('FDAW-19 3.2: each keep* flag gates only its own record, independently of the other two', async () => {
+        const bomA = await mergeBoms(['one'], {
+            name: 'merged', group: 'Example', version: '1.0.0', purl: ROOT, structure: 'FLAT', tldOnly: false, ignoreDev: false,
+            keepExcludedScope: false, keepPersonalData: true, keepLocalPaths: false
+        } as any, 'org');
+        expect(property(bomA, PERSONAL_DATA_STRIPPED_PROPERTY)).toBeUndefined();
+        expect(property(bomA, LOCAL_PATHS_STRIPPED_PROPERTY)).toMatch(/^\d+$/);
+        expect(property(bomA, EXCLUDED_SCOPE_DROPPED_PROPERTY)).toMatch(/^\d+$/);
+
+        const bomB = await mergeBoms(['one'], {
+            name: 'merged', group: 'Example', version: '1.0.0', purl: ROOT, structure: 'FLAT', tldOnly: false, ignoreDev: false,
+            keepExcludedScope: true, keepPersonalData: false, keepLocalPaths: true
+        } as any, 'org');
+        expect(property(bomB, PERSONAL_DATA_STRIPPED_PROPERTY)).toMatch(/^\d+$/);
+        expect(property(bomB, LOCAL_PATHS_STRIPPED_PROPERTY)).toBeUndefined();
+        expect(property(bomB, EXCLUDED_SCOPE_DROPPED_PROPERTY)).toBeUndefined();
+    });
+
+    it('FDAW-19 3.2: null and false run every pass, only true skips one', async () => {
+        for (const off of [null, false]) {
+            passes.calls.length = 0;
+            const bom = await mergeBoms(['one'], {
+                name: 'merged', group: 'Example', version: '1.0.0', purl: ROOT, structure: 'FLAT', tldOnly: false, ignoreDev: false,
+                keepExcludedScope: off, keepPersonalData: off, keepLocalPaths: off
+            } as any, 'org');
+            expect(passes.calls.find(c => c.name === 'dropExcludedAndDevComponents')!.args[1]).toStrictEqual({ dropOptional: false, dropExcluded: true });
+            expect(passes.calls.find(c => c.name === 'stripPersonalDataAndLocalPaths')!.args[1]).toStrictEqual({ personalData: true, localPaths: true });
+            for (const name of [EXCLUDED_SCOPE_DROPPED_PROPERTY, PERSONAL_DATA_STRIPPED_PROPERTY, LOCAL_PATHS_STRIPPED_PROPERTY]) {
+                expect(property(bom, name)).toMatch(/^\d+$/);
+            }
+        }
     });
 });

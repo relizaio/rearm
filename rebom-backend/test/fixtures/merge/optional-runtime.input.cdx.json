@@ -1,0 +1,110 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:5d0b7f6e-0a5c-4b8e-9d1e-0000000019a1",
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "optional-runtime",
+      "version": "1.0.0",
+      "purl": "pkg:generic/Acme/optional-runtime@1.0.0",
+      "bom-ref": "pkg:generic/Acme/optional-runtime@1.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "required-one",
+      "version": "1.0.0",
+      "scope": "required",
+      "purl": "pkg:npm/required-one@1.0.0",
+      "bom-ref": "pkg:npm/required-one@1.0.0",
+      "properties": [
+        { "name": "ResolvedUrl", "value": "https://fixture-user:fixture-token@registry.example.com/required-one-1.0.0.tgz" }
+      ],
+      "externalReferences": [
+        { "type": "vcs", "url": "https://fixture-user:fixture-token@git.example.com/required-one.git" }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "required-two",
+      "version": "2.0.0",
+      "scope": "required",
+      "purl": "pkg:npm/required-two@2.0.0",
+      "bom-ref": "pkg:npm/required-two@2.0.0",
+      "supplier": {
+        "name": "Example Supplier",
+        "url": ["https://fixture-user:fixture-token@supplier.example.com/"]
+      },
+      "licenses": [
+        { "license": { "id": "MIT", "url": "https://fixture-user:fixture-token@licences.example.com/mit" } }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "optional-plugin",
+      "version": "3.0.0",
+      "scope": "optional",
+      "purl": "pkg:npm/optional-plugin@3.0.0",
+      "bom-ref": "pkg:npm/optional-plugin@3.0.0",
+      "components": [
+        {
+          "type": "library",
+          "name": "optional-plugin-core",
+          "version": "3.0.0",
+          "purl": "pkg:npm/optional-plugin-core@3.0.0",
+          "bom-ref": "pkg:npm/optional-plugin-core@3.0.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "excluded-typings",
+      "version": "4.0.0",
+      "scope": "excluded",
+      "purl": "pkg:npm/excluded-typings@4.0.0",
+      "bom-ref": "pkg:npm/excluded-typings@4.0.0"
+    },
+    {
+      "type": "library",
+      "name": "maintained",
+      "version": "5.0.0",
+      "scope": "required",
+      "purl": "pkg:npm/maintained@5.0.0",
+      "bom-ref": "pkg:npm/maintained@5.0.0",
+      "author": "Jane Doe <jane.doe@example.com>",
+      "properties": [
+        { "name": "cdx:npm:maintainerSet", "value": "jane.doe" },
+        { "name": "cdx:npm:binPaths", "value": "bin/maintained.js" }
+      ]
+    }
+  ],
+  "services": [
+    {
+      "bom-ref": "service-dose-api",
+      "name": "dose-api",
+      "endpoints": ["https://fixture-user:fixture-token@api.example.com/v1"]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:generic/Acme/optional-runtime@1.0.0",
+      "dependsOn": [
+        "pkg:npm/required-one@1.0.0",
+        "pkg:npm/required-two@2.0.0",
+        "pkg:npm/optional-plugin@3.0.0",
+        "pkg:npm/optional-plugin-core@3.0.0",
+        "pkg:npm/excluded-typings@4.0.0",
+        "pkg:npm/maintained@5.0.0"
+      ]
+    },
+    { "ref": "pkg:npm/required-one@1.0.0", "dependsOn": [] },
+    { "ref": "pkg:npm/required-two@2.0.0", "dependsOn": [] },
+    { "ref": "pkg:npm/optional-plugin@3.0.0", "dependsOn": ["pkg:npm/optional-plugin-core@3.0.0"] },
+    { "ref": "pkg:npm/optional-plugin-core@3.0.0", "dependsOn": [] },
+    { "ref": "pkg:npm/excluded-typings@4.0.0", "dependsOn": [] },
+    { "ref": "pkg:npm/maintained@5.0.0", "dependsOn": [] }
+  ]
+}

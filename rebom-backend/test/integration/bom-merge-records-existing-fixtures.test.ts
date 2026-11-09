@@ -21,7 +21,8 @@ import {
     PERSONAL_DATA_STRIPPED_PROPERTY,
     LOCAL_PATHS_STRIPPED_PROPERTY,
     CREDENTIALS_STRIPPED_PROPERTY,
-    ORPHAN_COMPONENTS_LINKED_PROPERTY
+    ORPHAN_COMPONENTS_LINKED_PROPERTY,
+    OPTIONAL_SCOPE_DROPPED_PROPERTY
 } from '../../src/services/bom/bomProcessingService';
 import { TEST_ORG_UUID, loadFixture, createTestRebomOptions, generateSerialNumber } from '../helpers';
 
@@ -29,6 +30,9 @@ import { TEST_ORG_UUID, loadFixture, createTestRebomOptions, generateSerialNumbe
  * FDAW-6 T12 (architecture 4): the six records on rebom's existing cdxgen container fixtures, each
  * merged alone under the default knobs. Real `rearm bomutils merge-boms`.
  */
+
+/** The FDAW-6 records; none of these merges runs ignoreDev, so the seventh is absent. */
+const SIX_RECORDS = MERGE_COUNT_PROPERTIES.filter(n => n !== OPTIONAL_SCOPE_DROPPED_PROPERTY);
 
 function allComponents(components: any[] = []): any[] {
     return components.flatMap((c: any) => [c, ...allComponents(c.components)]);
@@ -69,7 +73,8 @@ describe('the six merge records on the existing cdxgen fixtures (FDAW-6 T12)', (
             // 180 authors carry no email field, but 93 of their names carry an address token (`Name <a@b.c>`,
             // the FDAW-6 departure on S3; `me@shannonmoeller` has no domain and stays); 204 of the 251
             // top-level components are in no dependency entry of the input (a container SBOM with 43 entries)
-            expect(Object.fromEntries(MERGE_COUNT_PROPERTIES.map(n => [n, bom.metadata.properties.find((p: any) => p.name === n)?.value]))).toStrictEqual({
+            expect(bom.metadata.properties.some((p: any) => p.name === OPTIONAL_SCOPE_DROPPED_PROPERTY)).toBe(false);
+            expect(Object.fromEntries(SIX_RECORDS.map(n => [n, bom.metadata.properties.find((p: any) => p.name === n)?.value]))).toStrictEqual({
                 [DEV_COMPONENTS_EXCLUDED_PROPERTY]: '0',
                 [EXCLUDED_SCOPE_DROPPED_PROPERTY]: '0',
                 [PERSONAL_DATA_STRIPPED_PROPERTY]: '93',

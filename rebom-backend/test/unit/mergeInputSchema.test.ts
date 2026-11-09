@@ -28,6 +28,33 @@ function coerce(value: any): { value: any, errors: [string, string][] } {
     return { value: coerced, errors };
 }
 
+describe('the keep options of the merge (FDAW-19 row 6)', () => {
+    const KEEP = ['keepExcludedScope', 'keepPersonalData', 'keepLocalPaths'];
+
+    it('coerces the three as nullable Booleans', () => {
+        const { value, errors } = coerce({ keepExcludedScope: true, keepPersonalData: false, keepLocalPaths: null });
+        expect(errors).toStrictEqual([]);
+        expect({ ...value }).toStrictEqual({ keepExcludedScope: true, keepPersonalData: false, keepLocalPaths: null });
+    });
+
+    it('refuses a value that is no Boolean', () => {
+        for (const key of KEEP) {
+            expect(coerce({ [key]: 'yes' }).errors.map(([path]) => path)).toStrictEqual([key]);
+        }
+    });
+
+    it('accepts the current backend request without them, and adds no key', () => {
+        const { value, errors } = coerce({ tldOnly: false, ignoreDev: true, excludeFileComponents: true, mergeVersion: 19 });
+        expect(errors).toStrictEqual([]);
+        for (const key of KEEP) expect(value).not.toHaveProperty(key);
+    });
+
+    it('serves the three on the BomMeta type', () => {
+        const fields = (schema.getType('BomMeta') as any).getFields();
+        for (const key of KEEP) expect(String(fields[key].type)).toBe('Boolean');
+    });
+});
+
 describe('the merge input schema', () => {
     it('accepts licenseExpression and licenseUrl on the release node and on a placeholder (T-7)', () => {
         const { value, errors } = coerce({
