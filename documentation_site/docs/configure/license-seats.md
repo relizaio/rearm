@@ -79,11 +79,12 @@ A change that does not fit is refused, and nothing is saved. An administrator
 sees a message that starts with:
 
 ```
-License limit reached: this change needs N more write seat(s); W of M write seats are in use. Free a seat or extend the license.
+License limit reached: this change needs K more write seat(s); W of M write seats are in use. Free a seat or extend the license.
 ```
 
-(When the total is the limit that is reached, the message names the seats in
-use in total.)
+Here `K` is how many write seats the change goes over the limit by, and `W` is
+the number of write seats the change would bring. (When the total is the limit
+that is reached, the message names the seats in total the change would bring.)
 
 Creating an invitation does not reserve a seat. The seat is checked when the
 person joins; if no seat is free then, the join is refused with:
@@ -103,16 +104,24 @@ an event. When the write limit is the one reached, the event reads:
 SSO group sync did not add <user> to <group>: no free write seat (W of M). The user keeps read access.
 ```
 
-When the total is the limit that is reached (this can happen for a read group,
-or for a write group while write seats are still free), it reads:
+The last sentence names read access only for a user who holds a read seat; a
+user who had no seat before the change is told instead: `The user keeps their
+current access.`
+
+When the total is the limit that is reached, the event reads:
 
 ```
-SSO group sync did not add <user> to <group>: no free seat (T of X). The user keeps read access.
+SSO group sync did not add <user> to <group>: no free seat (T of X). The user keeps their current access.
 ```
 
-Here `T` is the number of seats in use in total and `X` is `N + M`. A user who
-had no seat before the change is told instead: `The user keeps their current
+The total grows only for a user who had no seat, so this form is always about a
+user without a seat (added to a read group, or to a write group while write
+seats are still free), and always ends with `The user keeps their current
 access.`
+
+In both forms, `W` and `T` are the write seats and the seats in total that the
+change would have brought, one more than the seats in use when that limit is
+exactly full (for example `no free seat (31 of 30)`), and `X` is `N + M`.
 
 ## Admission by creation date
 
