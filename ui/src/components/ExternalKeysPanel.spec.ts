@@ -316,6 +316,22 @@ describe('ExternalKeysPanel customers (FDAW-40 row 22g)', () => {
         expect(notify.mock.calls[0][2]).toContain('Not authorized')
     })
 
+    it('hides the column again when a later load fails', async () => {
+        const e: any = new Error('Not authorized')
+        e.errors = [{ message: 'Not authorized', extensions: { classification: 'DataFetchingException' } }]
+        answer(API_BASE, KEYS, [ACME])
+        const w = await mountPanel()
+        expect(customersOf(w)).toEqual(['Acme customer', '\u2014', '\u2014'])
+        answer(API_BASE, KEYS, e)
+        w.findComponent(MembershipModal).vm.$emit('saved', { added: [], removed: [] })
+        await flushPromises()
+        expect(holders(w)).toEqual(['Acme Auditors', 'Globex', 'Initech'])
+        expect(notify).toHaveBeenCalledTimes(1)
+        expect(notify.mock.calls[0][0]).toBe('error')
+        expect(notify.mock.calls[0][2]).toContain('Not authorized')
+        expect(w.find('[data-testid="external-key-customers"]').exists()).toBe(false)
+    })
+
     it('shows the names and no edit icon to a non-admin', async () => {
         answer(API_BASE, KEYS, [ACME])
         const w = await mountPanel(false)
