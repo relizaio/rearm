@@ -580,12 +580,16 @@ public class SupportInjectionService {
 		// that may not be in this BOM at all, so an entity-materializing bulk read would
 		// let an unrelated component's poison row take this release's export down.
 		Map<UUID, SupportData> supportByComponent = new HashMap<>();
+		// The parsed row's own uuid and revision beside it (FDAW-30 3.5 step 6): a row that does not
+		// parse stays out of both maps.
+		Map<UUID, SupportPayloadRow> supportRowByComponent = new HashMap<>();
 		if (!candidateUuids.isEmpty()) {
 			for (SupportPayloadRow row : sbomComponentSupportRepository
 					.findRawByComponentUuids(orgUuid.toString(),
 							SbomComponentService.joinUuids(candidateUuids))) {
 				try {
 					supportByComponent.put(row.getComponentUuid(), SupportData.parse(row.getPayload()));
+					supportRowByComponent.put(row.getComponentUuid(), row);
 				} catch (RuntimeException e) {
 					// This is the EXPORT path, so a silent skip is the worst option: a
 					// component would vanish from a served BOM with nothing to explain it.
@@ -620,8 +624,12 @@ public class SupportInjectionService {
 		}
 
 		Map<String, ComponentSupportFacts> result = new HashMap<>();
-		byKey.forEach((key, sc) -> result.put(key,
-				new ComponentSupportFacts(sc, supportByComponent.get(sc.getUuid()))));
+		byKey.forEach((key, sc) -> {
+			SupportPayloadRow row = supportRowByComponent.get(sc.getUuid());
+			result.put(key, new ComponentSupportFacts(sc, supportByComponent.get(sc.getUuid()),
+					null == row ? null : row.getSupportUuid(),
+					null == row || null == row.getRevision() ? 0 : row.getRevision()));
+		});
 		return result;
 	}
 
