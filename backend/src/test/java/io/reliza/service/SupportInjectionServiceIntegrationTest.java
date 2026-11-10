@@ -5,13 +5,17 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -23,12 +27,16 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import io.reliza.common.Utils;
+import io.reliza.common.VendoredIdentifier;
 import io.reliza.model.ExportMetadataChoice;
 import io.reliza.model.LevelOfSupport;
 import io.reliza.model.Organization;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.ReleaseData;
 import io.reliza.model.SbomComponent;
+import io.reliza.model.SbomComponentOverlayPatch;
 import io.reliza.model.SbomComponentSupport;
+import io.reliza.model.SupportAttestationRequest;
 import io.reliza.model.SupportData;
 import io.reliza.model.SupportInjectionSetting;
 import io.reliza.model.SupportMilestoneFact;
@@ -60,6 +68,8 @@ public class SupportInjectionServiceIntegrationTest {
 	@Autowired private TestInitializer testInitializer;
 	@Autowired private PlatformTransactionManager transactionManager;
 	@Autowired private OrganizationService organizationService;
+	@Autowired private ReleaseService releaseService;
+	@Autowired private SbomComponentOverlayService overlayService;
 
 	private static final String SELF = "reliza:support:selfComponent";
 	private static final String STAMP = "reliza:export:releaseNode";
@@ -199,6 +209,103 @@ public class SupportInjectionServiceIntegrationTest {
 		}
 		sc.setRecordData(rd);
 		return new TransactionTemplate(transactionManager).execute(status -> sbomComponentRepository.save(sc));
+	}
+
+	private JsonNode exported(UUID org, JsonNode bom) {
+		return releaseService.applyExportMetadata(bom, org, UUID.randomUUID(), ExportMetadataOptions.callerSilent(), null);
+	}
+
+	private static ReleaseData releaseOf(UUID org) {
+		ReleaseData rd = mock(ReleaseData.class);
+		when(rd.getOrg()).thenReturn(org);
+		return rd;
+	}
+
+	private UUID orgWith(SupportInjectionSetting setting) throws Exception {
+		UUID org = testInitializer.obtainOrganization().getUuid();
+		OrganizationData.Settings s = new OrganizationData.Settings();
+		s.setSupportInjection(setting);
+		organizationService.updateSettings(org, s, WhoUpdated.getTestWhoUpdated());
+		return org;
+	}
+
+	private static JsonNode keylessDoc(String name) {
+		return Utils.OM.readTree("""
+			{"bomFormat":"CycloneDX","specVersion":"1.6","components":[
+			  {"type":"library","name":"%s","version":"2.3"},
+			  {"type":"library","name":"%s-other","version":"1","purl":"pkg:npm/%s-other@1"}
+			]}""".formatted(name, name, name));
+	}
+
+	/** FDAW-15 row 5: a description moves a node from unidentified to unassessed, and an attestation on from there. */
+	@Test
+	void aDescribedNodeIsKeyedFilledAndCountedThroughTheExportSeam() throws Exception {
+		UUID org = orgWith(SupportInjectionSetting.ENABLED);
+		String name = "libdosecalc-" + UUID.randomUUID().toString().substring(0, 8);
+		String key = VendoredIdentifier.mint(org, name, "2.3");
+		ReleaseData rd = releaseOf(org);
+
+		JsonNode without = exported(org, keylessDoc(name));
+		Map<String, String> before = propMap(without.get("metadata"));
+		overlayService.describeVendored(rd, name, "2.3", new SbomComponentOverlayPatch("Acme", "MIT", "dose", null), null,
+				UUID.randomUUID());
+		JsonNode with = exported(org, keylessDoc(name));
+
+		JsonNode node = with.get("components").get(0);
+		assertEquals(VendoredIdentifier.exportPurl(key), node.get("purl").asText());
+		assertEquals("Acme", node.get("supplier").get("name").asText());
+		assertEquals("MIT", node.get("licenses").get(0).get("license").get("id").asText());
+		assertEquals("dose", node.get("description").asText());
+		Map<String, String> described = propMap(with.get("metadata"));
+		assertEquals(Integer.parseInt(before.get("reliza:support:unidentifiedComponents")) - 1,
+				Integer.parseInt(described.get("reliza:support:unidentifiedComponents")), described.toString());
+		assertEquals(Integer.parseInt(before.get("reliza:support:unassessedComponents")) + 1,
+				Integer.parseInt(described.get("reliza:support:unassessedComponents")), described.toString());
+		assertNotEquals(TeaCollectionAssembler.contentDigest(without), TeaCollectionAssembler.contentDigest(with),
+				"the overlay moves the content digest, which is the version bump of 3.4");
+
+		overlayService.saveVendoredSupport(rd, name, "2.3", new SupportAttestationRequest(LevelOfSupport.ACTIVELY_MAINTAINED,
+				null, null, null, null, null, null, null, null, Set.of(), null), UUID.randomUUID());
+		JsonNode attested = exported(org, keylessDoc(name));
+		Map<String, String> onNode = propMap(attested.get("components").get(0));
+		assertEquals("actively maintained", onNode.get("reliza:support:levelOfSupport"), attested.toString());
+		assertTrue(onNode.containsKey("reliza:support:assessedAt"), onNode.toString());
+		assertEquals(before.get("reliza:support:unassessedComponents"),
+				propMap(attested.get("metadata")).get("reliza:support:unassessedComponents"));
+	}
+
+	/** FDAW-15 row 5 (F-1): both matching passes of the facts, end to end against the database. */
+	@Test
+	void aComponentOverlayReachesANodeThroughEitherEncodingOfItsRow() throws Exception {
+		UUID org = orgWith(SupportInjectionSetting.ENABLED);
+		String salt = UUID.randomUUID().toString().substring(0, 8);
+		SbomComponent plus = bareRow(org, "pkg:deb/debian/libfoo" + salt + "@1.2%2Bdfsg-1", "libfoo" + salt, false);
+		SbomComponent legacy = bareRow(org, "pkg:generic/acme" + salt + "/my%2520lib@1", "my lib", false);
+		overlayService.setComponentOverlay(plus.getUuid(), new SbomComponentOverlayPatch("Debian", null, null, null), null,
+				UUID.randomUUID());
+		overlayService.setComponentOverlay(legacy.getUuid(), new SbomComponentOverlayPatch("Legacy", null, null, null), null,
+				UUID.randomUUID());
+
+		JsonNode served = exported(org, Utils.OM.readTree("""
+			{"bomFormat":"CycloneDX","specVersion":"1.6","components":[
+			  {"type":"library","name":"libfoo%s","version":"1.2+dfsg-1","purl":"pkg:deb/debian/libfoo%s@1.2+dfsg-1"},
+			  {"type":"library","name":"my lib","version":"1","purl":"pkg:generic/acme%s/my%%20lib@1"}
+			]}""".formatted(salt, salt, salt)));
+
+		assertEquals("Debian", served.get("components").get(0).get("supplier").get("name").asText(), served.toString());
+		assertEquals("Legacy", served.get("components").get(1).get("supplier").get("name").asText(), served.toString());
+	}
+
+	@Test
+	void withInjectionDisabledTheOverlayIsStillAppliedAndTheDocumentSweptAndMarked() throws Exception {
+		UUID org = orgWith(SupportInjectionSetting.DISABLED);
+		String name = "libdisabled-" + UUID.randomUUID().toString().substring(0, 8);
+		overlayService.describeVendored(releaseOf(org), name, "2.3", new SbomComponentOverlayPatch("Acme", null, null, null),
+				null, UUID.randomUUID());
+		JsonNode served = exported(org, keylessDoc(name));
+		assertEquals("Acme", served.get("components").get(0).get("supplier").get("name").asText());
+		assertEquals("provenance-stripped-no-disclosure",
+				propMap(served.get("metadata")).get("reliza:support:disclosure"));
 	}
 
 	/**

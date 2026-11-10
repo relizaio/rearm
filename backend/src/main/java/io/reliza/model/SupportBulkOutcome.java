@@ -38,6 +38,9 @@ public enum SupportBulkOutcome {
 	 */
 	SKIPPED_HAS_END_OF_SUPPORT,
 
+	/** Skipped by a supplier sweep: the component already holds a supplier overlay. */
+	SKIPPED_HAS_SUPPLIER,
+
 	/**
 	 * This component's write was rejected or failed. The batch continues; the reason is on
 	 * the result. Isolated in its own transaction so a failure here cannot roll back the

@@ -90,3 +90,67 @@ export async function setSbomComponentSupportVars (
     })
     return (resp.data as any)?.setSbomComponentSupport
 }
+
+/**
+ * The vendored twin of SET_SBOM_COMPONENT_SUPPORT (FDAW-15 3.6): every argument of the
+ * component write but the uuid, with the node's releaseUuid, name and version in its place.
+ * The server mints the key from those and births the component row on the first save, so the
+ * UI never sends a key or a purl. Same no-fallback rule as above.
+ */
+export const SET_VENDORED_COMPONENT_SUPPORT = gql`
+    mutation setVendoredComponentSupport(
+        $releaseUuid: ID!
+        $name: String!
+        $version: String
+        $levelOfSupport: LevelOfSupport
+        $justification: String
+        $supportParty: SupportParty
+        $endOfGuaranteedSupportDate: String
+        $endOfSupportDate: String
+        $endOfLifeDate: String
+        $supportNotes: String
+        $clearMilestones: [SupportMilestoneType!]
+        $state: SupportState
+        $reason: String
+        $endOfSupportUnknown: JustifiedUnknownInput
+        $clearEndOfSupportUnknown: Boolean
+    ) {
+        setVendoredComponentSupport(
+            releaseUuid: $releaseUuid
+            name: $name
+            version: $version
+            levelOfSupport: $levelOfSupport
+            justification: $justification
+            supportParty: $supportParty
+            endOfGuaranteedSupportDate: $endOfGuaranteedSupportDate
+            endOfSupportDate: $endOfSupportDate
+            endOfLifeDate: $endOfLifeDate
+            supportNotes: $supportNotes
+            clearMilestones: $clearMilestones
+            state: $state
+            reason: $reason
+            endOfSupportUnknown: $endOfSupportUnknown
+            clearEndOfSupportUnknown: $clearEndOfSupportUnknown
+        ) {
+            uuid
+            supportStatus
+            supportSource
+            endOfSupportDate
+            attestedLevelOfSupport
+            justification
+            attestationState
+            endOfSupportUnknown { code text bulkAct }
+        }
+    }`
+
+/** One vendored write, given the variables useAttestationForm built for the vendored target. */
+export async function setVendoredComponentSupportVars (
+    client: MutationClient,
+    variables: Record<string, unknown>
+): Promise<AttestationResult> {
+    const resp = await client.mutate({
+        mutation: SET_VENDORED_COMPONENT_SUPPORT,
+        variables
+    })
+    return (resp.data as any)?.setVendoredComponentSupport
+}

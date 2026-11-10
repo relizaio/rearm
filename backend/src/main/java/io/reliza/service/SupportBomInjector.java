@@ -1173,7 +1173,7 @@ public final class SupportBomInjector {
 		return out;
 	}
 
-	private static void collectComponentNodes(JsonNode components, List<ObjectNode> out) {
+	static void collectComponentNodes(JsonNode components, List<ObjectNode> out) {
 		if (components == null || !components.isArray()) {
 			return;
 		}

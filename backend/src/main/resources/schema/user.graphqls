@@ -733,6 +733,13 @@ type Query {
 	# organization, ORGANIZATION WRITE, release scope, the count with the cap), nothing written. Gated
 	# exactly as the write, so the preview answers only those who may write.
 	supportBulkSelectorCount(orgUuid: ID!, selector: SupportBulkSelectorInput!, releaseUuid: ID): SupportBulkSelectorCount!
+	# The keyless nodes of the release's merged document with their description state; RELEASE READ.
+	releaseUnidentifiedComponents(releaseUuid: ID!): [VendoredComponent!]!
+	# The key ReARM would mint for a node of this name and version; RELEASE READ; nothing written.
+	vendoredIdentifier(releaseUuid: ID!, name: String!, version: String): String!
+	# The organization's vendored descriptions of a name, any version, newest first, at most 20;
+	# RELEASE READ, then ORGANIZATION WRITE: the rows span every product of the organization.
+	vendoredDescriptionsByName(releaseUuid: ID!, name: String!): [SbomComponentOverlay!]!
 	# The newest bulk support act receipts of an organization, newest first; ORGANIZATION READ.
 	# limit is clamped silently to 1..200.
 	supportBulkActs(orgUuid: ID!, limit: Int = 50): [SupportBulkAct!]!
@@ -1626,6 +1633,17 @@ type Mutation {
 	# or clear the stored date with clearMilestones in the same call. A new date removes a stored
 	# unknown. clearEndOfSupportUnknown removes it and needs a reason.
 	setSbomComponentSupport(sbomComponentUuid: ID!, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, state: SupportState, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, clearMilestones: [SupportMilestoneType!], reason: String, endOfSupportUnknown: JustifiedUnknownInput, clearEndOfSupportUnknown: Boolean): SbomComponent
+	# The manual supplier and licence of a component; ORGANIZATION WRITE on the component's organization.
+	setSbomComponentOverlay(sbomComponentUuid: ID!, overlay: SbomComponentOverlayInput!, reason: String): SbomComponent!
+	# A supplier written on the selector's components that hold none, recorded as one bulk act.
+	bulkSetSbomComponentSupplierBySelector(orgUuid: ID!, selector: SupportBulkSelectorInput!, releaseUuid: ID, supplier: String!, reason: String): SbomComponentSupportBulkResponse!
+	# Describes a keyless node of the release's merged document; RELEASE READ, then ORGANIZATION WRITE.
+	# ReARM mints the key from the name and version.
+	describeVendoredComponent(releaseUuid: ID!, name: String!, version: String, overlay: SbomComponentOverlayInput!, reason: String): VendoredComponent!
+	# Removes a vendored description; the node is unidentified again at the next export.
+	removeVendoredDescription(releaseUuid: ID!, name: String!, version: String, reason: String!): Boolean!
+	# Attests a described vendored component; its sbom_components row is born with the first save.
+	setVendoredComponentSupport(releaseUuid: ID!, name: String!, version: String, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, state: SupportState, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, clearMilestones: [SupportMilestoneType!], reason: String, endOfSupportUnknown: JustifiedUnknownInput, clearEndOfSupportUnknown: Boolean): SbomComponent!
 
 	# Attest MANY components in one pass, reporting PER COMPONENT rather than as a count.
 	#
@@ -4624,6 +4642,8 @@ type SbomComponent {
 	# NOT the release's own eos, which is a CLE lifecycle projection. UNKNOWN for
 	# non-PRODUCT releases, org-scoped reads, or when a horizon is missing.
 	deviceSupportRisk: DeviceSupportRisk
+	# The manual supplier and licence of this component; null when no overlay row exists.
+	overlay: SbomComponentOverlay
 }
 
 input SbomComponentSearchInput {
@@ -5112,6 +5132,61 @@ enum SupportBulkActKind {
 	END_OF_SUPPORT_UNKNOWN
 	# Hash justifications on one release SBOM head; a justified key is skipped by a selector sweep.
 	HASH_JUSTIFICATION
+	# A supplier sweep over overlay rows; rows holding a supplier are skipped.
+	SUPPLIER
+}
+
+# What an overlay row describes: a component the uploaded document identifies, or a keyless node.
+enum OverlayKind {
+	COMPONENT
+	VENDORED
+}
+
+# Where an overlay row came from.
+enum OverlayProvenance {
+	MANUAL
+}
+
+# The manual fills of one component key, written into the export only where the uploaded value is
+# empty. origin stays in ReARM and is never exported.
+type SbomComponentOverlay {
+	uuid: ID!
+	kind: OverlayKind!
+	provenance: OverlayProvenance!
+	supplier: String
+	licence: String
+	description: String
+	origin: String
+	name: String
+	version: String
+	revision: Int!
+	assertedBy: ID
+	assertedByName: String
+	assertedAt: String
+	supplierBulkAct: ID
+}
+
+# null leaves a field alone, an empty string clears it
+input SbomComponentOverlayInput {
+	supplier: String
+	licence: String
+	description: String
+	origin: String
+}
+
+# A keyless node of a release's merged document, one per normalised name and version.
+type VendoredComponent {
+	# the canonical purl ReARM mints from the node's name and version; the exported node's purl is this key plus ?vendored=true
+	key: String
+	name: String!
+	version: String
+	group: String
+	described: Boolean!
+	describable: Boolean!
+	# Why the node cannot be described: the bound its name or version fails.
+	refusal: String
+	overlay: SbomComponentOverlay
+	component: SbomComponent
 }
 
 enum SupportBulkSelectorForm {
@@ -5212,6 +5287,8 @@ enum SupportBulkOutcome {
 	# Skipped by an end-of-support sweep: the component already holds an end-of-support date or
 	# justified unknown
 	SKIPPED_HAS_END_OF_SUPPORT
+	# Skipped by a supplier sweep: the component already holds a supplier overlay
+	SKIPPED_HAS_SUPPLIER
 	# This component's write was rejected; `message` says why. The batch continued.
 	FAILED
 }

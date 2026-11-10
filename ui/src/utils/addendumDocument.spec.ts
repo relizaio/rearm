@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { addendumRow, addendumHeaderRows, ADDENDUM_COLUMNS, ADDENDUM_TITLE, NOT_ASSESSED,
-    LEVEL_NOT_STATED, addendumFileStem } from './addendumDocument'
+    LEVEL_NOT_STATED, VENDORED_SUFFIX, addendumFileStem } from './addendumDocument'
 import type { AddendumComponent, AddendumData } from './addendumData'
 
 function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
@@ -198,5 +198,37 @@ describe('the FDAW-14 columns', () => {
         expect(addendumRow(comp(unknown(false)))[at('End of support')]).toBe('not available: NO_COMMITTED_END_OF_SUPPORT')
         expect(addendumRow(comp({ ...unknown(false), endOfSupportDate: '2030-01-01' }))[at('End of support')])
             .toBe('2030-01-01')
+    })
+})
+
+/** FDAW-15 row 13 (REQ-12): the vendored label, the Pro addendum's FdaDocumentStrings.VENDORED_SUFFIX by text. */
+describe('the vendored row', () => {
+    const KEY = 'pkg:generic/org-1/libdosecalc@2.3'
+
+    it('VENDORED_SUFFIX is the 3.10 string', () => {
+        expect(VENDORED_SUFFIX).toBe(' (vendored, described in ReARM)')
+    })
+
+    it('labels the PURL cell of a vendored component and leaves every other cell as before', () => {
+        const base = comp({ name: 'libdosecalc', group: null, version: '2.3', purl: KEY })
+        const plain = addendumRow(base)
+        const vendored = addendumRow({ ...base, vendored: true })
+        expect(vendored[2]).toBe('pkg:generic/org-1/libdosecalc@2.3 (vendored, described in ReARM)')
+        expect(vendored.filter((_c, i) => i !== 2)).toEqual(plain.filter((_c, i) => i !== 2))
+        expect(plain[2]).toBe(KEY)
+    })
+
+    it('labels an unassessed vendored row the same way', () => {
+        const row = addendumRow(comp({ purl: KEY, vendored: true, attestationState: null, levelOfSupport: null }))
+        expect(row[2]).toBe(KEY + ' (vendored, described in ReARM)')
+        expect(row[3]).toBe(NOT_ASSESSED)
+    })
+
+    it('a vendored row without a purl stays empty, never `null (vendored, ...)`', () => {
+        expect(addendumRow(comp({ purl: null as any, vendored: true }))[2]).toBeNull()
+    })
+
+    it('a component without the flag is unlabelled', () => {
+        expect(addendumRow(comp({ vendored: false }))[2]).toBe('pkg:maven/org.apache/log4j-core@2.14.1')
     })
 })

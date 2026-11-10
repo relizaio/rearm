@@ -28,6 +28,25 @@ export interface ExistingAttestation {
     endOfSupportUnknown?: { code: string, text?: string | null, bulkAct?: string | null } | null
 }
 
+/**
+ * What a save writes to (FDAW-15 3.6): a component row by its uuid, or a described vendored
+ * node of a release by its name and version, which the server keys itself. A bare string is
+ * the component uuid, the form every caller used before the vendored target existed.
+ */
+export type AttestTarget =
+    | { kind: 'component', uuid: string }
+    | { kind: 'vendored', releaseUuid: string, name: string, version: string | null }
+
+/** The identity variables of a target: the uuid, or releaseUuid, name and version and no uuid. */
+export function attestTargetKeys (target: string | AttestTarget): Record<string, unknown> {
+    if (typeof target === 'string') return { sbomComponentUuid: target }
+    if (target.kind === 'component') return { sbomComponentUuid: target.uuid }
+    return { releaseUuid: target.releaseUuid, name: target.name, version: target.version }
+}
+
+/** The identity keys a set may carry; a set holding only these and a reason writes nothing. */
+const TARGET_KEYS = ['sbomComponentUuid', 'releaseUuid', 'name', 'version']
+
 const MILESTONE_FIELDS = [
     'endOfGuaranteedSupportDate', 'endOfSupportDate', 'endOfLifeDate'
 ] as const
@@ -307,8 +326,10 @@ export function useAttestationForm () {
     }
 
     /** Variables for this save, diffed against what the form was seeded with. */
-    function variables (sbomComponentUuid: string): Record<string, unknown> {
-        return attestationVariables(sbomComponentUuid, form, seededRef.value as any)
+    function variables (target: string | AttestTarget): Record<string, unknown> {
+        const facts = attestationVariables('', form, seededRef.value as any)
+        delete facts.sbomComponentUuid
+        return { ...attestTargetKeys(target), ...facts }
     }
 
     /**
@@ -325,13 +346,13 @@ export function useAttestationForm () {
      * milestone. The diff rule is "never send a date the operator did not touch" -- editing
      * its notes counts as touching it.
      */
-    function variableSets (sbomComponentUuid: string): Array<Record<string, unknown>> {
+    function variableSets (target: string | AttestTarget): Array<Record<string, unknown>> {
         const sets: Array<Record<string, unknown>> = []
-        const base = variables(sbomComponentUuid)
+        const base = variables(target)
         // A reason on its own is not a change. It annotates one, so a base set carrying
         // nothing but the id and a reason would write an audit revision explaining an edit
         // that never happened.
-        const substantive = Object.keys(base).filter(k => k !== 'sbomComponentUuid' && k !== 'reason')
+        const substantive = Object.keys(base).filter(k => !TARGET_KEYS.includes(k) && k !== 'reason')
         if (substantive.length > 0) sets.push(base)
         const reason = form.reason.trim()
         for (const type of editedMilestoneNotes()) {
@@ -339,7 +360,7 @@ export function useAttestationForm () {
             const date = (form as any)[field]
             if (!date) continue
             const set: Record<string, unknown> = {
-                sbomComponentUuid,
+                ...attestTargetKeys(target),
                 [field]: date,
                 supportNotes: (form.milestoneNotes as any)[type].trim()
             }

@@ -41,6 +41,7 @@ import jakarta.persistence.OptimisticLockException;
 import jakarta.persistence.PersistenceException;
 import jakarta.persistence.PersistenceContext;
 
+import io.reliza.common.AdvisoryLockKey;
 import io.reliza.common.HeapPressureGuard;
 import io.reliza.common.Utils;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
@@ -98,6 +99,7 @@ import io.reliza.repositories.ArtifactCanonicalMapRepository.PendingCanonicalFor
 import io.reliza.repositories.ArtifactSbomComponentRepository;
 import io.reliza.repositories.ReleaseArtifactIndexRepository;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.repositories.SbomComponentOverlayRepository;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.repositories.SbomComponentRepository.CanonicalPurlRow;
 import io.reliza.repositories.SbomComponentSupportAuditRepository;
@@ -159,6 +161,7 @@ public class SbomComponentService {
 	@Autowired private ReleaseRepository releaseRepository;
 	@Autowired private ComponentKindPolicy componentKindPolicy;
 	@Autowired private SupportBulkActService supportBulkActService;
+	@Autowired private SbomComponentOverlayRepository sbomComponentOverlayRepository;
 
 	/**
 	 * Self-injection so {@link #processPendingReconciles(int)} can call the
@@ -2596,6 +2599,35 @@ private static int currentReconcileFailureCount(Release r) {
 		return sc;
 	}
 
+	/**
+	 * The {@code sbom_components} row of a vendored key, found or created (FDAW-15 3.3 item 5): type
+	 * {@code generic}, the purl identity only, no licences, terminal-stamped, so it never enters the
+	 * enrichment window. Joins the caller's transaction, and takes the per-key lock first (reentrant within
+	 * it), so a concurrent create of the key waits and finds the row. Answers the row's uuid.
+	 */
+	public UUID ensureVendoredComponent(UUID org, String key, String name, String version) {
+		sbomComponentOverlayRepository.lockKey(AdvisoryLockKey.SBOM_COMPONENT_KEY_WRITE.getQueryVal(), org + "|" + key);
+		return sbomComponentRepository.findByOrgAndCanonicalPurl(org, key).map(SbomComponent::getUuid).orElseGet(() -> {
+			SbomComponent sc = new SbomComponent();
+			sc.setOrg(org);
+			sc.setCanonicalPurl(key);
+			sc.setRecordData(new SbomComponentData("generic", null, name, version, null).toRecordMap());
+			sc.setIdentities(buildIdentities(key, List.of()));
+			stampTerminalIfUnmatchablePurlType(sc);
+			return sbomComponentRepository.save(sc).getUuid();
+		});
+	}
+
+	/** The org's rows of {@code canonicalPurls}, by canonical purl. */
+	public Map<String, SbomComponent> findSbomComponentsByCanonicalPurls(UUID org, Collection<String> canonicalPurls) {
+		if (canonicalPurls.isEmpty()) return Map.of();
+		Map<String, SbomComponent> byKey = new HashMap<>();
+		for (SbomComponent sc : sbomComponentRepository.findByOrgAndCanonicalPurlIn(org.toString(), canonicalPurls)) {
+			byKey.put(sc.getCanonicalPurl(), sc);
+		}
+		return byKey;
+	}
+
 	/** Terminal reason for purl types no vulnerability source can ever match. */
 	static final String TERMINAL_REASON_UNMATCHABLE_PURL_TYPE = "UNMATCHABLE_PURL_TYPE";
 
@@ -3513,6 +3545,17 @@ private static int currentReconcileFailureCount(Release r) {
 				+ " the selector " + selector.describe() + " matches more than " + BULK_SUPPORT_MAX_IDS + " in "
 				+ (releaseScope ? "this release" : "the organization")
 				+ ". Narrow it by namespace or to this release, or use Shown components.";
+	}
+
+	/**
+	 * The supplier sweep's over-cap refusal (FDAW-15 3.10): {@link #selectorOverCap} names a support
+	 * attestation and Shown components, which the supplier sweep does not offer.
+	 */
+	public static String supplierSelectorOverCap(SupportBulkSelector selector, boolean releaseScope) {
+		return "a bulk supplier assignment is limited to " + BULK_SUPPORT_MAX_IDS + " components per call;"
+				+ " the selector " + selector.describe() + " matches more than " + BULK_SUPPORT_MAX_IDS + " in "
+				+ (releaseScope ? "this release" : "the organization")
+				+ ". Narrow it by namespace or to this release.";
 	}
 
 	/** What one bulk call did: its server-minted act, how many components it matched, the per-row outcomes. */

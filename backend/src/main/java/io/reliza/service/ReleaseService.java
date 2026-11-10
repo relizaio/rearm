@@ -100,6 +100,7 @@ import io.reliza.model.dto.VexImportResult;
 import io.reliza.model.dto.VexImportSummary;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.Utils;
+import io.reliza.common.VendoredIdentifier;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
@@ -1106,6 +1107,14 @@ public class ReleaseService {
 	 */
 	JsonNode applyExportMetadata(JsonNode mergedBom, UUID org, UUID releaseUuid, ExportMetadataOptions exportMetadata,
 			String profileName) {
+		// The overlays first (FDAW-15 3.4): so the support injector below reads a described node by its key.
+		// On a read failure the document is served without overlays; the sweep and injection run as today.
+		try {
+			supportInjectionService.applyOverlays(mergedBom, org);
+		} catch (Exception overlayEx) {
+			log.error("Overlays failed for release {}; serving without them: {}", releaseUuid,
+					overlayEx.getMessage(), overlayEx);
+		}
 		// The merged bom is assembled from component boms we did not write. A component bom
 		// uploaded with a reliza:support:* property carries it into this document unchanged,
 		// where SupportBomInjector's contract says every such property was written by us --
@@ -1165,6 +1174,20 @@ public class ReleaseService {
 			}
 		}
 		return mergedBom;
+	}
+
+	/**
+	 * The keyless component nodes of the release's merged document as rebom assembled it, no overlay
+	 * applied, with the JSON export's default knobs (FDAW-15 3.7); a release without an SBOM has none.
+	 * Public for the {@code releaseUnidentifiedComponents} fetcher (FDAW-50 F-3), which gates RELEASE READ
+	 * on {@code rd} first.
+	 */
+	public List<JsonNode> keylessNodesOf(ReleaseData rd, WhoUpdated wu) throws RelizaException {
+		Optional<UUID> releaseBomId = findReleaseBomId(rd.getUuid(), wu);
+		if (releaseBomId.isEmpty()) return List.of();
+		JsonNode document = rebomService.findBomByIdJson(releaseBomId.get(), rd.getOrg());
+		return OverlayBomInjector.overlayNodes(document).stream().map(n -> (JsonNode) n)
+				.filter(VendoredIdentifier::keyless).toList();
 	}
 
 	/**

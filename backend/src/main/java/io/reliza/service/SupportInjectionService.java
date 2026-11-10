@@ -33,12 +33,14 @@ import io.reliza.model.JustifiedUnknownReason;
 import io.reliza.model.SupportExportState;
 import io.reliza.model.SupportInjectionSetting;
 import io.reliza.model.SbomComponent;
+import io.reliza.model.SbomComponentOverlay;
 import io.reliza.model.SupportData;
 import io.reliza.model.SupportMilestoneFact;
 import io.reliza.model.UserPermission;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.dto.ExportMetadataOptions;
+import io.reliza.repositories.SbomComponentOverlayRepository;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.repositories.SbomComponentSupportRepository;
 import io.reliza.repositories.SbomComponentSupportRepository.SupportPayloadRow;
@@ -53,11 +55,12 @@ import tools.jackson.databind.JsonNode;
  * owns the tree edit.
  *
  * <p>Depends on {@link SbomComponentRepository}, {@link SbomComponentSupportRepository},
- * {@link GetOrganizationService} (the export setting) and {@link UserService} (naming the
- * attester, per decision D4). None of those can reach back to {@code SharedArtifactService}
+ * {@link GetOrganizationService} (the export setting), {@link UserService} (naming the
+ * attester, per decision D4) and {@link SbomComponentOverlayRepository} (the overlays of
+ * {@link #applyOverlays}, a repository). None of those can reach back to {@code SharedArtifactService}
  * or {@code SbomComponentService}, so it still introduces no cycle -- but that is now a fact
- * about four collaborators rather than two, and {@link #declarationContext} carries the
- * argument for the one that was added last.
+ * about five collaborators rather than two, and {@link #declarationContext} carries the
+ * argument for the one that needed one.
  */
 @Slf4j
 @Service
@@ -69,13 +72,15 @@ public class SupportInjectionService {
 	private final UserService userService;
 	/** The hash justifications of a publication's release SBOM head (FDAW-14 3.5); null in hand-built rigs. */
 	private final ReleaseSbomJustificationService releaseSbomJustificationService;
+	/** The overlays of {@link #applyOverlays} (FDAW-15 3.4); null in hand-built rigs, where it does nothing. */
+	private final SbomComponentOverlayRepository sbomComponentOverlayRepository;
 
 	/** For the hand-built unit rigs, which serve no publication's hash justifications. */
 	SupportInjectionService(SbomComponentRepository sbomComponentRepository,
 			SbomComponentSupportRepository sbomComponentSupportRepository,
 			GetOrganizationService getOrganizationService,
 			UserService userService) {
-		this(sbomComponentRepository, sbomComponentSupportRepository, getOrganizationService, userService, null);
+		this(sbomComponentRepository, sbomComponentSupportRepository, getOrganizationService, userService, null, null);
 	}
 
 	@Autowired
@@ -83,12 +88,31 @@ public class SupportInjectionService {
 			SbomComponentSupportRepository sbomComponentSupportRepository,
 			GetOrganizationService getOrganizationService,
 			UserService userService,
-			@Lazy ReleaseSbomJustificationService releaseSbomJustificationService) {
+			@Lazy ReleaseSbomJustificationService releaseSbomJustificationService,
+			SbomComponentOverlayRepository sbomComponentOverlayRepository) {
 		this.sbomComponentRepository = sbomComponentRepository;
 		this.sbomComponentSupportRepository = sbomComponentSupportRepository;
 		this.getOrganizationService = getOrganizationService;
 		this.userService = userService;
 		this.releaseSbomJustificationService = releaseSbomJustificationService;
+		this.sbomComponentOverlayRepository = sbomComponentOverlayRepository;
+	}
+
+	/**
+	 * Fills the document's empty standard fields from the overlays and keys its described keyless nodes
+	 * (FDAW-15 3.4), in place. Runs before the sweep and the injection; the seam catches what this throws,
+	 * so on a read failure the document is served without overlays and the sweep and injection run as today.
+	 */
+	public void applyOverlays(JsonNode bom, UUID org) {
+		if (null == sbomComponentOverlayRepository) return;
+		Map<String, ComponentSupportFacts> facts = resolveSupportFactsForKeys(SupportBomInjector.collectKeys(bom), org);
+		OverlayBomInjector.Overlaid overlaid = OverlayBomInjector.apply(bom, org, OverlayBomInjector.rowKeyOf(facts),
+				keys -> sbomComponentOverlayRepository.findByOrgAndCanonicalPurlIn(org, keys).stream()
+						.collect(Collectors.toMap(SbomComponentOverlay::getCanonicalPurl, o -> o, (a, b) -> a)));
+		if (overlaid.fieldsFilled() > 0) {
+			log.info("Overlays filled {} fields and keyed {} vendored nodes of {} visited", overlaid.fieldsFilled(),
+					overlaid.vendoredKeyed(), overlaid.nodesVisited());
+		}
 	}
 
 	/**
@@ -493,8 +517,15 @@ public class SupportInjectionService {
 	 * {@link SbomComponentSupportRepository#findRawByComponentUuids}).
 	 */
 	public Map<String, ComponentSupportFacts> resolveSupportFactsForBom(JsonNode bom, UUID orgUuid) {
+		return resolveSupportFactsForKeys(SupportBomInjector.collectKeys(bom), orgUuid);
+	}
+
+	/**
+	 * {@link #resolveSupportFactsForBom} over recorded keys, for a reader that holds them without the
+	 * document (FDAW-9 r4 3.5 step 6, FDAW-15 3.4).
+	 */
+	public Map<String, ComponentSupportFacts> resolveSupportFactsForKeys(Set<String> keys, UUID orgUuid) {
 		Map<String, SbomComponent> byKey = new HashMap<>();
-		Set<String> keys = SupportBomInjector.collectKeys(bom);
 		if (keys.isEmpty()) return Map.of();
 
 		// Byte-exact pass (catches the common case, incl. all cpe-only keys). It also probes the

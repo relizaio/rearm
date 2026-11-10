@@ -68,6 +68,8 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SbomComponent;
+import io.reliza.model.SbomComponentOverlay;
+import io.reliza.model.SbomComponentOverlayData;
 import io.reliza.model.SbomComponentPage;
 import io.reliza.model.SupportAttestationFilter;
 import io.reliza.model.SupportAttestationRequest;
@@ -90,6 +92,7 @@ import io.reliza.model.VulnerabilityRecordData.AffectedRange;
 import io.reliza.model.dto.CveSearchResultDto.ComponentWithBranches;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
+import io.reliza.repositories.SbomComponentOverlayRepository;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.FindingPurlBridge;
 import io.reliza.service.FindingPurlBridge.ComponentIndex;
@@ -150,6 +153,9 @@ public class SbomComponentDataFetcher {
 	@Autowired
 	private OssPerspectiveService ossPerspectiveService;
 
+	@Autowired
+	private SbomComponentOverlayRepository sbomComponentOverlayRepository;
+
 	/**
 	 * Per-request graph state shared across all field resolvers below via DGS
 	 * {@code localContext}. Built once at the top-level query so that
@@ -181,8 +187,10 @@ public class SbomComponentDataFetcher {
 			UUID releaseUuid,
 			// The release's findings by component, for the findings fields.
 			ReleaseComponentFindings findings,
-			// Display names of the support asserters, resolved once per distinct user (FDAW-14 3.7).
-			Map<UUID, String> asserterNames) {}
+			// Display names of the support and overlay asserters, resolved once per distinct user (FDAW-14 3.7).
+			Map<UUID, String> asserterNames,
+			// The overlays of the loaded components by key, one read per response (FDAW-15 3.7).
+			Map<String, SbomComponentOverlay> overlayByKey) {}
 
 	/**
 	 * The release's vulnerability findings by the component of the loaded rows each one's
@@ -352,10 +360,11 @@ public class SbomComponentDataFetcher {
 			edges.sort(EDGE_SORTER);
 		}
 
+		Map<String, SbomComponentOverlay> overlayByKey = overlaysOf(orgUuid, componentByUuid.values());
 		ReleaseGraphContext ctx = new ReleaseGraphContext(
 				rowByComponentUuid, componentByUuid, supportByComponentUuid, forwardEdgesBySource, deviceLifecycle,
 				orgUuid, releaseUuid, new ReleaseComponentFindings(rowByComponentUuid, componentByUuid, releaseFindings),
-				asserterNames(supportByComponentUuid.values()));
+				asserterNames(supportByComponentUuid.values(), overlayByKey.values()), overlayByKey);
 		List<Map<String, Object>> dtos = rows.stream()
 				.map(SbomComponentDataFetcher::toDto)
 				.toList();
@@ -817,9 +826,10 @@ public class SbomComponentDataFetcher {
 	}
 
 	/** The caller and, for the release scope, the release's component set; gated in the fixed order. */
-	private record SelectorScope(UserData caller, Set<UUID> releaseComponents) {}
+	public record SelectorScope(UserData caller, Set<UUID> releaseComponents) {}
 
-	private SelectorScope selectorScope(UUID orgUuid, UUID releaseUuid) throws RelizaException {
+	/** Public for {@link SbomComponentOverlayDataFetcher}, which calls it through this bean's proxy. */
+	public SelectorScope selectorScope(UUID orgUuid, UUID releaseUuid) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		UserData caller = userService.getUserDataByAuth(auth).orElseThrow();
 		RelizaObject ro = getOrganizationService.getOrganizationData(orgUuid)
@@ -886,7 +896,7 @@ public class SbomComponentDataFetcher {
 	 * <p>Derived, not tallied alongside the loop, so a client that renders the summary and a
 	 * client that iterates the results cannot disagree about the same run.
 	 */
-	private static Map<String, Object> bulkDto(SbomComponentService.SupportBulkRun run, UUID batchId) {
+	static Map<String, Object> bulkDto(SbomComponentService.SupportBulkRun run, UUID batchId) {
 		List<SupportBulkResult> results = run.results();
 		List<Map<String, Object>> items = new ArrayList<>(results.size());
 		int applied = 0;
@@ -900,7 +910,7 @@ public class SbomComponentDataFetcher {
 			items.add(dto);
 			switch (r.outcome()) {
 				case APPLIED -> applied++;
-				case SKIPPED_ROOT, SKIPPED_ATTESTED, SKIPPED_HAS_END_OF_SUPPORT -> skipped++;
+				case SKIPPED_ROOT, SKIPPED_ATTESTED, SKIPPED_HAS_END_OF_SUPPORT, SKIPPED_HAS_SUPPLIER -> skipped++;
 				case FAILED -> failed++;
 			}
 		}
@@ -980,8 +990,7 @@ public class SbomComponentDataFetcher {
 		// client refetches after save) carries the real flag.
 		SupportData written = sbomComponentService.findSupportByComponentIds(orgUuid, Set.of(sbomComponentUuid))
 				.get(sbomComponentUuid);
-		return toComponentDto(updated, written, null,
-				asserterNames(null == written ? List.of() : List.of(written)));
+		return componentDtoOf(updated, written);
 	}
 
 	/**
@@ -1028,7 +1037,7 @@ public class SbomComponentDataFetcher {
 		return dto;
 	}
 
-	private static LocalDate parseIsoDate(String value, String field) throws RelizaException {
+	static LocalDate parseIsoDate(String value, String field) throws RelizaException {
 		if (value == null || value.isBlank()) return null;
 		try {
 			LocalDate parsed = LocalDate.parse(value);
@@ -1056,18 +1065,43 @@ public class SbomComponentDataFetcher {
 			SbomComponent sc = ctx.componentByUuid().get(componentUuid);
 			if (sc == null) return null;
 			return toComponentDto(sc, ctx.supportByComponentUuid().get(componentUuid),
-					ctx.deviceLifecycle(), ctx.asserterNames());
+					ctx.deviceLifecycle(), ctx.asserterNames(), ctx.overlayByKey().get(sc.getCanonicalPurl()));
 		}
 		// Defensive fallback if this resolver is reached outside the top-level
 		// query path (no localContext); behaves like the original single-row
 		// fetch, so direct callers keep working. No release context here, so the
 		// device support window is unavailable -> deviceSupportRisk resolves to UNKNOWN.
 		return sbomComponentService.getSbomComponent(componentUuid)
-				.map(sc -> toComponentDto(sc,
-						sbomComponentService.findSupportByComponentIds(sc.getOrg(), Set.of(componentUuid))
-								.get(componentUuid),
-						null))
+				.map(sc -> componentDtoOf(sc, sbomComponentService.findSupportByComponentIds(sc.getOrg(),
+						Set.of(componentUuid)).get(componentUuid)))
 				.orElse(null);
+	}
+
+	/**
+	 * One component outside a release graph, with its overlay: no device, so deviceSupportRisk resolves to
+	 * UNKNOWN. Public for {@link SbomComponentOverlayDataFetcher}, through this bean's proxy.
+	 */
+	public Map<String, Object> componentDtoOf(SbomComponent sc, SupportData support) {
+		Map<String, SbomComponentOverlay> overlays = overlaysOf(sc.getOrg(), List.of(sc));
+		return toComponentDto(sc, support, null,
+				asserterNames(null == support ? List.of() : List.of(support), overlays.values()),
+				overlays.get(sc.getCanonicalPurl()));
+	}
+
+	/** Display names of the overlays' asserters. Public for {@link SbomComponentOverlayDataFetcher}. */
+	public Map<UUID, String> overlayAsserterNames(Collection<SbomComponentOverlay> overlays) {
+		return asserterNames(List.of(), overlays);
+	}
+
+	/** The overlays of the components by key, one read (FDAW-15 3.7). */
+	private Map<String, SbomComponentOverlay> overlaysOf(UUID orgUuid, Collection<SbomComponent> components) {
+		if (null == orgUuid || components.isEmpty()) return Map.of();
+		List<String> keys = components.stream().map(SbomComponent::getCanonicalPurl).toList();
+		Map<String, SbomComponentOverlay> byKey = new HashMap<>();
+		for (SbomComponentOverlay o : sbomComponentOverlayRepository.findByOrgAndCanonicalPurlIn(orgUuid, keys)) {
+			byKey.putIfAbsent(o.getCanonicalPurl(), o);
+		}
+		return byKey;
 	}
 
 	/**
@@ -1322,13 +1356,21 @@ public class SbomComponentDataFetcher {
 		return toComponentDto(sc, support, device, Map.of());
 	}
 
-	/**
-	 * As above, with the asserters' display names: {@code assertedByName} of the level and of the
-	 * end-of-support justified unknown (FDAW-14 3.7, 3.8), from a map resolved once per distinct user.
-	 */
+	/** As below, without an overlay. */
 	static Map<String, Object> toComponentDto(SbomComponent sc,
 			SupportData support, DeviceLifecycle device, Map<UUID, String> asserterNames) {
+		return toComponentDto(sc, support, device, asserterNames, null);
+	}
+
+	/**
+	 * As above, with the asserters' display names: {@code assertedByName} of the level and of the
+	 * end-of-support justified unknown (FDAW-14 3.7, 3.8), from a map resolved once per distinct user, and
+	 * the component's overlay (FDAW-15 3.7), null when no row exists.
+	 */
+	static Map<String, Object> toComponentDto(SbomComponent sc, SupportData support, DeviceLifecycle device,
+			Map<UUID, String> asserterNames, SbomComponentOverlay overlay) {
 		Map<String, Object> dto = new LinkedHashMap<>();
+		dto.put("overlay", toOverlayDto(overlay, asserterNames));
 		dto.put("uuid", sc.getUuid());
 		dto.put("canonicalPurl", sc.getCanonicalPurl());
 		dto.put("latestVersion", sc.getLatestVersion());
@@ -1434,6 +1476,28 @@ public class SbomComponentDataFetcher {
 		return dto;
 	}
 
+	/** The wire {@code SbomComponentOverlay}, or null. */
+	static Map<String, Object> toOverlayDto(SbomComponentOverlay o, Map<UUID, String> asserterNames) {
+		if (null == o) return null;
+		SbomComponentOverlayData d = o.getRecordData();
+		Map<String, Object> dto = new LinkedHashMap<>();
+		dto.put("uuid", o.getUuid());
+		dto.put("kind", o.getKind().name());
+		dto.put("provenance", o.getProvenance().name());
+		dto.put("supplier", d.supplier());
+		dto.put("licence", d.licence());
+		dto.put("description", d.description());
+		dto.put("origin", d.origin());
+		dto.put("name", d.name());
+		dto.put("version", d.version());
+		dto.put("revision", o.getRevision());
+		dto.put("assertedBy", d.assertedBy());
+		dto.put("assertedByName", null == d.assertedBy() ? null : asserterNames.get(d.assertedBy()));
+		dto.put("assertedAt", d.assertedAt());
+		dto.put("supplierBulkAct", d.supplierBulkAct());
+		return dto;
+	}
+
 	/** The wire {@code JustifiedUnknown}, or null. */
 	static Map<String, Object> toUnknownDto(JustifiedUnknown u, JustifiedUnknownField field,
 			Map<UUID, String> asserterNames) {
@@ -1451,11 +1515,14 @@ public class SbomComponentDataFetcher {
 
 	/**
 	 * Display names of every asserter of the level and of the end-of-support unknown among
-	 * {@code supports}, one lookup per distinct user; an unresolvable user is absent (the
-	 * {@code declarationContext} rule: never throws).
+	 * {@code supports} and of the last write of {@code overlays}, one lookup per distinct user; an
+	 * unresolvable user is absent (the {@code declarationContext} rule: never throws).
 	 */
-	private Map<UUID, String> asserterNames(Collection<SupportData> supports) {
+	private Map<UUID, String> asserterNames(Collection<SupportData> supports, Collection<SbomComponentOverlay> overlays) {
 		Set<UUID> users = new HashSet<>();
+		for (SbomComponentOverlay o : overlays) {
+			if (null != o.getRecordData().assertedBy()) users.add(o.getRecordData().assertedBy());
+		}
 		for (SupportData sd : supports) {
 			if (null == sd) continue;
 			if (null != sd.assertedBy()) users.add(sd.assertedBy());
@@ -1490,7 +1557,7 @@ public class SbomComponentDataFetcher {
 	 * else that will not parse is an error, never a silent fallback to now -- quietly
 	 * substituting the wrong date is how an attestation stops being evidence.
 	 */
-	private static ZonedDateTime parseAssessedAt(String value) throws RelizaException {
+	static ZonedDateTime parseAssessedAt(String value) throws RelizaException {
 		if (value == null || value.isBlank()) return null;
 		try {
 			return OffsetDateTime.parse(value).atZoneSameInstant(ZoneOffset.UTC);

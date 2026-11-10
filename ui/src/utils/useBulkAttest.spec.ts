@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
     useBulkAttest, validateBulkInput, groupNotWritten, classifyBulkOutcome, bulkSupportVariables, emptyBulkForm,
-    BULK_BATCH_SIZE, BULK_WALK_LIMIT, BULK_MAX_IDS, SAMPLE_SIZE
+    BULK_BATCH_SIZE, BULK_WALK_LIMIT, BULK_MAX_IDS, SAMPLE_SIZE, newBulkOutcome, tallyBulkResponse
 } from './useBulkAttest'
 import type { BulkLabel, BulkOutcome } from './useBulkAttest'
 
@@ -522,7 +522,8 @@ describe('naming what was not written', () => {
         ({ sbomComponentUuid, outcome, message })
     const outcomeOf = (results: Result[], flags: Partial<BulkOutcome> = {}): BulkOutcome => ({
         applied: results.filter(x => x.outcome === 'APPLIED').length,
-        skippedAttested: 0, skippedRoot: 0, skippedHasEndOfSupport: 0, failed: 0, matched: results.length,
+        skippedAttested: 0, skippedRoot: 0, skippedHasEndOfSupport: 0, skippedHasSupplier: 0, failed: 0,
+        matched: results.length,
         bulkActs: [], unknownOutcomes: 0, results,
         aborted: false, stoppedEarly: false, error: null, retryable: false,
         concurrentWriteDetected: false, ...flags
@@ -706,5 +707,48 @@ describe('the end-of-support justified unknown on a sweep', () => {
         const groups = groupNotWritten(['a', 'b', 'c'], out, {})
         expect(groups.map(g => g.reason)).toEqual(['SKIPPED_ATTESTED', 'SKIPPED_HAS_END_OF_SUPPORT'])
         expect(groups[1].title).toBe('1 skipped: already hold an end of support')
+    })
+})
+
+/** FDAW-15 row 16 and FDAW-51 3.3.3: SKIPPED_HAS_SUPPLIER is a counter, a not-written group and a result line. */
+describe('the supplier sweep outcome', () => {
+    const res = (sbomComponentUuid: string, outcome: string) => ({ sbomComponentUuid, outcome, message: null })
+
+    it('classifies SKIPPED_HAS_SUPPLIER as itself, never as unknown', () => {
+        expect(classifyBulkOutcome('SKIPPED_HAS_SUPPLIER')).toBe('SKIPPED_HAS_SUPPLIER')
+    })
+
+    it('a fresh outcome starts the counter at 0', () => {
+        expect(newBulkOutcome().skippedHasSupplier).toBe(0)
+    })
+
+    it('tallies [APPLIED, SKIPPED_HAS_SUPPLIER] so the counters sum', () => {
+        const out = newBulkOutcome()
+        tallyBulkResponse(out, { bulkAct: 'act-s', results: [res('a', 'APPLIED'), res('b', 'SKIPPED_HAS_SUPPLIER')] })
+        expect(out.applied).toBe(1)
+        expect(out.skippedHasSupplier).toBe(1)
+        expect(out.unknownOutcomes).toBe(0)
+        expect(out.applied + out.skippedHasSupplier).toBe(out.results.length)
+    })
+
+    it('groups it once, with its title and explanation, and no UNKNOWN group', () => {
+        const out = newBulkOutcome()
+        tallyBulkResponse(out, { bulkAct: 'act-s', results: [res('a', 'APPLIED'), res('b', 'SKIPPED_HAS_SUPPLIER')] })
+        const groups = groupNotWritten([], out, {})
+        expect(groups).toHaveLength(1)
+        expect(groups[0].reason).toBe('SKIPPED_HAS_SUPPLIER')
+        expect(groups[0].title).toBe('1 skipped: already hold a supplier')
+        expect(groups[0].explanation).toBe('They already hold a supplier; a sweep never replaces one. Change them'
+            + ' one by one in the Supplier and licence editor.')
+        expect(groups[0].entries.map(e => e.uuid)).toEqual(['b'])
+        expect(groups.map(g => g.reason)).not.toContain('UNKNOWN')
+    })
+
+    it('puts the end-of-support group first, then the supplier group right after it', () => {
+        const out = newBulkOutcome()
+        tallyBulkResponse(out, { bulkAct: null, results: [res('a', 'FAILED'), res('b', 'SKIPPED_HAS_SUPPLIER'),
+            res('c', 'SKIPPED_HAS_END_OF_SUPPORT')] })
+        expect(groupNotWritten([], out, {}).map(g => g.reason))
+            .toEqual(['SKIPPED_HAS_END_OF_SUPPORT', 'SKIPPED_HAS_SUPPLIER', 'FAILED'])
     })
 })

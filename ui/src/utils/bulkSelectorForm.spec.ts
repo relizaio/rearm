@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { BULK_SET_SUPPORT_BY_SELECTOR, SELECTOR_OVER_CAP_TEXT, SUPPORT_BULK_SELECTOR_COUNT, emptySelectorChoice,
-    fetchSelectorCount, selectorCountText, selectorInput, selectorRelease, submitBySelector, validateSelector }
+    fetchSelectorCount, selectorCountText, selectorInput, selectorRelease, submitBySelector, validateSelector,
+    BULK_SET_SUPPLIER_BY_SELECTOR, SUPPLIER_SELECTOR_FORM_OPTIONS, SUPPLIER_SELECTOR_OVER_CAP_TEXT, emptySupplierForm, emptySupplierSelectorChoice,
+    submitSupplierBySelector, validateSupplierSweep }
     from './bulkSelectorForm'
 import type { BulkSelectorChoice } from './bulkSelectorForm'
 import { emptyBulkForm } from './useBulkAttest'
@@ -163,5 +165,79 @@ describe('the per-component editor', () => {
         const changed = { ...same, endOfSupportUnknownCode: 'COMMUNITY_PROJECT' }
         expect(attestationVariables('c-1', changed, stored).endOfSupportUnknown)
             .toEqual({ code: 'COMMUNITY_PROJECT', text: 'old' })
+    })
+})
+
+/** FDAW-15 row 16 (REQ-15): the Supplier half of the bulk dialog. */
+describe('the supplier sweep', () => {
+    const SUP = { ...emptySupplierSelectorChoice(), form: 'NAMESPACE' as const, type: 'deb', namespace: 'debian' }
+    const form = { supplier: '  Debian Project  ', reason: ' upstream is Debian ' }
+
+    it('offers the two selector forms and no Shown components', () => {
+        expect(SUPPLIER_SELECTOR_FORM_OPTIONS.map(o => o.label)).toEqual(['By ecosystem', 'By namespace'])
+        expect(SUPPLIER_SELECTOR_FORM_OPTIONS.map(o => o.value)).not.toContain('EXPLICIT')
+        expect(emptySupplierSelectorChoice()).toEqual({ form: 'TYPE', type: '', namespace: '', scope: 'RELEASE' })
+    })
+
+    it('the confirm stage sends one supportBulkSelectorCount for the same selector and scope', async () => {
+        const { c, query, mutate } = client({})
+        const count = await fetchSelectorCount(c, 'org-1', SUP, 'rel-1')
+        expect(count).toEqual({ matched: 42, overCap: false })
+        expect(query).toHaveBeenCalledTimes(1)
+        const opts = (query.mock.calls[0] as any)[0]
+        expect(opts.query).toBe(SUPPORT_BULK_SELECTOR_COUNT)
+        expect(opts.variables).toEqual({ orgUuid: 'org-1', releaseUuid: 'rel-1',
+            selector: { form: 'NAMESPACE', type: 'deb', namespace: 'debian' } })
+        expect(mutate).not.toHaveBeenCalled()
+    })
+
+    it('confirm sends one bulkSetSbomComponentSupplierBySelector with the selector, scope, supplier and reason, and no walk', async () => {
+        const { c, mutate, query } = client({ bulkSetSbomComponentSupplierBySelector: { bulkAct: 'act-s',
+            matchedCount: 3, appliedCount: 2, skippedCount: 1, failedCount: 0,
+            results: [{ sbomComponentUuid: 'a', outcome: 'APPLIED', message: null },
+                { sbomComponentUuid: 'b', outcome: 'APPLIED', message: null },
+                { sbomComponentUuid: 'c', outcome: 'SKIPPED_HAS_SUPPLIER', message: null }] } })
+        const out = await submitSupplierBySelector(c, 'org-1', SUP, 'rel-1', form)
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(query).not.toHaveBeenCalled()
+        const opts = (mutate.mock.calls[0] as any)[0]
+        expect(opts.mutation).toBe(BULK_SET_SUPPLIER_BY_SELECTOR)
+        expect(opts.variables).toEqual({ orgUuid: 'org-1', releaseUuid: 'rel-1',
+            selector: { form: 'NAMESPACE', type: 'deb', namespace: 'debian' },
+            supplier: 'Debian Project', reason: 'upstream is Debian' })
+        expect(out.matched).toBe(3)
+        expect(out.applied).toBe(2)
+        expect(out.skippedHasSupplier).toBe(1)
+        expect(out.unknownOutcomes).toBe(0)
+        expect(out.applied + out.skippedHasSupplier + out.failed).toBe(out.matched)
+        expect(out.bulkActs).toEqual(['act-s'])
+    })
+
+    it('Whole organization sends a null release', async () => {
+        const { c, mutate } = client({ bulkSetSbomComponentSupplierBySelector: { bulkAct: 'x', matchedCount: 0,
+            results: [] } })
+        await submitSupplierBySelector(c, 'org-1', { ...SUP, scope: 'ORGANIZATION' }, 'rel-1', form)
+        expect((mutate.mock.calls[0] as any)[0].variables.releaseUuid).toBeNull()
+    })
+
+    it.each(['', '   '])('a blank supplier %j blocks confirm and sends nothing', async (supplier) => {
+        expect(validateSupplierSweep(SUP, { ...emptySupplierForm(), supplier })).toContain('supplier is required')
+        const { c, mutate } = client({})
+        const out = await submitSupplierBySelector(c, 'org-1', SUP, 'rel-1', { supplier, reason: '' })
+        expect(out.aborted).toBe(true)
+        expect(mutate).not.toHaveBeenCalled()
+    })
+
+    it('the over-cap line points to no Shown components, which this half does not offer', () => {
+        expect(SUPPLIER_SELECTOR_OVER_CAP_TEXT).toBe('Matches more than 1000 components; narrow the selector by'
+            + ' namespace or to this release')
+        expect(SUPPLIER_SELECTOR_OVER_CAP_TEXT).not.toContain('Shown components')
+    })
+
+    it('refuses the explicit form and an over-long supplier', () => {
+        expect(validateSupplierSweep({ ...SUP, form: 'EXPLICIT' }, form)).not.toEqual([])
+        expect(validateSupplierSweep(SUP, { supplier: 'x'.repeat(513), reason: '' }))
+            .toContain('supplier is longer than 512 characters')
+        expect(validateSupplierSweep(SUP, form)).toEqual([])
     })
 })

@@ -13,5 +13,7 @@ public enum SupportBulkActKind {
 	/** An end-of-support sweep: the justified unknown alone; only rows holding an end of support are skipped. */
 	END_OF_SUPPORT_UNKNOWN,
 	/** Hash justifications on one release SBOM head; justified keys are skipped by a selector sweep. */
-	HASH_JUSTIFICATION
+	HASH_JUSTIFICATION,
+	/** A supplier sweep over overlay rows; rows holding a supplier are skipped. */
+	SUPPLIER
 }

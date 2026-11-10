@@ -180,6 +180,12 @@ export interface AddendumComponent {
     endOfSupportUnknownCode: string | null
     /** True when a bulk act wrote the unknown. */
     endOfSupportUnknownBulk: boolean
+    /**
+     * True for a vendored component the organisation described in ReARM (FDAW-15 3.5). The
+     * selection here pages table rows per uploaded artifact, so it never lists one today; the
+     * flag keeps the twin's grammar equal to the Pro addendum's when it reads the aggregate.
+     */
+    vendored?: boolean
     /** The level asserter's display name; null when unresolvable. */
     assertedByName: string | null
     /**

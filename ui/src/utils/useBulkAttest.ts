@@ -111,6 +111,8 @@ export interface BulkOutcome {
     skippedRoot: number
     /** A justified-unknown sweep reached a component that already holds an end of support (FDAW-14). */
     skippedHasEndOfSupport: number
+    /** A supplier sweep reached a component that already holds a supplier (FDAW-15). */
+    skippedHasSupplier: number
     failed: number
     /** What the selector matched (selector form); the ids sent (explicit form). */
     matched: number
@@ -143,7 +145,8 @@ export interface BulkOutcome {
 }
 
 /** The per-item outcomes this build knows (user.graphqls SbomComponentSupportBulkResult). */
-export type BulkItemOutcome = 'APPLIED' | 'SKIPPED_ATTESTED' | 'SKIPPED_ROOT' | 'SKIPPED_HAS_END_OF_SUPPORT' | 'FAILED'
+export type BulkItemOutcome = 'APPLIED' | 'SKIPPED_ATTESTED' | 'SKIPPED_ROOT' | 'SKIPPED_HAS_END_OF_SUPPORT'
+    | 'SKIPPED_HAS_SUPPLIER' | 'FAILED'
 
 /**
  * One reading of a server outcome, shared by the counters in `submit` and by
@@ -152,7 +155,8 @@ export type BulkItemOutcome = 'APPLIED' | 'SKIPPED_ATTESTED' | 'SKIPPED_ROOT' | 
  */
 export function classifyBulkOutcome (outcome: string): BulkItemOutcome | null {
     return outcome === 'APPLIED' || outcome === 'SKIPPED_ATTESTED' || outcome === 'SKIPPED_ROOT'
-        || outcome === 'SKIPPED_HAS_END_OF_SUPPORT' || outcome === 'FAILED' ? outcome : null
+        || outcome === 'SKIPPED_HAS_END_OF_SUPPORT' || outcome === 'SKIPPED_HAS_SUPPLIER'
+        || outcome === 'FAILED' ? outcome : null
 }
 
 /**
@@ -169,6 +173,7 @@ export function tallyBulkResponse (out: BulkOutcome, r: any): void {
         else if (known === 'SKIPPED_ATTESTED') out.skippedAttested += 1
         else if (known === 'SKIPPED_ROOT') out.skippedRoot += 1
         else if (known === 'SKIPPED_HAS_END_OF_SUPPORT') out.skippedHasEndOfSupport += 1
+        else if (known === 'SKIPPED_HAS_SUPPLIER') out.skippedHasSupplier += 1
         else if (known === 'FAILED') out.failed += 1
         else out.unknownOutcomes += 1
     }
@@ -198,7 +203,8 @@ export function bulkSupportVariables (input: BulkAttestInput): Record<string, un
 /** A fresh outcome with every counter at zero. */
 export function newBulkOutcome (): BulkOutcome {
     return {
-        applied: 0, skippedAttested: 0, skippedRoot: 0, skippedHasEndOfSupport: 0, failed: 0, matched: 0,
+        applied: 0, skippedAttested: 0, skippedRoot: 0, skippedHasEndOfSupport: 0, skippedHasSupplier: 0,
+        failed: 0, matched: 0,
         bulkActs: [], results: [], aborted: false, error: null, concurrentWriteDetected: false,
         stoppedEarly: false, unknownOutcomes: 0, retryable: false
     }
@@ -493,8 +499,8 @@ export function useBulkAttest () {
 }
 
 /** Why an entry of a sweep was not written. */
-export type NotWrittenReason = 'SKIPPED_ROOT' | 'SKIPPED_ATTESTED' | 'SKIPPED_HAS_END_OF_SUPPORT' | 'FAILED'
-    | 'UNKNOWN' | 'NO_RESULT'
+export type NotWrittenReason = 'SKIPPED_ROOT' | 'SKIPPED_ATTESTED' | 'SKIPPED_HAS_END_OF_SUPPORT'
+    | 'SKIPPED_HAS_SUPPLIER' | 'FAILED' | 'UNKNOWN' | 'NO_RESULT'
 
 export interface NotWrittenEntry {
     uuid: string
@@ -512,7 +518,8 @@ export interface NotWrittenGroup {
 }
 
 const NOT_WRITTEN_ORDER: NotWrittenReason[] =
-    ['SKIPPED_ROOT', 'SKIPPED_ATTESTED', 'SKIPPED_HAS_END_OF_SUPPORT', 'FAILED', 'UNKNOWN', 'NO_RESULT']
+    ['SKIPPED_ROOT', 'SKIPPED_ATTESTED', 'SKIPPED_HAS_END_OF_SUPPORT', 'SKIPPED_HAS_SUPPLIER', 'FAILED', 'UNKNOWN',
+        'NO_RESULT']
 
 function notWrittenTitle (reason: NotWrittenReason, n: number): string {
     switch (reason) {
@@ -520,6 +527,7 @@ function notWrittenTitle (reason: NotWrittenReason, n: number): string {
         return `${n} skipped: the release's own ${n === 1 ? 'component' : 'components'}`
     case 'SKIPPED_ATTESTED': return `${n} skipped: already attested`
     case 'SKIPPED_HAS_END_OF_SUPPORT': return `${n} skipped: already hold an end of support`
+    case 'SKIPPED_HAS_SUPPLIER': return `${n} skipped: already hold a supplier`
     case 'FAILED': return `${n} failed`
     case 'UNKNOWN': return `${n} with a result this version cannot interpret`
     case 'NO_RESULT': return `${n} with no result`
@@ -555,6 +563,8 @@ const NOT_WRITTEN_EXPLANATION: Record<Exclude<NotWrittenReason, 'NO_RESULT'>, st
         + ' attestations were left untouched.',
     SKIPPED_HAS_END_OF_SUPPORT: 'They already hold an end-of-support date or a justified unknown; a'
         + ' sweep never replaces either. Change them one by one in the component editor.',
+    SKIPPED_HAS_SUPPLIER: 'They already hold a supplier; a sweep never replaces one. Change them one by one in'
+        + ' the Supplier and licence editor.',
     FAILED: 'Nothing was written for them. The message beside each entry is the server\'s.',
     UNKNOWN: 'They are counted in none of the totals above. Check them before relying on'
         + ' this sweep.'
@@ -573,7 +583,8 @@ export function groupNotWritten (
     labels: Record<string, BulkLabel>
 ): NotWrittenGroup[] {
     const byReason: Record<NotWrittenReason, NotWrittenEntry[]> = {
-        SKIPPED_ROOT: [], SKIPPED_ATTESTED: [], SKIPPED_HAS_END_OF_SUPPORT: [], FAILED: [], UNKNOWN: [], NO_RESULT: []
+        SKIPPED_ROOT: [], SKIPPED_ATTESTED: [], SKIPPED_HAS_END_OF_SUPPORT: [], SKIPPED_HAS_SUPPLIER: [], FAILED: [],
+        UNKNOWN: [], NO_RESULT: []
     }
     const labelOf = (uuid: string): string => {
         const l = Object.prototype.hasOwnProperty.call(labels, uuid) ? labels[uuid] : undefined
@@ -585,7 +596,8 @@ export function groupNotWritten (
         const known = classifyBulkOutcome(r.outcome)
         if (known === 'APPLIED') continue
         const uuid = r.sbomComponentUuid
-        if (known === 'SKIPPED_ROOT' || known === 'SKIPPED_ATTESTED' || known === 'SKIPPED_HAS_END_OF_SUPPORT') {
+        if (known === 'SKIPPED_ROOT' || known === 'SKIPPED_ATTESTED' || known === 'SKIPPED_HAS_END_OF_SUPPORT'
+                || known === 'SKIPPED_HAS_SUPPLIER') {
             byReason[known].push({ uuid, label: labelOf(uuid), detail: null })
         } else if (known === 'FAILED') {
             byReason.FAILED.push({ uuid, label: labelOf(uuid), detail: r.message || 'no reason given' })

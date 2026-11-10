@@ -161,3 +161,155 @@ describe('organization write gates the bulk support controls', () => {
         expect(button).toContain('!canWriteOrg')
     })
 })
+
+/** The body of a top-level function, sync or async. */
+function anyFunctionBody (name: string): string {
+    const at = code.search(new RegExp(`\\n(async )?function ${name} \\(`))
+    if (at < 0) return ''
+    const rest = code.slice(at + 1)
+    const next = rest.slice(1).search(/\n(async )?function /)
+    return next < 0 ? rest : rest.slice(0, next + 1)
+}
+
+/** The source of the element carrying data-testid `id`, from its opening tag's start. */
+function elementAt (id: string, length = 600): string {
+    const at = source.indexOf(`data-testid="${id}"`)
+    if (at < 0) return ''
+    return source.slice(source.lastIndexOf('<', at), at + length)
+}
+
+/** FDAW-15 row 14 (REQ-13) and FDAW-51 3.3.1, 3.3.2: the overlay editor, the panel and the vendored target. */
+describe('the overlay UI is wired into ReleaseView', () => {
+    it.each([
+        ['loadComponentOverlay', '@/utils/overlayInput'],
+        ['overlayEditorAccess', '@/utils/overlayInput'],
+        ['saveComponentOverlay', '@/utils/overlayInput'],
+        ['loadUnidentifiedComponents', '@/utils/vendoredComponents'],
+        ['loadVendoredSupportDetail', '@/utils/vendoredComponents'],
+        ['vendoredRowActions', '@/utils/vendoredComponents'],
+        ['vendoredStateTag', '@/utils/vendoredComponents'],
+        ['setVendoredComponentSupportVars', '@/utils/setSbomComponentSupport'],
+        ['submitSupplierBySelector', '@/utils/bulkSelectorForm']
+    ])('imports %s from %s', (symbol, module) => {
+        expect(source).toMatch(new RegExp(
+            `import\\s+(type\\s+)?\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${escapeRegExp(module)}'`))
+    })
+
+    it('pushes overlay-edit under the same isWritable and isRoot guard as Attest, so a root and a reader have none', () => {
+        const at = code.indexOf("'data-testid': 'overlay-edit'")
+        expect(at).toBeGreaterThan(0)
+        expect(code.slice(at - 200, at)).toMatch(/if \(isWritable\.value && !row\.component\?\.isRoot\) \{/)
+        expect(code.slice(at, at + 200)).toContain('openOverlayEditor(row)')
+        // After Attest, in the same els.
+        expect(code.indexOf('openAttestForm(row)')).toBeLessThan(at)
+    })
+
+    it('opens the editor read-only with the sentence for a caller without organization write', () => {
+        expect(code).toMatch(/const overlayAccess = computed\(\(\) => overlayEditorAccess\(canWriteOrg\.value\)\)/)
+        const alert = elementAt('overlay-org-write', 120)
+        expect(alert).toMatch(/^<n-alert v-if="overlayAccess\.readOnly"/)
+        expect(alert).toContain('{{ overlayAccess.sentence }}')
+        const editor = source.slice(source.indexOf('data-testid="overlay-editor"'), source.indexOf('data-testid="overlay-save"'))
+        expect(editor).toContain('<n-form label-placement="top" :disabled="overlayAccess.readOnly">')
+        expect(editor).toContain('<n-button v-if="!overlayAccess.readOnly"')
+        expect(anyFunctionBody('saveOverlay')).toMatch(/overlayAccess\.value\.readOnly/)
+    })
+
+    it('renders the panel under the SBOM list, fed on the SBOM tab, with the server\'s values as text', () => {
+        expect(source.indexOf('data-testid="unidentified-components"'))
+            .toBeGreaterThan(source.indexOf(':columns="sbomComponentsTableFields"'))
+        expect(anyFunctionBody('handleBomSubTabSwitch')).toMatch(/loadVendoredPanel\(\)/)
+        expect(anyFunctionBody('loadVendoredPanel')).toMatch(/loadUnidentifiedComponents\(/)
+        expect(source).toMatch(/:title="vendoredPanelTitle\(vendoredRows\)"/)
+        expect(source).toContain('{{ vendoredStateTag(v) }}')
+        expect(source.match(/v-html/g)?.length ?? 0).toBe(1)
+    })
+
+    it.each(['describe', 'attest', 'remove'])('the panel\'s %s goes through vendoredRowActions with isWritable and canWriteOrg', (a) => {
+        expect(code).toMatch(/actions: vendoredRowActions\(v, isWritable\.value, canWriteOrg\.value\)/)
+        expect(source).toContain('<tr v-for="{ v, actions } in vendoredRowsView"')
+        const button = source.slice(source.lastIndexOf('<n-button', source.indexOf(`data-testid="vendored-${a}"`)),
+            source.indexOf(`data-testid="vendored-${a}"`) + 200)
+        expect(button).toContain(`v-if="actions.${a}.shown"`)
+        expect(button).toContain(`:disabled="actions.${a}.disabled"`)
+    })
+
+    it('seeds Describe from the re-read description and saves only a change', () => {
+        const open = anyFunctionBody('openVendoredDescribe')
+        expect(open).toMatch(/vendoredDescribeFormOf\(seed\.stored\)/)
+        expect(open).not.toMatch(/vrow\.overlay/)
+        const save = anyFunctionBody('saveVendoredDescription')
+        expect(save).toMatch(/!vendoredFormSends\.value/)
+        expect(save).toMatch(/vendoredEditorSeed\.value\?\.stored/)
+        expect(save).toMatch(/if \(gen === vendoredEditorGen\) vendoredEditorOpen\.value = false/)
+        expect(anyFunctionBody('saveOverlay')).toMatch(/if \(gen === overlayGen\) overlayModalOpen\.value = false/)
+    })
+
+    it('refetches the panel after every mutation', () => {
+        expect(anyFunctionBody('saveVendoredDescription')).toMatch(/loadVendoredPanel\(\)/)
+        expect(anyFunctionBody('confirmVendoredRemove')).toMatch(/loadVendoredPanel\(\)/)
+        expect(functionBody('saveAttestation')).toMatch(/kind === 'vendored'\) await loadVendoredPanel\(\)/)
+    })
+
+    it('openVendoredAttestForm seeds through loadVendoredSupportDetail under the shared attestGen', () => {
+        const open = anyFunctionBody('openVendoredAttestForm')
+        expect(open).toContain('loadVendoredSupportDetail(')
+        expect(open).not.toContain('loadSbomComponentSupportDetail')
+        expect(open).not.toContain('getReleaseSbomComponentGraph')
+        expect(open).toMatch(/const gen = \+\+attestGen/)
+        const afterAwait = open.slice(open.indexOf('await loadVendoredSupportDetail'))
+        expect(afterAwait).toMatch(/^[\s\S]{0,200}if \(gen !== attestGen\) return/)
+        expect(anyFunctionBody('cancelAttest')).toMatch(/attestGen \+= 1/)
+    })
+
+    it('saves the vendored target through setVendoredComponentSupportVars, and titles the modal by target', () => {
+        const save = functionBody('saveAttestation')
+        expect(save).toMatch(/if \(target\.kind === 'vendored'\) await setVendoredComponentSupportVars\(/)
+        expect(save).toMatch(/else await setSbomComponentSupportVars\(/)
+        expect(source).toContain("'Record support attestation (vendored component)'")
+    })
+})
+
+/** FDAW-15 row 16 (REQ-15) and FDAW-51 3.3.3: the Supplier half of the bulk dialog. */
+describe('the Supplier half is wired into ReleaseView', () => {
+    it('is the third button of the bulk-half group', () => {
+        const group = source.slice(source.indexOf('data-testid="bulk-half"'), source.indexOf('</n-radio-group>',
+            source.indexOf('data-testid="bulk-half"')))
+        const values = [...group.matchAll(/<n-radio-button value="([a-z]+)"/g)].map(m => m[1])
+        expect(values).toEqual(['support', 'hashes', 'supplier'])
+        expect(group).toContain('data-testid="bulk-supplier-tab"')
+    })
+
+    it('offers the two selector forms only, disabled with its sentence without organization write', () => {
+        const half = source.slice(source.indexOf("bulkStage === 'compose' && bulkTab === 'supplier'"))
+        expect(half.slice(0, 400)).toContain('v-if="!canWriteOrg"')
+        expect(half.slice(0, 400)).toContain('BULK_SUPPLIER_ORG_WRITE_SENTENCE')
+        expect(half).toContain('<n-form label-placement="top" :disabled="bulkSupplierCounting || !canWriteOrg">')
+        expect(anyFunctionBody('collectSupplierCount')).toMatch(/bulkSupplierCounting\.value = true/)
+        expect(code).toMatch(/overCap \? SUPPLIER_SELECTOR_OVER_CAP_TEXT/)
+        expect(half).toContain('v-for="o in SUPPLIER_SELECTOR_FORM_OPTIONS"')
+        expect(code).toMatch(/orgWriteSentence\('A bulk supplier assignment'\)/)
+    })
+
+    it('shows the count, and disables confirm over the cap, on a blank supplier or without organization write', () => {
+        const button = source.slice(source.lastIndexOf('<n-button', source.indexOf('data-testid="bulk-supplier-confirm"')),
+            source.indexOf('data-testid="bulk-supplier-confirm"'))
+        expect(button).toContain('bulkSupplierErrors.length > 0')
+        expect(button).toContain('bulkSelectorCount.overCap')
+        expect(button).toContain('!canWriteOrg')
+        const stage = source.slice(source.indexOf("bulkStage === 'confirm' && bulkTab === 'supplier'"))
+        expect(stage.slice(0, 500)).toContain('data-testid="bulk-selector-count"')
+        expect(anyFunctionBody('collectSupplierCount')).toMatch(/fetchSelectorCount\(/)
+        expect(anyFunctionBody('runBulkSupplier')).toMatch(/submitSupplierBySelector\(/)
+        expect(anyFunctionBody('runBulkSupplier')).not.toMatch(/bulk\.submit\(|bulk\.collect\(/)
+    })
+
+    it('the result stage renders skippedHasSupplier and says assigned a supplier for the supplier half', () => {
+        const counts = elementAt('bulk-result-counts', 300)
+        expect(counts).toContain("bulkResultHalf === 'supplier' ? 'assigned a supplier' : 'attested'")
+        expect(source).toContain('<span v-if="bulkResult.skippedHasSupplier"> {{ bulkResult.skippedHasSupplier }}'
+            + ' skipped: already hold a supplier.</span>')
+        expect(anyFunctionBody('runBulkSupplier')).toMatch(/bulkResultHalf\.value = 'supplier'/)
+        expect(anyFunctionBody('runBulkAttest')).toMatch(/bulkResultHalf\.value = 'support'/)
+    })
+})
