@@ -52,9 +52,13 @@ class SupportExportStateTest {
 	 * The only classes allowed to mention the seam, and why: one owns it, the other REPORTS
 	 * it on the coverage query. Reporting is the point of the field; gating on it is what
 	 * has not happened yet. Anything else mentioning it is a gate, wherever it lives.
+	 * {@code DraftFingerprintService} (FDAW-30 3.5) RECORDS it as the {@code disclosure:} line
+	 * of a draft build's inputs fingerprint, so a build whose switch moved is rebuilt before
+	 * it is confirmed; it serves no BOM.
 	 */
 	private static final List<Path> REPORTERS = List.of(
-			Path.of("src/main/java/io/reliza/ws/SbomComponentDataFetcher.java"));
+			Path.of("src/main/java/io/reliza/ws/SbomComponentDataFetcher.java"),
+			Path.of("src/main/java/io/reliza/service/saas/DraftFingerprintService.java"));
 
 	/**
 	 * The ONE class allowed to decide whether an export carries support facts.
