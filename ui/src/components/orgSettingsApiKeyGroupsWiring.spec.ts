@@ -90,7 +90,7 @@ describe('OrgSettings: the API Key Groups tab (TPF-92 row 16)', () => {
         expect(attribute(parentPane, 'name')).toBe('programmaticAccess')
         expect(directive(parentPane, 'if')).toBe('isOrgAdmin')
         const siblings = last(paths[0].slice(0, -1)).children.filter((n: any) => n.tag === 'n-tab-pane').map((n: any) => attribute(n, 'name'))
-        expect(siblings).toEqual(['freeFormKeys', 'apiKeyGroups', 'userKeys', 'scopedKeys', 'federatedIdentities', 'externalKeys'])
+        expect(siblings).toEqual(['freeFormKeys', 'apiKeyGroups', 'userKeys', 'scopedKeys', 'federatedIdentities', 'externalKeys', 'customers'])
     })
 
     it('(a2) loads the groups and their pickers when the sub-tab opens, and lands an old link on it', () => {
@@ -239,3 +239,39 @@ describe('OrgSettings: key-side group operations (TPF-124)', () => {
     })
 })
 
+
+// FDAW-40 row 22h (FDAW-25 3.12, FDAW-40 3.7): the Customers sub-tab, and the INTERNAL list the other views read.
+describe('OrgSettings: the Customers tab and the INTERNAL list (FDAW-40 row 22h)', () => {
+    it('loads the INTERNAL groups only into the one list the Free Form views read', () => {
+        expect(definition(org.code, 'async function loadApiKeyGroupsOfOrg ()'))
+            .toContain("loadApiKeyGroups(graphqlClient, orgResolved.value, 'INTERNAL')")
+    })
+
+    it('hosts the Customers pane right after External Keys, admin-only where TEA is served', () => {
+        const pane = onePane('customers')
+        expect(directive(pane, 'if')).toBe('isOrgAdmin && teaProfilesAvailable(myUser?.installationType)')
+        expect(attribute(pane, 'tab')).toBe('Customers')
+        expect(offset(pane)).toBeGreaterThan(offset(onePane('externalKeys')))
+        const mounts = find(pane, (n) => n.tag === 'TeaCustomersPanel')
+        expect(mounts).toHaveLength(1)
+        const m = last(mounts[0])
+        expect(directive(m, 'bind', 'org-uuid')).toBe('orgResolved')
+        expect(directive(m, 'bind', 'notify')).toBe('notify')
+        expect(directive(m, 'bind', 'is-org-admin')).toBe('isOrgAdmin')
+        expect(directive(m, 'bind', 'products')).toBe('orgProducts')
+        expect(directive(m, 'bind', 'components')).toBe('orgComponents')
+        expect(directive(m, 'bind', 'perspectives')).toBe('perspectives')
+        expect(m.props.filter((p: any) => p.type === DIRECTIVE && p.name === 'bind')).toHaveLength(6)
+    })
+
+    it('loads the pickers when the sub-tab opens, and the first sub-tab watch stays as it was', () => {
+        expect(org.code).toContain("watch(programmaticSubTab, (sub) => { if (sub === 'customers') loadTabSpecificData('customers') })")
+        const first = org.code.indexOf('watch(programmaticSubTab,')
+        expect(org.code.slice(first)).toMatch(/^watch\(programmaticSubTab, \(sub\) => \{ if \(sub === 'apiKeyGroups'\)/)
+        const branch = org.code.slice(org.code.indexOf('} else if (tabName === "customers") {'), org.code.indexOf('} else if (tabName === "freeFormKeys") {'))
+        expect(branch).toContain('loadPerspectives()')
+        expect(branch).toContain("store.dispatch('fetchComponents', orgResolved.value)")
+        expect(branch).toContain("store.dispatch('fetchProducts', orgResolved.value)")
+        expect(branch).not.toContain('loadApiKeyGroupsOfOrg')
+    })
+})
