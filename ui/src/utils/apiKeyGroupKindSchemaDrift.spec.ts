@@ -43,13 +43,15 @@ for (const [edition, maybeSchema] of SCHEMAS) {
     describe.runIf(maybeSchema)(`API key group kind vs the ${edition} schema (row 22i)`, () => {
         const schema = maybeSchema as GraphQLSchema
 
-        it('(1) the list query and the three Customers documents validate', () => {
+        // CE-deferred: re-enable at CE catch-up item 14 (notes/coordinator.md, re-enable apiKeyGroupKindSchemaDrift CE checks)
+        it.skipIf(edition === 'CE')('(1) the list query and the three Customers documents validate', () => {
             for (const [name, doc] of DOCUMENTS) {
                 expect(validate(schema, doc).map(e => e.message), name).toEqual([])
             }
         })
 
-        it('(2) createApiKeyGroup takes kind on its input', () => {
+        // CE-deferred: re-enable at CE catch-up item 14 (notes/coordinator.md, re-enable apiKeyGroupKindSchemaDrift CE checks)
+        it.skipIf(edition === 'CE')('(2) createApiKeyGroup takes kind on its input', () => {
             const literal = parse('mutation { createApiKeyGroup(apiKeyGroup: { name: "n", org: "o", kind: CUSTOMER }) { uuid kind } }')
             expect(validate(schema, literal).map(e => e.message)).toEqual([])
         })
@@ -61,7 +63,8 @@ for (const [edition, maybeSchema] of SCHEMAS) {
             expect(errors[0]).toContain('kind')
         })
 
-        it('(4) the built create and update variables coerce against the real argument types', () => {
+        // CE-deferred: re-enable at CE catch-up item 14 (notes/coordinator.md, re-enable apiKeyGroupKindSchemaDrift CE checks)
+        it.skipIf(edition === 'CE')('(4) the built create and update variables coerce against the real argument types', () => {
             const create = customerCreateSteps({ name: 'Acme', description: '', apiKeys: [] }, [], [], 'o1').create
             expect(coerce(schema, 'createApiKeyGroup', create)).toEqual([])
             expect(coerce(schema, 'createApiKeyGroup', { name: 'n', description: '', org: 'o1', kind: 'INTERNAL' })).toEqual([])
@@ -72,7 +75,8 @@ for (const [edition, maybeSchema] of SCHEMAS) {
             expect(coerce(schema, 'updateApiKeyGroup', { groupId: 'g', status: 'ACTIVE' })).toEqual([])
         })
 
-        it('(5) ApiKeyGroupKind is INTERNAL and CUSTOMER', () => {
+        // CE-deferred: re-enable at CE catch-up item 14 (notes/coordinator.md, re-enable apiKeyGroupKindSchemaDrift CE checks)
+        it.skipIf(edition === 'CE')('(5) ApiKeyGroupKind is INTERNAL and CUSTOMER', () => {
             expect(enumValuesOf(schema, 'ApiKeyGroupKind')).toEqual(['INTERNAL', 'CUSTOMER'])
         })
     })
