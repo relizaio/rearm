@@ -6,8 +6,15 @@ package io.reliza.ws;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.reliza.model.ApiKey.ApiTypeEnum;
+import io.reliza.model.ApiKeyData;
+import io.reliza.model.Component;
+import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ComponentData;
+import io.reliza.model.UserPermission.PermissionDto;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -20,6 +27,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 import graphql.ExecutionResult;
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentBoardData;
@@ -33,6 +41,7 @@ import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.dto.UpdateApiKeyGroupDto;
+import org.springframework.security.access.AccessDeniedException;
 
 /**
  * The group service and its browser lane in the forms the third test round leaves open (TPF-91, mutation
@@ -62,7 +71,7 @@ public class ApiKeyGroupMembershipAndFetcherCoverageTest extends ApiKeyGroupTest
 		apiKeyGroupService.deactivateApiKeyGroup(inactive.getUuid(), WU);
 		group(org, Set.of(bystander.getUuid()), boardRead(boards.get(4).getUuid()));
 
-		List<Set<UserPermission>> sets = apiKeyGroupService.permissionSetsForKey(key.getUuid(), org.getUuid());
+		List<Set<UserPermission>> sets = apiKeyGroupService.permissionSetsForKey(key.getUuid(), org.getUuid(), ApiKeyGroupKind.INTERNAL);
 		assertEquals(4, sets.size(), "one set per active group holding the key");
 		Set<UUID> granted = sets.stream().flatMap(Set::stream).filter(p -> p.getScope() == PermissionScope.BOARD)
 				.map(UserPermission::getObject).collect(Collectors.toSet());
@@ -83,9 +92,55 @@ public class ApiKeyGroupMembershipAndFetcherCoverageTest extends ApiKeyGroupTest
 		group(org, Set.of(key.getUuid()), boardRead(a.getUuid()));
 		group(org, Set.of(key.getUuid()), boardRead(b.getUuid()));
 
-		assertEquals(2, apiKeyGroupService.permissionSetsForKey(key.getUuid(), org.getUuid()).size());
+		assertEquals(2, apiKeyGroupService.permissionSetsForKey(key.getUuid(), org.getUuid(), ApiKeyGroupKind.INTERNAL).size());
 		assertTrue(reads(as(key), org, a));
 		assertTrue(reads(as(key), org, b));
+	}
+
+	// FDAW-37 row 12: a CUSTOMER row holding a FREEFORM key reaches none of the FREEFORM readers
+
+	private void readsComponent(ApiKey key, Component c) throws RelizaException {
+		authorizationService.isFreeformKeyAuthorizedForAnyObjectGraphQL(as(key), PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
+				Set.of(c.getUuid()), List.of(ComponentData.dataFromRecord(c)));
+	}
+
+	private Object combinedRead(Organization org, ApiKey key) {
+		ExecutionResult r = gqlCombined(org.getUuid(), key.getUuid());
+		assertTrue(r.getErrors().isEmpty(), r.getErrors().toString());
+		assertNotNull(r.getData());
+		return r.getData();
+	}
+
+	private Set<UserPermission> effective(ApiKey key, Organization org) {
+		ApiKey current = apiKeyService.getApiKey(key.getUuid()).orElseThrow();
+		return authorizationService.effectiveStoredKeyPermissions(current.getUuid(), ApiTypeEnum.FREEFORM, ApiKeyData.dataFromRecord(current), org.getUuid());
+	}
+
+	@Test
+	public void aPlantedCustomerRowChangesNoneOfAFreeformKeysAnswers() throws RelizaException {
+		Organization org = testInitializer.obtainOrganization();
+		Component product = componentService.createComponent("akg_p_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
+				"semver", "Branch.Micro", null, WU);
+		Component elsewhere = componentService.createComponent("akg_e_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
+				"semver", "Branch.Micro", null, WU);
+		ApiKey ffKey = freeform(org, "held");
+		apiKeyService.setPermissionsOnApiKey(ffKey.getUuid(), null, List.of(new PermissionDto(org.getUuid(), PermissionScope.COMPONENT,
+				elsewhere.getUuid(), PermissionType.READ_ONLY, Set.of(PermissionFunction.RESOURCE), List.of())), WU);
+		signInAs(member(org, PermissionType.ADMIN));
+		Set<UserPermission> effectiveBefore = effective(ffKey, org);
+		Object combinedBefore = combinedRead(org, ffKey);
+		readsComponent(ffKey, elsewhere);
+		assertThrows(AccessDeniedException.class, () -> readsComponent(ffKey, product));
+
+		ApiKeyGroupData planted = plantCustomerRow(org, ffKey.getUuid());
+		assertEquals(ApiKeyGroupKind.CUSTOMER, stored(planted).getKind());
+		assertTrue(stored(planted).hasApiKey(ffKey.getUuid()), "planted past the membership rules");
+
+		assertEquals(effectiveBefore, effective(ffKey, org), "the effective set is the key's own");
+		assertEquals(combinedBefore, combinedRead(org, ffKey), "the combined read lists no CUSTOMER group");
+		readsComponent(ffKey, elsewhere);
+		assertThrows(AccessDeniedException.class, () -> readsComponent(ffKey, product),
+				"an ORGANIZATION ADMIN grant would pass every component check if it leaked");
 	}
 
 	// T-22: the member details leave out a deleted key and a key of another organization

@@ -11,6 +11,7 @@ import java.util.UUID;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.ApiKeyGroupStatus;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ApiKeyData.ApiKeyStatus;
@@ -34,6 +35,8 @@ public class ApiKeyGroupWebDto {
 	private Permissions permissions;
 	@JsonProperty(CommonVariables.STATUS_FIELD)
 	private ApiKeyGroupStatus status;
+	@JsonProperty("kind")
+	private ApiKeyGroupKind kind;
 	@JsonProperty("apiKeys")
 	private Set<UUID> apiKeys;
 	@JsonProperty(CommonVariables.CREATED_DATE_FIELD)

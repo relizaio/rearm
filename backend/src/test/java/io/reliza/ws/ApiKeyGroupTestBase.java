@@ -33,6 +33,7 @@ import com.netflix.graphql.dgs.DgsQueryExecutor;
 
 import graphql.ExecutionResult;
 import graphql.GraphQLError;
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.OauthType;
 import io.reliza.common.CommonVariables.UserGroupStatus;
@@ -238,6 +239,22 @@ abstract class ApiKeyGroupTestBase {
 		d.addApiKey(keyUuid);
 		row.setRecordData(Utils.dataToRecord(d));
 		apiKeyGroupRepository.save(row);
+	}
+
+	/**
+	 * FDAW-37 row 12: a CUSTOMER group row holding the key and granting ORGANIZATION ADMIN with the QA role,
+	 * written straight through the repository: the membership rules keep a non-EXTERNAL key out of it.
+	 */
+	ApiKeyGroupData plantCustomerRow(Organization org, UUID keyUuid) throws RelizaException {
+		ApiKeyGroupData g = apiKeyGroupService.createApiKeyGroup(CreateApiKeyGroupDto.builder()
+				.name("akg-" + UUID.randomUUID()).org(org.getUuid()).kind(ApiKeyGroupKind.CUSTOMER).build(), WU);
+		ApiKeyGroup row = apiKeyGroupRepository.findById(g.getUuid()).orElseThrow();
+		ApiKeyGroupData d = ApiKeyGroupData.dataFromRecord(row);
+		d.addApiKey(keyUuid);
+		d.setPermission(PermissionScope.ORGANIZATION, org.getUuid(), PermissionType.ADMIN, List.of("QA"));
+		row.setRecordData(Utils.dataToRecord(d));
+		apiKeyGroupRepository.save(row);
+		return g;
 	}
 
 	// ---------- the browser lane ----------

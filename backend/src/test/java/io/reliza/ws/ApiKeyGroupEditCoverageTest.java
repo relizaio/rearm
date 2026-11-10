@@ -6,6 +6,7 @@ package io.reliza.ws;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -23,6 +24,7 @@ import java.util.function.Consumer;
 
 import org.junit.jupiter.api.Test;
 
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.ApiKeyGroupStatus;
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
@@ -218,7 +220,7 @@ public class ApiKeyGroupEditCoverageTest extends ApiKeyGroupTestBase {
 					"the list holds the healthy group only");
 			assertEquals(List.of(healthy.getUuid()), apiKeyGroupService.getApiKeyGroupsByOrganization(org.getUuid()).stream()
 					.map(ApiKeyGroupData::getUuid).toList(), "and so does the active list");
-			assertEquals(1, apiKeyGroupService.permissionSetsForKey(k1.getUuid(), org.getUuid()).size());
+			assertEquals(1, apiKeyGroupService.permissionSetsForKey(k1.getUuid(), org.getUuid(), ApiKeyGroupKind.INTERNAL).size());
 		} finally {
 			apiKeyGroupRepository.delete(bad);
 		}
@@ -279,19 +281,21 @@ public class ApiKeyGroupEditCoverageTest extends ApiKeyGroupTestBase {
 	}
 
 	@Test
-	public void anEmptyDescriptionOrNameIsAValueNotAnOmission() throws RelizaException {
+	public void anEmptyDescriptionClearsAndAnEmptyNameIsRefused() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		ApiKeyGroupData g = apiKeyGroupService.createApiKeyGroup(CreateApiKeyGroupDto.builder()
 				.name("named-" + UUID.randomUUID()).description("described").org(org.getUuid()).build(), WU);
 
 		update(g, f -> f.description(""));
-		assertEquals("", stored(g).getDescription(), "an empty description clears the stored one: only null keeps it");
+		assertNull(stored(g).getDescription(), "an empty description clears the stored one to null: only a null field keeps it");
 		assertEquals(g.getName(), stored(g).getName());
 
 		update(g, f -> f.description("again"));
 		assertEquals("again", stored(g).getDescription());
-		update(g, f -> f.name(""));
-		assertEquals("", stored(g).getName(), "an empty name is a name, not an omission");
+		String kept = stored(g).getName();
+		RelizaException e = assertThrows(RelizaException.class, () -> update(g, f -> f.name("")));
+		assertEquals("name is required", e.getMessage());
+		assertEquals(kept, stored(g).getName(), "a refused empty name leaves the stored name alone");
 		assertEquals("again", stored(g).getDescription());
 	}
 

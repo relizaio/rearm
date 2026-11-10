@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -14,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.model.ApiKeyData;
 import io.reliza.model.ApiKeyData.ApiKeyStatus;
@@ -49,6 +51,7 @@ public class TeaAuthorizationService {
 
 	@Autowired private TeaProfileResolver teaProfileResolver;
 	@Autowired private ApiKeyService apiKeyService;
+	@Autowired private ApiKeyGroupService apiKeyGroupService;
 	@Autowired private ApiKeyAccessService apiKeyAccessService;
 	@Autowired private AuthorizationService authorizationService;
 
@@ -126,7 +129,10 @@ public class TeaAuthorizationService {
 		}
 	}
 
-	/** Whether the key's grants cover the component for TEA_READ; the key is re-read so a disable applies at once. */
+	/**
+	 * Whether the key's grants, its customer groups' included, cover the component for TEA_READ; the key and
+	 * the groups are re-read so a disable, a deactivation or a removal applies at once.
+	 */
 	public boolean covers(TeaPrincipal principal, UUID org, UUID componentUuid) {
 		Optional<Set<UserPermission>> grants = liveGrants(principal, org);
 		if (grants.isEmpty() || componentUuid == null) return false;
@@ -141,11 +147,15 @@ public class TeaAuthorizationService {
 		return authorizationService.coveredComponentUuids(grants.get(), org, PermissionFunction.TEA_READ);
 	}
 
+	/** The key's own grants union the ACTIVE CUSTOMER groups of org holding it; a foreign or disabled key reads nothing. */
 	private Optional<Set<UserPermission>> liveGrants(TeaPrincipal principal, UUID org) {
 		if (principal == null || org == null || !org.equals(principal.org())) return Optional.empty();
 		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(principal.keyUuid());
 		if (oakd.isEmpty() || oakd.get().getStatus() != ApiKeyStatus.ACTIVE || !org.equals(oakd.get().getOrg())) return Optional.empty();
-		return Optional.of(oakd.get().getPermissions(org).getOrgPermissionsAsSet(org));
+		Set<UserPermission> own = oakd.get().getPermissions(org).getOrgPermissionsAsSet(org);
+		List<Set<UserPermission>> groups = apiKeyGroupService.permissionSetsForKey(principal.keyUuid(), org, ApiKeyGroupKind.CUSTOMER);
+		if (groups.isEmpty()) return Optional.of(own);
+		return Optional.of(OrganizationService.combinePermissions(own, org, groups).getOrgPermissionsAsSet(org));
 	}
 
 	/** The response for a refusal; null for SERVE. Every refusal is no-store. */

@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -25,6 +26,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.ApiKeyGroupStatus;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
@@ -33,21 +35,27 @@ import io.reliza.model.ApiKey;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ApiKeyGroup;
 import io.reliza.model.ApiKeyGroupData;
+import io.reliza.model.SupportTextBounds;
 import io.reliza.model.UserPermission;
+import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.CreateApiKeyGroupDto;
 import io.reliza.model.dto.UpdateApiKeyGroupDto;
+import io.reliza.model.dto.UserGroupPermissionDto;
 import io.reliza.repositories.ApiKeyGroupRepository;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * API key groups (TPF-91, child of TPF-86), the twin of {@link UserGroupService} for FREEFORM keys.
- * A group belongs to one organization; its members are FREEFORM keys of that organization; a member
- * key's effective permissions are its own grants union every ACTIVE group holding it, read per call
- * through {@link #permissionSetsForKey} (no cache). A group is never deleted: it is deactivated and
- * restored through its status, as user groups are. Member validation, names and existence live here;
- * grant objects and approvals are validated by the fetcher, which holds the organization.
- * The key-side mutation {@link #setGroupsOfKey} (TPF-123) sets one FREEFORM key's groups as a desired
+ * API key groups (TPF-91, child of TPF-86), the twin of {@link UserGroupService} for keys.
+ * A group belongs to one organization and has a kind, fixed at create (FDAW-25). An INTERNAL group holds
+ * FREEFORM keys of that organization, and a member key's effective permissions are its own grants union
+ * every ACTIVE INTERNAL group holding it. A CUSTOMER group holds EXTERNAL keys of that organization and
+ * carries TEA grants only, unioned on TEA alone. Both are read per call through
+ * {@link #permissionSetsForKey} (no cache), which takes the kind so no caller reaches a group of the
+ * other kind by default. A group is never deleted: it is deactivated and restored through its status,
+ * as user groups are. Member validation, names and existence live here; grant objects and approvals
+ * are validated by the fetcher, which holds the organization.
+ * The key-side mutation {@link #setGroupsOfKey} (TPF-123) sets one key's groups of its kind as a desired
  * set under the key's row lock (key, then groups in sorted uuid order, the order
  * {@link #removeKeyFromAllGroups} takes too), one audit row per changed group.
  */
@@ -55,6 +63,10 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @Transactional
 public class ApiKeyGroupService {
+
+	private static final String NAME_REQUIRED = "name is required";
+	static final int MAX_NAME_LENGTH = 512;
+	static final int MAX_DESCRIPTION_LENGTH = 2048;
 
 	@Autowired
 	private ApiKeyGroupRepository apiKeyGroupRepository;
@@ -65,6 +77,10 @@ public class ApiKeyGroupService {
 	@Autowired
 	@Lazy
 	private ApiKeyService apiKeyService;
+
+	@Autowired
+	@Lazy
+	private ExternalApiKeyService externalApiKeyService;
 
 	@PersistenceContext
 	private EntityManager entityManager;
@@ -99,37 +115,50 @@ public class ApiKeyGroupService {
 	}
 
 	/**
-	 * Creates a group. The name is unique over the organization's groups, active and inactive.
+	 * Creates a group of the given kind (null reads INTERNAL). The name and description are bounded
+	 * before any row is read. The stripped name is unique over the organization's groups, active and
+	 * inactive, whatever their kind.
 	 */
 	public ApiKeyGroupData createApiKeyGroup(CreateApiKeyGroupDto createDto, WhoUpdated wu) throws RelizaException {
+		String name = boundedName(createDto.getName());
+		if (null == name) throw new RelizaException(NAME_REQUIRED);
+		String description = refusable(() -> SupportTextBounds.bounded(createDto.getDescription(), "description", MAX_DESCRIPTION_LENGTH));
 		Optional<ApiKeyGroupData> nameConflict = getAllApiKeyGroupsByOrganization(createDto.getOrg()).stream()
-				.filter(g -> Objects.equals(g.getName(), createDto.getName()))
+				.filter(g -> Objects.equals(g.getName(), name))
 				.findFirst();
 		if (nameConflict.isPresent()) {
 			if (nameConflict.get().getStatus() == ApiKeyGroupStatus.INACTIVE) {
 				throw new RelizaException(
-					"An inactive group with the name '" + createDto.getName() + "' already exists. "
+					"An inactive group with the name '" + name + "' already exists. "
 					+ "Please restore it from the inactive groups list instead of creating a new one.");
 			} else {
 				throw new RelizaException(
-					"A group with the name '" + createDto.getName() + "' already exists.");
+					"A group with the name '" + name + "' already exists.");
 			}
 		}
-		ApiKeyGroupData akgd = ApiKeyGroupData.apiKeyGroupDataFactory(createDto);
+		ApiKeyGroupData akgd = ApiKeyGroupData.apiKeyGroupDataFactory(
+				createDto.toBuilder().name(name).description(description).build());
 		ApiKeyGroup saved = saveApiKeyGroup(new ApiKeyGroup(), Utils.dataToRecord(akgd), wu);
 		return ApiKeyGroupData.dataFromRecord(saved);
 	}
 
 	/**
 	 * Updates a group: a null field keeps the stored value, a non-null apiKeys replaces the member list,
-	 * non-null permissions replace the group's set. The name rule applies on rename or restore. Every
-	 * member is validated before anything is written: a refused list leaves the group unchanged.
+	 * non-null permissions replace the group's set. The name rule applies on rename or restore. A
+	 * supplied name or description is bounded before any row is read; a null one keeps the stored value
+	 * unchecked; a supplied blank name is refused and a supplied blank description clears the field. Every
+	 * member is validated against the group's kind before anything is written, and a CUSTOMER group's
+	 * grants are normalized as an external key's: a refused list leaves the group unchanged.
 	 */
 	public ApiKeyGroupData updateApiKeyGroup(UpdateApiKeyGroupDto dto, WhoUpdated wu) throws RelizaException {
+		String name = boundedName(dto.getName());
+		if (null != dto.getName() && null == name) throw new RelizaException(NAME_REQUIRED);
+		String description = refusable(() -> SupportTextBounds.boundedKeepingBlank(dto.getDescription(), "description", MAX_DESCRIPTION_LENGTH));
+
 		ApiKeyGroup akg = lockedGroup(dto.getGroupId());
 		ApiKeyGroupData akgd = ApiKeyGroupData.dataFromRecord(akg);
 
-		String effectiveName = null != dto.getName() ? dto.getName() : akgd.getName();
+		String effectiveName = null != name ? name : akgd.getName();
 		boolean nameChanging = !Objects.equals(effectiveName, akgd.getName());
 		boolean restoring = dto.getStatus() == ApiKeyGroupStatus.ACTIVE
 				&& akgd.getStatus() == ApiKeyGroupStatus.INACTIVE;
@@ -143,29 +172,92 @@ public class ApiKeyGroupService {
 			}
 		}
 
-		if (null != dto.getApiKeys()) validateMembers(dto.getApiKeys(), akgd.getOrg());
+		if (null != dto.getApiKeys()) validateMembers(dto.getApiKeys(), akgd.getOrg(), akgd.getKind());
 
-		ApiKeyGroupData updated = ApiKeyGroupData.updateApiKeyGroupData(akgd, dto);
+		UpdateApiKeyGroupDto bounded = dto.toBuilder().name(name).description(description).build();
+		UpdateApiKeyGroupDto merge = switch (akgd.getKind()) {
+			case INTERNAL -> bounded;
+			case CUSTOMER -> withTeaGrantsOnly(bounded, akgd.getOrg());
+		};
+		ApiKeyGroupData updated = ApiKeyGroupData.updateApiKeyGroupData(akgd, merge);
+		if (null != description && description.isEmpty()) updated.clearDescription();
 		ApiKeyGroup saved = saveApiKeyGroup(akg, Utils.dataToRecord(updated), wu);
 		return ApiKeyGroupData.dataFromRecord(saved);
 	}
 
+	/** A supplied name stripped and bounded; null for a null or blank one. */
+	private static String boundedName(String name) throws RelizaException {
+		return refusable(() -> SupportTextBounds.bounded(name, "name", MAX_NAME_LENGTH));
+	}
+
+	/** The bound's refusal as a RelizaException: GraphQL renders an IllegalArgumentException as a server error. */
+	private static String refusable(Supplier<String> bound) throws RelizaException {
+		try {
+			return bound.get();
+		} catch (IllegalArgumentException e) {
+			throw new RelizaException(e.getMessage());
+		}
+	}
+
 	/**
-	 * Members are FREEFORM keys of the group's organization only, checked over the whole list before
-	 * any write. An unknown uuid (a deleted key's tombstone included) and a key of another organization
-	 * get the same message, checked before the type, so membership cannot probe another organization's
-	 * key uuids or key types. Key status is not checked: a key that is not ACTIVE cannot authenticate.
+	 * The update of a CUSTOMER group: its permissions normalized as an external key's grants, and no
+	 * approvals, which the merge would otherwise write as an organization-wide entry. Approvals sent with
+	 * nothing to drop them from are refused rather than ignored.
 	 */
-	private void validateMembers(Collection<UUID> keyUuids, UUID org) throws RelizaException {
+	private UpdateApiKeyGroupDto withTeaGrantsOnly(UpdateApiKeyGroupDto dto, UUID org) throws RelizaException {
+		List<UserGroupPermissionDto> grants = null == dto.getPermissions() ? null : normalizedGrants(dto.getPermissions(), org);
+		if (null != dto.getApprovals() && !dto.getApprovals().isEmpty() && (null == grants || grants.isEmpty())) {
+			throw new RelizaException("A customer group carries TEA grants only");
+		}
+		return dto.toBuilder().permissions(grants).approvals(null).build();
+	}
+
+	private List<UserGroupPermissionDto> normalizedGrants(Collection<UserGroupPermissionDto> permissions, UUID org) throws RelizaException {
+		List<PermissionDto> sent = new ArrayList<>();
+		for (UserGroupPermissionDto p : permissions) {
+			if (null == p) continue;
+			sent.add(new PermissionDto(null, p.getScope(), p.getObjectId(), p.getType(),
+					null == p.getFunctions() ? null : new LinkedHashSet<>(p.getFunctions()), p.getApprovals()));
+		}
+		return externalApiKeyService.normalizeGrants(org, sent).stream()
+				.map(g -> UserGroupPermissionDto.builder().scope(g.scope()).objectId(g.object()).type(g.type())
+						.functions(g.functions()).approvals(g.approvals()).build())
+				.toList();
+	}
+
+	/**
+	 * Members are keys of the group's organization of the one type its kind admits, checked over the whole
+	 * list before any write. An unknown uuid (a deleted key's tombstone included) and a key of another
+	 * organization get the same message, checked before the type, so membership cannot probe another
+	 * organization's key uuids or key types. Key status is not checked: a key that is not ACTIVE cannot
+	 * authenticate.
+	 */
+	private void validateMembers(Collection<UUID> keyUuids, UUID org, ApiKeyGroupKind kind) throws RelizaException {
+		ApiTypeEnum admitted = admittedKeyType(kind);
 		for (UUID keyUuid : keyUuids) {
 			Optional<ApiKey> oak = null == keyUuid ? Optional.empty() : apiKeyService.getApiKey(keyUuid);
 			if (oak.isEmpty() || !org.equals(oak.get().getOrg())) {
 				throw new RelizaException("API key not found: " + keyUuid);
 			}
-			if (oak.get().getObjectType() != ApiTypeEnum.FREEFORM) {
-				throw new RelizaException("Only FREEFORM keys can join an API key group: " + keyUuid);
+			if (oak.get().getObjectType() != admitted) {
+				throw new RelizaException(memberRefusal(kind, keyUuid));
 			}
 		}
+	}
+
+	/** An allowlist with no default: a new kind admits no key until it is added here, and breaks the compile first. */
+	private static ApiTypeEnum admittedKeyType(ApiKeyGroupKind kind) {
+		return switch (kind) {
+			case INTERNAL -> ApiTypeEnum.FREEFORM;
+			case CUSTOMER -> ApiTypeEnum.EXTERNAL;
+		};
+	}
+
+	private static String memberRefusal(ApiKeyGroupKind kind, UUID keyUuid) {
+		return switch (kind) {
+			case INTERNAL -> "Only FREEFORM keys can join an API key group: " + keyUuid;
+			case CUSTOMER -> "Only external keys can join a customer group: " + keyUuid;
+		};
 	}
 
 	/**
@@ -211,28 +303,28 @@ public class ApiKeyGroupService {
 	}
 
 	/**
-	 * The permission sets, in {@code org}, of the ACTIVE groups of {@code org} holding the key: what
-	 * {@code OrganizationService.combinePermissions} unions into the key's own grants. Read per call,
-	 * no cache; joins a surrounding transaction when there is one. An unreadable row is skipped, never
-	 * thrown into an authorization.
+	 * The permission sets, in {@code org}, of the ACTIVE groups of {@code org} and of {@code kind} holding
+	 * the key: what {@code OrganizationService.combinePermissions} unions into the key's own grants. Read
+	 * per call, no cache; joins a surrounding transaction when there is one. An unreadable row is skipped,
+	 * never thrown into an authorization.
 	 */
 	@Transactional(readOnly = true)
-	public List<Set<UserPermission>> permissionSetsForKey(UUID keyUuid, UUID org) {
-		return activeGroupsHoldingKey(keyUuid, org).stream().map(g -> g.getOrgPermissions(org)).toList();
+	public List<Set<UserPermission>> permissionSetsForKey(UUID keyUuid, UUID org, ApiKeyGroupKind kind) {
+		return activeGroupsHoldingKey(keyUuid, org, kind).stream().map(g -> g.getOrgPermissions(org)).toList();
 	}
 
 	/**
-	 * The ACTIVE groups of org holding the key, the rows permissionSetsForKey takes its sets from (TPF-123:
-	 * the sources of the combined read come from the same query as the union, so a group in one is in the
-	 * other). Read per call, no cache; an unreadable row is skipped.
+	 * The ACTIVE groups of org and of the kind holding the key, the rows permissionSetsForKey takes its sets
+	 * from (TPF-123: the sources of the combined read come from the same query as the union, so a group in
+	 * one is in the other). Read per call, no cache; an unreadable row is skipped.
 	 */
 	@Transactional(readOnly = true)
-	public List<ApiKeyGroupData> activeGroupsHoldingKey(UUID keyUuid, UUID org) {
-		if (null == keyUuid || null == org) return List.of();
+	public List<ApiKeyGroupData> activeGroupsHoldingKey(UUID keyUuid, UUID org, ApiKeyGroupKind kind) {
+		if (null == keyUuid || null == org || null == kind) return List.of();
 		List<ApiKeyGroupData> out = new ArrayList<>();
 		for (ApiKeyGroupData g : readable(apiKeyGroupRepository.findByApiKeyAndOrg(keyUuid.toString(), org.toString()), org)) {
-			// the query filters org, membership and status; the same three are re-checked on the parsed row
-			if (org.equals(g.getOrg()) && g.getStatus() == ApiKeyGroupStatus.ACTIVE && g.hasApiKey(keyUuid)) {
+			// the query filters org, membership and status; the same three are re-checked on the parsed row, with the kind
+			if (org.equals(g.getOrg()) && g.getStatus() == ApiKeyGroupStatus.ACTIVE && g.hasApiKey(keyUuid) && g.getKind() == kind) {
 				out.add(g);
 			}
 		}
@@ -240,41 +332,46 @@ public class ApiKeyGroupService {
 	}
 
 	/**
-	 * Sets the groups of one key (TPF-118/TPF-123): added to each desired group it is not in, removed from
-	 * each holding group not desired, in this one transaction, each changed group taken write-locked and
-	 * re-read, saved once, audited; a group whose membership does not change is not written. The key row is
+	 * Sets the groups of one key among the groups of its kind (TPF-118/TPF-123, FDAW-25): added to each desired
+	 * group it is not in, removed from each holding group of its kind not desired, in this one transaction,
+	 * each changed group taken write-locked and re-read, saved once, audited; a group whose membership does not change is not written. The key row is
 	 * taken write-locked FIRST (getApiKeyWriteLocked, never written): calls on the same key serialize on it,
 	 * so the later desired set wins whole, and a deleter (deleteApiKey, which locks the key and then its
 	 * groups in the same sorted order, removeKeyFromAllGroups) waits for this call and then removes the key
-	 * from every group. The key is a FREEFORM key of org (validateMembers). Every desired uuid is a group of
-	 * org, checked over the whole list before any group lock: a foreign or unknown uuid answers "API key
-	 * group not found". A key is never added to an INACTIVE group (a restore would grant silently); it may
-	 * be removed from one. Lock order: the key row, then group rows in sorted uuid order, the one order
+	 * from every group. The key is a FREEFORM key (kind INTERNAL) or an EXTERNAL key (kind CUSTOMER) of org
+	 * (validateMembers); any other type answers "API key not found". Every desired uuid is a group of org and
+	 * of the key's kind, checked over the whole list before any group lock: a foreign or unknown uuid answers
+	 * "API key group not found", a group of the other kind that group's member refusal. A key is never added
+	 * to an INACTIVE group (a restore would grant silently); it may be removed from one. Lock order: the key row, then group rows in sorted uuid order, the one order
 	 * every path that locks several groups uses (removeKeyFromAllGroups sorts its holding list, TPF-123
 	 * round 3).
-	 * @return the groups of org holding the key after the write, any status, by name
+	 * @return the groups of org and of the key's kind holding the key after the write, any status, by name
 	 */
 	@Transactional(rollbackFor = RelizaException.class)
 	public List<ApiKeyGroupData> setGroupsOfKey(UUID keyUuid, UUID org, Collection<UUID> desired, WhoUpdated wu) throws RelizaException {
 		// TPF-123 round 2 (F-1): the key row first, locked until this transaction ends (MANDATORY propagation,
 		// satisfied by this method's own transaction); a tombstone or a missing row is empty under the lock
-		if (apiKeyService.getApiKeyWriteLocked(keyUuid).isEmpty()) {
+		Optional<ApiKey> locked = apiKeyService.getApiKeyWriteLocked(keyUuid);
+		if (locked.isEmpty()) {
 			throw new RelizaException("API key not found: " + keyUuid);
 		}
-		// foreign "API key not found", non-FREEFORM "Only FREEFORM keys ..."; current, read under the key lock
-		validateMembers(List.of(keyUuid), org);
+		ApiKeyGroupKind kind = groupKindOfKey(locked.get());
+		// foreign "API key not found"; current, read under the key lock
+		validateMembers(List.of(keyUuid), org, kind);
 		Set<UUID> want = new LinkedHashSet<>(null == desired ? List.of() : desired);
 		Map<UUID, ApiKeyGroupData> all = new HashMap<>();
 		for (ApiKeyGroupData g : getAllApiKeyGroupsByOrganization(org)) all.put(g.getUuid(), g);
 		for (UUID g : want) {   // the whole list before any lock or write
 			ApiKeyGroupData gd = all.get(g);
 			if (null == gd) throw new RelizaException("API key group not found: " + g);
+			if (gd.getKind() != kind) throw new RelizaException(memberRefusal(gd.getKind(), keyUuid));
 			if (gd.getStatus() == ApiKeyGroupStatus.INACTIVE && !gd.hasApiKey(keyUuid)) {
 				throw new RelizaException("API key group is inactive: " + g);
 			}
 		}
 		// the group order after the key: sorted uuids, the one order removeKeyFromAllGroups also locks in (its .sorted(), round 3)
 		List<UUID> toTouch = all.values().stream()
+				.filter(gd -> gd.getKind() == kind)
 				.filter(gd -> gd.hasApiKey(keyUuid) != want.contains(gd.getUuid()))
 				.map(ApiKeyGroupData::getUuid).sorted().toList();
 		for (UUID groupUuid : toTouch) {
@@ -293,9 +390,17 @@ public class ApiKeyGroupService {
 			if (changed) saveApiKeyGroup(akg, Utils.dataToRecord(gd), wu);
 		}
 		return getAllApiKeyGroupsByOrganization(org).stream()
+				.filter(g -> g.getKind() == kind)
 				.filter(g -> g.hasApiKey(keyUuid))
 				.sorted(Comparator.comparing(ApiKeyGroupData::getName, String.CASE_INSENSITIVE_ORDER))
 				.toList();
+	}
+
+	/** The kind of group a key may join: an allowlist, every other key type joins none and answers as an unknown key. */
+	private static ApiKeyGroupKind groupKindOfKey(ApiKey key) throws RelizaException {
+		if (key.getObjectType() == ApiTypeEnum.FREEFORM) return ApiKeyGroupKind.INTERNAL;
+		if (key.getObjectType() == ApiTypeEnum.EXTERNAL) return ApiKeyGroupKind.CUSTOMER;
+		throw new RelizaException("API key not found: " + key.getUuid());
 	}
 
 	/**

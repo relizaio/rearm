@@ -15,6 +15,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.ApiKeyGroupStatus;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionFunction;
@@ -27,10 +28,12 @@ import io.reliza.model.dto.UpdateApiKeyGroupDto;
 import io.reliza.model.dto.UserGroupPermissionDto;
 
 /**
- * An API key group (TPF-91, child of TPF-86): a permission set of one organization whose members are
- * FREEFORM API keys of that organization. A member key's effective permissions are its own grants
- * union every ACTIVE group holding it (AuthorizationService.keyPermissions). Member uuids live here,
- * validated on write by ApiKeyGroupService and tolerated when dangling on read (no foreign keys).
+ * An API key group (TPF-91, child of TPF-86): a permission set of one organization. An INTERNAL group's
+ * members are FREEFORM API keys of that organization, and a member key's effective permissions are its
+ * own grants union every ACTIVE INTERNAL group holding it (AuthorizationService.keyPermissions). A
+ * CUSTOMER group's members are EXTERNAL keys, and its grants count on TEA only
+ * (TeaAuthorizationService.liveGrants). The kind is set at create and never changes. Member uuids live
+ * here, validated on write by ApiKeyGroupService and tolerated when dangling on read (no foreign keys).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ApiKeyGroupData extends RelizaDataParent implements RelizaObject {
@@ -48,8 +51,10 @@ public class ApiKeyGroupData extends RelizaDataParent implements RelizaObject {
 	private Permissions permissions = new Permissions();
 	@JsonProperty(CommonVariables.STATUS_FIELD)
 	private ApiKeyGroupStatus status = ApiKeyGroupStatus.ACTIVE;
+	@JsonProperty("kind")
+	private ApiKeyGroupKind kind = ApiKeyGroupKind.INTERNAL;
 	@JsonProperty(API_KEYS_FIELD)
-	private Set<UUID> apiKeys = new LinkedHashSet<>(); // FREEFORM keys of this organization
+	private Set<UUID> apiKeys = new LinkedHashSet<>(); // keys of this organization, of the type the kind admits
 	@JsonProperty
 	private UUID resourceGroup = CommonVariables.DEFAULT_RESOURCE_GROUP;
 
@@ -78,6 +83,11 @@ public class ApiKeyGroupData extends RelizaDataParent implements RelizaObject {
 
 	private void setDescription(String description) {
 		this.description = description;
+	}
+
+	/** A supplied blank description clears the field; the merge reads a null as keep, so it cannot say this. */
+	public void clearDescription() {
+		this.description = null;
 	}
 
 	@Override
@@ -148,6 +158,11 @@ public class ApiKeyGroupData extends RelizaDataParent implements RelizaObject {
 		this.status = status;
 	}
 
+	/** A row written before the kind existed has none and reads INTERNAL. */
+	public ApiKeyGroupKind getKind() {
+		return null == kind ? ApiKeyGroupKind.INTERNAL : kind;
+	}
+
 	@Override
 	public UUID getResourceGroup() {
 		return this.resourceGroup;
@@ -157,11 +172,12 @@ public class ApiKeyGroupData extends RelizaDataParent implements RelizaObject {
 	 * The updated group: a null field of the input keeps the stored value; a non-null apiKeys
 	 * REPLACES the member list; non-null permissions replace the organization's permission set;
 	 * approvals apply to the organization-wide permission (the UserGroupData.updateUserGroupData rule).
-	 * The organization never changes.
+	 * The organization and the kind never change.
 	 */
 	public static ApiKeyGroupData updateApiKeyGroupData(ApiKeyGroupData akgd, UpdateApiKeyGroupDto dto) {
 		ApiKeyGroupData updated = new ApiKeyGroupData();
 		updated.setOrg(akgd.getOrg());
+		updated.kind = akgd.getKind();
 		updated.resourceGroup = akgd.getResourceGroup();
 		updated.setName(null != dto.getName() ? dto.getName() : akgd.getName());
 		updated.setDescription(null != dto.getDescription() ? dto.getDescription() : akgd.getDescription());
@@ -192,6 +208,7 @@ public class ApiKeyGroupData extends RelizaDataParent implements RelizaObject {
 		akgd.setName(createDto.getName());
 		akgd.setDescription(createDto.getDescription());
 		akgd.setOrg(createDto.getOrg());
+		if (null != createDto.getKind()) akgd.kind = createDto.getKind();
 		return akgd;
 	}
 
@@ -215,6 +232,7 @@ public class ApiKeyGroupData extends RelizaDataParent implements RelizaObject {
 				.org(akgd.getOrg())
 				.permissions(akgd.getPermissions())
 				.status(akgd.getStatus())
+				.kind(akgd.getKind())
 				.apiKeys(akgd.getApiKeys())
 				.createdDate(akgd.getCreatedDate())
 				.lastUpdatedBy(akgd.getLastUpdatedBy())
