@@ -4,6 +4,9 @@
 package io.reliza.model;
 
 import java.util.List;
+import java.util.regex.Pattern;
+
+import io.reliza.common.UrlCredentials;
 
 /**
  * The bounds on every free text, key and selector of a support or justification write (FDAW-14 3.2
@@ -41,12 +44,38 @@ public final class SupportTextBounds {
 	public static final int MAX_COMPONENT_KEY_LENGTH = 2048;
 	/** A bulk selector's namespace. */
 	public static final int MAX_NAMESPACE_LENGTH = 256;
+	/** A third-party supplier of an overlay (FDAW-15 3.2). */
+	public static final int MAX_SUPPLIER_LENGTH = 512;
+	/** An overlay's licence; equal to {@code SpdxLicenseExpressions.MAX_LENGTH}, which a test pins. */
+	public static final int MAX_LICENCE_LENGTH = 512;
+	/** Where vendored code came from. */
+	public static final int MAX_ORIGIN_LENGTH = 512;
+	public static final int MAX_OVERLAY_DESCRIPTION_LENGTH = 2048;
+	/** The name of a keyless component node. */
+	public static final int MAX_NODE_NAME_LENGTH = 512;
+	/** The version of a keyless component node. */
+	public static final int MAX_NODE_VERSION_LENGTH = 512;
 
 	static final String UNKNOWN_TEXT_REFUSED = "justified unknown: the text is longer than "
 			+ MAX_UNKNOWN_TEXT_LENGTH + " characters or holds a control character";
 	static final String KEY_REFUSED = "component key is longer than " + MAX_COMPONENT_KEY_LENGTH
 			+ " characters or holds a control character";
 	static final String KEYS_REQUIRED = "keys: at least one component key is required";
+	static final String SUPPLIER_CONTENT_REFUSED = "supplier holds an e-mail address or a URL credential";
+	static final String SUPPLIER_REQUIRED = "supplier is required";
+	static final String NAME_REQUIRED = "name is required";
+	static final String VERSION_BLANK = "version must not be blank";
+
+	/**
+	 * JavaScript's {@code \s}, which rebom's two patterns use: in {@code java.util.regex} a bare
+	 * {@code \s} is ASCII-only, so {@code Jane} U+00A0 {@code jane@example.org} would pass the port
+	 * although rebom strips it (FDAW-15 F-22).
+	 */
+	private static final String JS_WHITESPACE =
+			"\\t\\n\\u000B\\f\\r\\u0020\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF";
+	/** rebom's {@code ADDRESS_PATTERN} (bomProcessingService.ts): a {@code name@version} token, a scoped path and the @ of a URL are not addresses. */
+	private static final Pattern ADDRESS_PATTERN = Pattern.compile("(?:^|(?<=[" + JS_WHITESPACE + "<(\\[\"',;:]))"
+			+ "[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,}(?=\\z|[" + JS_WHITESPACE + ">)\\]\"',;.])");
 
 	private SupportTextBounds() {}
 
@@ -67,6 +96,83 @@ public final class SupportTextBounds {
 			throw new IllegalArgumentException(field + " holds a control character");
 		}
 		return s;
+	}
+
+	/**
+	 * A one-line value (FDAW-15 3.2, FDAW-50 F-2): null stays null; stripped, a blank stays {@code ""};
+	 * refused over {@code max} or holding a control character, TAB, LF and CR included.
+	 */
+	public static String boundedLine(String value, String field, int max) {
+		if (null == value) return null;
+		String s = value.strip();
+		if (s.length() > max) {
+			throw new IllegalArgumentException(field + " is longer than " + max + " characters");
+		}
+		if (holdsControlCharacter(s, false)) {
+			throw new IllegalArgumentException(field + " holds a control character");
+		}
+		return s;
+	}
+
+	/**
+	 * The overlay texts of one write (FDAW-15 3.2): every field is clearable, so null stays null and a
+	 * blank stays {@code ""}; {@code supplier}, {@code licence} and {@code origin} are one line and
+	 * {@code description} keeps the text rule; a non-blank {@code supplier} also passes the content rule.
+	 */
+	public static SbomComponentOverlayPatch boundedOverlay(SbomComponentOverlayPatch patch) {
+		return new SbomComponentOverlayPatch(boundedSupplier(patch.supplier()),
+				boundedLine(patch.licence(), "licence", MAX_LICENCE_LENGTH),
+				boundedKeepingBlank(patch.description(), "description", MAX_OVERLAY_DESCRIPTION_LENGTH),
+				boundedLine(patch.origin(), "origin", MAX_ORIGIN_LENGTH));
+	}
+
+	/** The supplier of a sweep, which has nothing to clear: {@link #boundedOverlay}'s rule, and required. */
+	public static String boundedRequiredSupplier(String supplier) {
+		String s = boundedSupplier(supplier);
+		if (null == s || s.isEmpty()) throw new IllegalArgumentException(SUPPLIER_REQUIRED);
+		return s;
+	}
+
+	/**
+	 * The one-line bound, then the content rule (F-16): rebom's strip runs once at merge time and never
+	 * over what the overlay injector writes later, so a supplier it would have edited is refused here,
+	 * and the stored, audited and exported strings stay one. The value is not echoed.
+	 */
+	private static String boundedSupplier(String supplier) {
+		String s = boundedLine(supplier, "supplier", MAX_SUPPLIER_LENGTH);
+		if (null != s && !s.isEmpty() && (holdsAddressToken(s) || holdsUrlCredential(s))) {
+			throw new IllegalArgumentException(SUPPLIER_CONTENT_REFUSED);
+		}
+		return s;
+	}
+
+	/** The name of a vendored verb: one line, required, non-blank after strip. */
+	public static String boundedRequiredName(String name) {
+		String s = boundedLine(name, "name", MAX_NODE_NAME_LENGTH);
+		if (null == s || s.isEmpty()) throw new IllegalArgumentException(NAME_REQUIRED);
+		return s;
+	}
+
+	/** The version of a vendored verb: one line; null is a node without one; never blank. */
+	public static String boundedNodeVersion(String version) {
+		String s = boundedLine(version, "version", MAX_NODE_VERSION_LENGTH);
+		if (null != s && s.isEmpty()) throw new IllegalArgumentException(VERSION_BLANK);
+		return s;
+	}
+
+	/** True when {@code s} holds what rebom's {@code ADDRESS_PATTERN} calls an e-mail address token. */
+	public static boolean holdsAddressToken(String s) {
+		return ADDRESS_PATTERN.matcher(s).find();
+	}
+
+	/**
+	 * True when a URL token of {@code s} carries what rebom's {@code credentialUserinfo} calls a
+	 * credential: the userinfo before the authority's last {@code @} holds {@code :} or a raw {@code @},
+	 * or the scheme is an HTTP one. The one Java port of the rule is {@link UrlCredentials} (FDAW-34 3.2):
+	 * a token carries one exactly when {@link UrlCredentials#stripUserinfo} would edit it.
+	 */
+	public static boolean holdsUrlCredential(String s) {
+		return UrlCredentials.stripUserinfo(s) != s;
 	}
 
 	/** A justified unknown's text: through {@link #bounded} with 3.11's one combined refusal text. */

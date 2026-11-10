@@ -33,7 +33,11 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.CommonVariables.CallType;
@@ -44,10 +48,12 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.repositories.SbomComponentOverlayRepository;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.ReleaseSbomJustificationService;
+import io.reliza.service.SbomComponentOverlayService;
 import io.reliza.service.SbomComponentService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
@@ -291,6 +297,7 @@ class SbomComponentBulkSupportCapTest {
 		ReflectionTestUtils.setField(f, "authorizationService", auth);
 		ReflectionTestUtils.setField(f, "sbomComponentService", service);
 		ReflectionTestUtils.setField(f, "sharedReleaseService", releases);
+		ReflectionTestUtils.setField(f, "sbomComponentOverlayRepository", mock(SbomComponentOverlayRepository.class));
 		return new Wired(f, auth, service, repo, releases, org);
 	}
 
@@ -362,6 +369,134 @@ class SbomComponentBulkSupportCapTest {
 				null, null, null, null));
 		assertFalse(t instanceof RelizaException && t.getMessage().contains("limited to"),
 				"exactly " + CAP + " matched ids must pass the cap guard, not be refused: " + t);
+	}
+
+	/** Row 9 of FDAW-15: a fetcher with every collaborator null, so a bound that fires late is an NPE. */
+	private static RelizaException overlayRefusal(Executable call) {
+		return assertThrows(RelizaException.class, call);
+	}
+
+	private static final String MAX_LINE = "x".repeat(513);
+	private static final String MAX_TEXT = "x".repeat(2049);
+	private static final String SUPPLIER_CONTENT = "supplier holds an e-mail address or a URL credential";
+
+	private static void refusedOnEveryVendoredVerb(String expected, String name, String version) {
+		SbomComponentOverlayDataFetcher f = new SbomComponentOverlayDataFetcher();
+		UUID release = UUID.randomUUID();
+		assertEquals(expected, overlayRefusal(() -> f.describeVendoredComponent(release, name, version, Map.of(), null)).getMessage());
+		assertEquals(expected, overlayRefusal(() -> f.removeVendoredDescription(release, name, version, "r")).getMessage());
+		assertEquals(expected, overlayRefusal(() -> f.setVendoredComponentSupport(release, name, version, null, null, null,
+				null, null, null, null, null, null, null, null, null, null)).getMessage());
+	}
+
+	@Test
+	void everyOverlayVerbIsBoundedBeforeAuthorisationAndAnyRead() {
+		refusedOnEveryVendoredVerb("name is longer than 512 characters", MAX_LINE, null);
+		refusedOnEveryVendoredVerb("version is longer than 512 characters", "x", MAX_LINE);
+		refusedOnEveryVendoredVerb("name is required", " ", null);
+		refusedOnEveryVendoredVerb("version must not be blank", "x", " ");
+
+		SbomComponentOverlayDataFetcher f = new SbomComponentOverlayDataFetcher();
+		UUID id = UUID.randomUUID();
+		Map<String, String> byField = new LinkedHashMap<>();
+		byField.put("supplier", MAX_LINE);
+		byField.put("licence", MAX_LINE);
+		byField.put("origin", MAX_LINE);
+		byField.forEach((field, value) -> {
+			String expected = field + " is longer than 512 characters";
+			assertEquals(expected, overlayRefusal(() -> f.setSbomComponentOverlay(id, Map.of(field, value), null)).getMessage());
+			assertEquals(expected, overlayRefusal(() -> f.describeVendoredComponent(id, "x", null, Map.of(field, value), null)).getMessage());
+		});
+		String longDescription = "description is longer than 2048 characters";
+		assertEquals(longDescription, overlayRefusal(() -> f.setSbomComponentOverlay(id, Map.of("description", MAX_TEXT), null)).getMessage());
+		String longReason = "reason is longer than 2048 characters";
+		assertEquals(longReason, overlayRefusal(() -> f.setSbomComponentOverlay(id, Map.of(), MAX_TEXT)).getMessage());
+		assertEquals(longReason, overlayRefusal(() -> f.describeVendoredComponent(id, "x", null, Map.of(), MAX_TEXT)).getMessage());
+		assertEquals(longReason, overlayRefusal(() -> f.removeVendoredDescription(id, "x", null, MAX_TEXT)).getMessage());
+		assertEquals("supplier holds a control character",
+				overlayRefusal(() -> f.setSbomComponentOverlay(id, Map.of("supplier", "a\nb"), null)).getMessage());
+		assertEquals("description holds a control character",
+				overlayRefusal(() -> f.describeVendoredComponent(id, "x", null, Map.of("description", "a\u0007b"), null)).getMessage());
+
+		Map<String, Object> sel = selector("TYPE", "deb", null);
+		assertEquals("supplier is required", overlayRefusal(() -> f.bulkSetSbomComponentSupplierBySelector(id, sel, null, " ", null)).getMessage());
+		assertEquals("supplier is longer than 512 characters",
+				overlayRefusal(() -> f.bulkSetSbomComponentSupplierBySelector(id, sel, null, MAX_LINE, null)).getMessage());
+		assertEquals(longReason, overlayRefusal(() -> f.bulkSetSbomComponentSupplierBySelector(id, sel, null, "Acme", MAX_TEXT)).getMessage());
+		assertEquals("removing a description needs a reason", overlayRefusal(() -> f.removeVendoredDescription(id, "x", null, " ")).getMessage());
+	}
+
+	@Test
+	void aSupplierHoldingAnAddressOrACredentialIsRefusedBeforeAuthorisation() {
+		SbomComponentOverlayDataFetcher f = new SbomComponentOverlayDataFetcher();
+		UUID id = UUID.randomUUID();
+		Map<String, Object> sel = selector("TYPE", "deb", null);
+		for (String supplier : List.of("Jane Doe <jane@vendor.example>", "https://u:p@acme.example/")) {
+			assertEquals(SUPPLIER_CONTENT, overlayRefusal(() -> f.setSbomComponentOverlay(id, Map.of("supplier", supplier), null)).getMessage());
+			assertEquals(SUPPLIER_CONTENT, overlayRefusal(() -> f.describeVendoredComponent(id, "x", null, Map.of("supplier", supplier), null)).getMessage());
+			assertEquals(SUPPLIER_CONTENT, overlayRefusal(() -> f.bulkSetSbomComponentSupplierBySelector(id, sel, null, supplier, null)).getMessage());
+		}
+	}
+
+	@Test
+	void aValidVendoredCallIsRefusedByTheGateAfterTheReleaseLoad() throws Exception {
+		SbomComponentOverlayDataFetcher f = new SbomComponentOverlayDataFetcher();
+		AuthorizationService auth = mock(AuthorizationService.class);
+		UserService users = mock(UserService.class);
+		SharedReleaseService releases = mock(SharedReleaseService.class);
+		SbomComponentOverlayService service = mock(SbomComponentOverlayService.class);
+		ReflectionTestUtils.setField(f, "authorizationService", auth);
+		ReflectionTestUtils.setField(f, "userService", users);
+		ReflectionTestUtils.setField(f, "sharedReleaseService", releases);
+		ReflectionTestUtils.setField(f, "overlayService", service);
+		UUID release = UUID.randomUUID();
+		ReleaseData rd = mock(ReleaseData.class);
+		when(users.getUserDataByAuth(any())).thenReturn(Optional.of(mock(UserData.class)));
+		when(releases.getReleaseData(release)).thenReturn(Optional.of(rd));
+		doThrow(new AccessDeniedException("forbidden")).when(auth).isUserAuthorizedForObjectGraphQL(any(), any(),
+				eq(PermissionScope.RELEASE), any(), any(), eq(CallType.READ));
+		SecurityContext context = SecurityContextHolder.createEmptyContext();
+		context.setAuthentication(mock(JwtAuthenticationToken.class));
+		SecurityContextHolder.setContext(context);
+		try {
+			assertThrows(AccessDeniedException.class, () -> f.describeVendoredComponent(release, "x", null, Map.of("supplier", "Acme"), null));
+			verify(releases).getReleaseData(release);
+			verifyNoInteractions(service);
+		} finally {
+			SecurityContextHolder.clearContext();
+		}
+	}
+
+	@Test
+	void theDescriptionsReadIsGatedOnOrganizationWriteBeforeTheServiceIsAsked() throws Exception {
+		SbomComponentOverlayDataFetcher f = new SbomComponentOverlayDataFetcher();
+		AuthorizationService auth = mock(AuthorizationService.class);
+		UserService users = mock(UserService.class);
+		SharedReleaseService releases = mock(SharedReleaseService.class);
+		GetOrganizationService orgs = mock(GetOrganizationService.class);
+		SbomComponentOverlayService service = mock(SbomComponentOverlayService.class);
+		ReflectionTestUtils.setField(f, "authorizationService", auth);
+		ReflectionTestUtils.setField(f, "userService", users);
+		ReflectionTestUtils.setField(f, "sharedReleaseService", releases);
+		ReflectionTestUtils.setField(f, "getOrganizationService", orgs);
+		ReflectionTestUtils.setField(f, "overlayService", service);
+		UUID release = UUID.randomUUID();
+		ReleaseData rd = mock(ReleaseData.class);
+		when(rd.getOrg()).thenReturn(UUID.randomUUID());
+		when(users.getUserDataByAuth(any())).thenReturn(Optional.of(mock(UserData.class)));
+		when(releases.getReleaseData(release)).thenReturn(Optional.of(rd));
+		when(orgs.getOrganizationData(any())).thenReturn(Optional.of(mock(OrganizationData.class)));
+		doThrow(new AccessDeniedException("forbidden")).when(auth).isUserAuthorizedForObjectGraphQL(any(), any(),
+				eq(PermissionScope.ORGANIZATION), any(), any(), eq(CallType.WRITE));
+		SecurityContext context = SecurityContextHolder.createEmptyContext();
+		context.setAuthentication(mock(JwtAuthenticationToken.class));
+		SecurityContextHolder.setContext(context);
+		try {
+			assertThrows(AccessDeniedException.class, () -> f.vendoredDescriptionsByName(release, "libdosecalc"));
+			verifyNoInteractions(service);
+		} finally {
+			SecurityContextHolder.clearContext();
+		}
 	}
 
 	@Test

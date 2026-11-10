@@ -75,6 +75,7 @@ import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.service.ArtifactService;
+import io.reliza.repositories.SbomComponentOverlayRepository;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.DeviceLifecycleHook;
 import io.reliza.service.FindingPurlBridge;
@@ -209,6 +210,7 @@ class ReleaseSbomComponentFindingsTest {
 		UserService userService = mock(UserService.class);
 		when(userService.getUserDataByAuth(any(JwtAuthenticationToken.class))).thenReturn(Optional.of(mock(UserData.class)));
 		ReflectionTestUtils.setField(sbom, "authorizationService", mock(AuthorizationService.class));
+		ReflectionTestUtils.setField(sbom, "sbomComponentOverlayRepository", mock(SbomComponentOverlayRepository.class));
 		ReflectionTestUtils.setField(sbom, "userService", userService);
 		ReflectionTestUtils.setField(sbom, "sharedReleaseService", sharedReleaseService);
 		ReflectionTestUtils.setField(sbom, "sbomComponentService", sbomComponentService);

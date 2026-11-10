@@ -4,9 +4,11 @@
 package io.reliza.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.LocalDate;
 import java.time.ZonedDateTime;
@@ -14,6 +16,8 @@ import java.util.List;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
+
+import io.reliza.common.SpdxLicenseExpressions;
 
 /** FDAW-14 row 23 (r4, F-9; r5, F-11): the bounds on every free text of a support write. */
 class SupportTextBoundsTest {
@@ -31,6 +35,85 @@ class SupportTextBoundsTest {
 			e = assertThrows(IllegalArgumentException.class, () -> SupportTextBounds.bounded("a\u0007b", field, 2048));
 			assertEquals(field + " holds a control character", e.getMessage());
 			assertEquals("a\tb\nc\rd", SupportTextBounds.bounded("a\tb\nc\rd", field, 2048));
+		}
+	}
+
+	@Test
+	void boundedOverlayStripsKeepsTheClearAndRefusesPerField() {
+		SbomComponentOverlayPatch b = SupportTextBounds.boundedOverlay(
+				new SbomComponentOverlayPatch(" Acme ", "", null, "  "));
+		assertEquals("Acme", b.supplier());
+		assertEquals("", b.licence());
+		assertNull(b.description());
+		assertEquals("", b.origin());
+		assertEquals("a\tb\nc", SupportTextBounds.boundedOverlay(
+				new SbomComponentOverlayPatch(null, null, "a\tb\nc", null)).description());
+		assertEquals("supplier is longer than 512 characters", overlayRefusal("x".repeat(513), null, null, null));
+		assertEquals("licence is longer than 512 characters", overlayRefusal(null, "x".repeat(513), null, null));
+		assertEquals("origin is longer than 512 characters", overlayRefusal(null, null, null, "x".repeat(513)));
+		assertEquals("description is longer than 2048 characters", overlayRefusal(null, null, "x".repeat(2049), null));
+		assertEquals("supplier holds a control character", overlayRefusal("a\nb", null, null, null));
+		assertEquals("licence holds a control character", overlayRefusal(null, "a\tb", null, null));
+		assertEquals("origin holds a control character", overlayRefusal(null, null, null, "a\rb"));
+		assertEquals("description holds a control character", overlayRefusal(null, null, "a\u0007b", null));
+		assertEquals(SpdxLicenseExpressions.MAX_LENGTH, SupportTextBounds.MAX_LICENCE_LENGTH);
+	}
+
+	private static String overlayRefusal(String supplier, String licence, String description, String origin) {
+		return assertThrows(IllegalArgumentException.class, () -> SupportTextBounds.boundedOverlay(
+				new SbomComponentOverlayPatch(supplier, licence, description, origin))).getMessage();
+	}
+
+	@Test
+	void boundedLineIsTheOneLineBoundForNameAndVersion() {
+		assertNull(SupportTextBounds.boundedLine(null, "name", 512));
+		assertEquals("a", SupportTextBounds.boundedLine(" a ", "name", 512));
+		assertEquals("", SupportTextBounds.boundedLine("  ", "name", 512));
+		assertEquals("name is longer than 512 characters", assertThrows(IllegalArgumentException.class,
+				() -> SupportTextBounds.boundedLine("x".repeat(513), "name", 512)).getMessage());
+		for (String refused : List.of("a\nb", "a\tb", "a\u200Bb")) {
+			assertEquals("name holds a control character", assertThrows(IllegalArgumentException.class,
+					() -> SupportTextBounds.boundedLine(refused, "name", 512)).getMessage());
+		}
+		assertEquals("name is required", assertThrows(IllegalArgumentException.class,
+				() -> SupportTextBounds.boundedRequiredName(" ")).getMessage());
+		assertEquals("version must not be blank", assertThrows(IllegalArgumentException.class,
+				() -> SupportTextBounds.boundedNodeVersion(" ")).getMessage());
+		assertNull(SupportTextBounds.boundedNodeVersion(null));
+		assertEquals("supplier is required", assertThrows(IllegalArgumentException.class,
+				() -> SupportTextBounds.boundedRequiredSupplier(" ")).getMessage());
+	}
+
+	@Test
+	void theSupplierContentRulePortsRebomsTwoPatternsOnItsOwnVectors() {
+		for (String address : List.of("Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)",
+				"jane@example.org", "ops@example.com, Ops", "Jane\u00A0jane@example.org")) {
+			assertTrue(SupportTextBounds.holdsAddressToken(address), address);
+		}
+		for (String url : List.of("https://deploy:s3cret@git.example.com/org/repo.git",
+				"https://ghp_abc@github.com/org/repo.git", "ssh://git@ghp_tok@github.com/org/private.git",
+				"registry=https://tok@r.example/x", "see https://u:p@h.example/x for details")) {
+			assertTrue(SupportTextBounds.holdsUrlCredential(url), url);
+		}
+		for (String clean : List.of("Acme Corp", "Acme Corp (https://acme.example)", "left-pad@1.0.0", "@acme/pkg",
+				"ssh://git@github.com/org/repo.git", "git@github.com:org/repo.git", "https://acme.example/?q=a@b",
+				"Jane at vendor dot example", "https://@acme.example/")) {
+			assertFalse(SupportTextBounds.holdsAddressToken(clean), clean);
+			assertFalse(SupportTextBounds.holdsUrlCredential(clean), clean);
+		}
+	}
+
+	@Test
+	void boundedOverlayRefusesASupplierEitherPatternHoldsAndLeavesTheOtherTextsAlone() {
+		String refused = "supplier holds an e-mail address or a URL credential";
+		for (String supplier : List.of("Jane Doe <jane@vendor.example>", "https://u:p@acme.example/")) {
+			assertEquals(refused, overlayRefusal(supplier, null, null, null));
+			assertEquals(refused, assertThrows(IllegalArgumentException.class,
+					() -> SupportTextBounds.boundedRequiredSupplier(supplier)).getMessage());
+			SbomComponentOverlayPatch b = SupportTextBounds.boundedOverlay(
+					new SbomComponentOverlayPatch(null, null, supplier, supplier));
+			assertEquals(supplier, b.description());
+			assertEquals(supplier, b.origin());
 		}
 	}
 

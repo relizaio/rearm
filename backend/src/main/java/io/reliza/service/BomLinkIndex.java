@@ -4,6 +4,7 @@
 
 package io.reliza.service;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -122,6 +123,27 @@ public final class BomLinkIndex {
 			}
 		}
 		return sb.toString();
+	}
+
+	/**
+	 * The exact inverse of {@link #encodeFragment} (FDAW-25 F-32): each %XX becomes one octet, every other
+	 * character stays, "+" included, and the octets read as UTF-8.
+	 */
+	public static String decodeFragment(String s) {
+		ByteArrayOutputStream octets = new ByteArrayOutputStream(s.length());
+		for (int i = 0; i < s.length();) {
+			int hi = i + 2 < s.length() && '%' == s.charAt(i) ? Character.digit(s.charAt(i + 1), 16) : -1;
+			int lo = hi < 0 ? -1 : Character.digit(s.charAt(i + 2), 16);
+			if (lo >= 0) {
+				octets.write(hi << 4 | lo);
+				i += 3;
+			} else {
+				int cp = s.codePointAt(i);
+				octets.writeBytes(Character.toString(cp).getBytes(StandardCharsets.UTF_8));
+				i += Character.charCount(cp);
+			}
+		}
+		return octets.toString(StandardCharsets.UTF_8);
 	}
 
 	private static boolean fragmentSafe(int c) {

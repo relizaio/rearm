@@ -21,6 +21,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -33,6 +34,7 @@ import io.reliza.model.SupportExportState;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SupportAttestationFilter;
 import io.reliza.model.UserData;
+import io.reliza.repositories.SbomComponentOverlayRepository;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.DeviceLifecycleHook;
 import io.reliza.service.GetComponentService;
@@ -81,6 +83,7 @@ class SbomComponentDataFetcherAuthzNullSafetyTest {
 				.thenReturn(Optional.of(mock(UserData.class)));
 
 		fetcher = new SbomComponentDataFetcher();
+		ReflectionTestUtils.setField(fetcher, "sbomComponentOverlayRepository", mock(SbomComponentOverlayRepository.class));
 		inject("authorizationService", authorizationService);
 		inject("userService", userService);
 		inject("sharedReleaseService", sharedReleaseService);

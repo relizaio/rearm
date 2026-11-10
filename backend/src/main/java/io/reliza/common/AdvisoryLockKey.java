@@ -80,7 +80,14 @@ public enum AdvisoryLockKey {
 	 * Its own scheduler lock, not the Dependency-Track tick's: that tick runs minutes of SBOM work
 	 * and a queued publish must not wait behind it.
 	 */
-	TEA_ACT_DRAIN(49);
+	TEA_ACT_DRAIN(49),
+	/**
+	 * Namespace of the per-key transaction lock of every overlay write and vendored component create
+	 * (SbomComponentOverlayService, SbomComponentService.ensureVendoredComponent; task FDAW-15 3.3),
+	 * taken with the two-key form whose second key is the hash of the org and the canonical purl; not a
+	 * scheduler lock. 50 and 51 are FDAW-30's.
+	 */
+	SBOM_COMPONENT_KEY_WRITE(52);
 	
 	private int queryVal;
 	

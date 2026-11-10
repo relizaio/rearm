@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Map;
@@ -23,6 +24,7 @@ import io.reliza.model.SupportInjectionSetting;
 import io.reliza.model.SupportParty;
 import io.reliza.model.SupportSource;
 import io.reliza.model.SupportState;
+import io.reliza.repositories.SbomComponentOverlayRepository;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.repositories.SbomComponentSupportRepository;
 import io.reliza.service.SupportBomInjector.ComponentSupportFacts;
@@ -353,6 +355,25 @@ class ReleaseServiceForgedSupportStripTest {
 			assertFalse(doc.contains("unidentifiedComponents"), "a stripped document carries a count: " + doc);
 			assertFalse(doc.contains("unassessedComponents"), "a stripped document carries a count: " + doc);
 		}
+	}
+
+	/** FDAW-15 row 5: an overlay read that fails costs the overlays, never the strip or the injection. */
+	@Test
+	void aFailedOverlayReadServesTheDocumentSweptAndInjectedWithoutOverlays() throws Exception {
+		ReleaseService svc = serviceServingWithInjection(FORGED_MERGED_BOM, SupportInjectionSetting.ENABLED,
+				"pkg:maven/ex/libforged@1.0.0");
+		SbomComponentOverlayRepository overlays = mock(SbomComponentOverlayRepository.class);
+		when(overlays.findByOrgAndCanonicalPurlIn(any(), any())).thenThrow(new RuntimeException("overlay read down"));
+		ReflectionTestUtils.setField(ReflectionTestUtils.getField(svc, "supportInjectionService"),
+				"sbomComponentOverlayRepository", overlays);
+
+		String served = svc.exportReleaseSbom(UUID.randomUUID(), false, false, null, BomStructureType.FLAT,
+				BomMediaType.JSON, UUID.randomUUID(), WhoUpdated.getAutoWhoUpdated(), null);
+
+		verify(overlays).findByOrgAndCanonicalPurlIn(any(), any());
+		assertFalse(served.contains("vendor says so"), "the sweep did not run: " + served);
+		assertFalse(served.contains("forged-marker"), "the sweep did not run: " + served);
+		assertTrue(served.contains("derived-non-attested-current-state"), "the injection did not run: " + served);
 	}
 
 	@Test
