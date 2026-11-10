@@ -353,6 +353,17 @@ describe('SbomProfileEditor: the four knobs and the built-in fda (FDAW-46 row 22
         }
     })
 
+    it('the selects follow the field order; the four new ones are single and enabled, injection off too (mutation)', async () => {
+        const w = await mountWith(view({ supportInjection: 'DISABLED' }))
+        const order = w.findAllComponents(NSelect).map((s: any) => s.attributes('data-testid'))
+            .filter((t: string) => Object.values(SELECT_TESTIDS).includes(t))
+        expect(order).toEqual(SBOM_PROFILE_FIELDS.map(f => SELECT_TESTIDS[f]))
+        for (const f of ['componentScope', ...SWITCHES]) {
+            expect(select(w, SELECT_TESTIDS[f]).props('multiple'), f).toBe(false)
+            expect(select(w, SELECT_TESTIDS[f]).props('disabled'), f).toBe(false)
+        }
+    })
+
     it.each(SWITCHES)('a stored row with %s INCLUDE pre-fills it, the other two EXCLUDE', async (s) => {
         const w = await mountWith(view({ stored: profile({ [s]: 'INCLUDE' }) }))
         expect(select(w, SELECT_TESTIDS[s]).props('value')).toBe('INCLUDE')

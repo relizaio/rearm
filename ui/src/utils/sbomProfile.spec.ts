@@ -312,6 +312,24 @@ describe('the four knobs on the form and the save (FDAW-46 row 21)', () => {
         }
     })
 
+    it('the four option lists and help texts read exactly as FDAW-19 3.6, in order (mutation)', () => {
+        const pairs = (l: { value: string, label: string }[]) => l.map(o => [o.value, o.label])
+        expect(pairs(SBOM_COMPONENT_SCOPE_OPTIONS)).toEqual([['ALL', 'All components the generators list'],
+            ['RUNTIME_ONLY', 'Runtime only: leave out components with scope optional']])
+        expect(pairs(SBOM_EXCLUDED_SCOPE_OPTIONS)).toEqual([['EXCLUDE', 'Leave out components with scope excluded'],
+            ['INCLUDE', 'Keep components with scope excluded']])
+        expect(pairs(SBOM_PERSONAL_DATA_OPTIONS)).toEqual([['EXCLUDE', 'Remove maintainer e-mails and handles'],
+            ['INCLUDE', 'Keep maintainer e-mails and handles: every reader of this profile\'s documents receives them']])
+        expect(pairs(SBOM_LOCAL_PATHS_OPTIONS)).toEqual([['EXCLUDE', 'Remove local build paths'],
+            ['INCLUDE', 'Keep local build paths']])
+        expect(SBOM_FIELD_HELP.componentScope).toBe('Runtime only leaves out components the SBOM marks scope optional '
+            + '(not needed at runtime) and counts them in the document.')
+        expect(SBOM_FIELD_HELP.excludedScope).toBe('Whether components the generator marked scope excluded stay in published SBOMs.')
+        expect(SBOM_FIELD_HELP.personalData).toBe('Whether maintainer e-mails and handles stay in published SBOMs; kept, '
+            + 'every reader of this profile\'s documents receives them.')
+        expect(SBOM_FIELD_HELP.localPaths).toBe('Whether local build paths stay in published SBOMs.')
+    })
+
     it('a FOLLOW form sends none of the four', () => {
         const sent = sbomProfileInput({ ...sbomBuiltInDefaults(), mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' },
             'COMPONENT')

@@ -104,6 +104,12 @@ describe('the profile label of a named built-in (FDAW-46 row 23)', () => {
         expect(submissionProfileLabel({ name: null, row: null, source: 'DEFAULT' })).toBe(' (built-in defaults)')
     })
 
+    it('a ref naming no stored row reads built-in whatever its source (mutation)', () => {
+        expect(submissionProfileLabel({ name: 'fda', row: null, revision: 0, source: 'ORGANIZATION' })).toBe('fda (built-in)')
+        expect(submissionProfileLabel({ name: 'default', row: null, revision: 0, source: 'ORGANIZATION' }))
+            .toBe('default (built-in defaults)')
+    })
+
     it('a version that applied the built-in fda labels it built-in; the settings label is unchanged', () => {
         const rows = submissionVersionRows({ versions: [version(1, { sbomProfile: { name: 'fda', row: null, revision: 0,
             source: 'DEFAULT', sourceObject: null } })] })

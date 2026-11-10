@@ -135,6 +135,16 @@ describe('SbomProfilesPanel', () => {
         w.unmount()
     })
 
+    it('FDAW-46 row 23: the recipe columns follow the editor field order (mutation)', async () => {
+        const w = await mountPanel()
+        const headers = w.find('[data-testid="sbom-profile-rows"]').findAll('thead th').map((th: any) => th.text())
+        const from = headers.indexOf('Dependency depth')
+        expect(headers.slice(from, from + 10)).toEqual(['Dependency depth', 'Component scope', 'Structure', 'Sources',
+            'Excluded coverage', 'Support metadata', 'Internal metadata', 'Excluded-scope components', 'Personal data',
+            'Local build paths'])
+        w.unmount()
+    })
+
     it('names the profiles of components, an archived one read once and tagged', async () => {
         const w = await mountPanel()
         const other = w.find('[data-testid="sbom-other-rows"]')
