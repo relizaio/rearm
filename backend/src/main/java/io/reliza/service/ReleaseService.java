@@ -1418,7 +1418,7 @@ public class ReleaseService {
 	 * a merge source: should one sit in an inventory list, it is dropped with a WARN rather than merged
 	 * into its own successor.
 	 */
-	private List<ArtifactData> bomArtifactsOf(ReleaseData rd, java.util.stream.Stream<UUID> artifactUuids,
+	private List<ArtifactData> bomArtifactsOf(ReleaseData rd, Stream<UUID> artifactUuids,
 			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
 		Set<UUID> ids = new HashSet<>();
 		return artifactUuids

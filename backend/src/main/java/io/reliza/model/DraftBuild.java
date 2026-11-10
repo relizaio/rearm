@@ -24,12 +24,4 @@ public record DraftBuild(ZonedDateTime builtAt, DraftActor requestedBy, String i
 		List<DraftPart> parts, SbomProfileRef sbomProfile, PackageSettingsRef settings,
 		List<String> vendoredKeys) implements Serializable {
 
-	/** The build without {@code vendoredKeys} (FDAW-29's shape), which it leaves null. */
-	public DraftBuild(ZonedDateTime builtAt, DraftActor requestedBy, String inputsFingerprint,
-			List<String> fingerprintLines, List<UUID> closure, List<String> componentKeys,
-			List<DraftComponentRef> componentRefs, ReleaseSbomRef releaseSbom, boolean releaseSbomNeedsBind,
-			List<DraftPart> parts, SbomProfileRef sbomProfile, PackageSettingsRef settings) {
-		this(builtAt, requestedBy, inputsFingerprint, fingerprintLines, closure, componentKeys, componentRefs,
-				releaseSbom, releaseSbomNeedsBind, parts, sbomProfile, settings, null);
-	}
 }
