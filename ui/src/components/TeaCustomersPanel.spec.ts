@@ -494,6 +494,21 @@ describe('TeaCustomersPanel save outcomes (FDAW-40 mutation)', () => {
         await click(w, 'customer-restore')
         expect(notify).toHaveBeenLastCalledWith('error', 'Error', 'Not authorized')
     })
+
+    it('a refused deactivate is shown, does not reload, and actions are taken again', async () => {
+        answer([ACME])
+        mutate.mockRejectedValue(refusal('Not authorized'))
+        const { w, notify } = await open()
+        await click(w, 'customer-deactivate')
+        await dialogWarning.mock.calls[0][0].onPositiveClick()
+        await flushPromises()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(notify).toHaveBeenCalledTimes(1)
+        expect(notify).toHaveBeenCalledWith('error', 'Error', 'Not authorized')
+        expect(groupCalls()).toHaveLength(1)
+        await click(w, 'customer-deactivate')
+        expect(dialogWarning).toHaveBeenCalledTimes(2)
+    })
 })
 
 describe('TeaCustomersPanel while a save is in flight (FDAW-40 mutation)', () => {
