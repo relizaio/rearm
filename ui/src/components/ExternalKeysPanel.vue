@@ -116,7 +116,11 @@ async function reload () {
     await loadCustomerGroups()
 }
 
-/** The CUSTOMER groups, after the keys: a failure here is notified and leaves the keys shown. */
+/**
+ * The CUSTOMER groups, after the keys: a failure here is notified and leaves the keys shown. The
+ * column hides until a load succeeds again, so an empty list after a failure never reads as "no key
+ * has a customer".
+ */
 async function loadCustomerGroups () {
     try {
         const r = await loadApiKeyGroups(graphqlClient, props.orgUuid, 'CUSTOMER')
@@ -125,6 +129,7 @@ async function loadCustomerGroups () {
     } catch (e: any) {
         console.error(e)
         customerGroups.value = []
+        customersSupported.value = false
         fail(e)
     }
 }
