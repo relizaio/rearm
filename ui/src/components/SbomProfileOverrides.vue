@@ -97,10 +97,10 @@ const columns = computed(() => [
         render: (r: any) => r.status === 'CONFLICT'
             ? h('span', {}, [
                 h(NTag, { size: 'small', type: 'warning', 'data-testid': 'sbom-conflict-tag' }, () => 'conflict'),
-                ' ', sbomEffectiveLine(r.resolution, allNames.value),
+                ' ', sbomEffectiveLine(r.resolution, allNames.value, r.name),
                 h('div', { class: 'text-muted' }, 'Choose Override here, or Follow one of the perspectives.'),
             ])
-            : sbomEffectiveLine(r.resolution, allNames.value),
+            : sbomEffectiveLine(r.resolution, allNames.value, r.name),
     },
     {
         key: 'storedHere',

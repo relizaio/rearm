@@ -35,11 +35,11 @@ const CATALOG = [
 ]
 const STORED = [{ name: 'mine', scope: 'COMPONENT', object: 'c1', revision: 0 }]
 
-function answers () {
+function answers (catalog: any[] = CATALOG) {
     query.mockImplementation(async (opts: any) => {
         const op = operation(opts)
         log.push(op)
-        if (op === 'SbomProfileCatalog') return { data: { sbomProfileCatalog: CATALOG } }
+        if (op === 'SbomProfileCatalog') return { data: { sbomProfileCatalog: catalog } }
         if (op === 'SbomProfiles') return { data: { sbomProfiles: STORED } }
         throw new Error('unexpected query ' + op)
     })
@@ -88,6 +88,15 @@ describe('SbomProfileOverrides', () => {
         expect(rowOf(w, 'top').text()).toContain('Choose Override here, or Follow')
         expect(rowOf(w, 'mine').find('[data-testid="sbom-remove-override"]').exists()).toBe(true)
         expect(rowOf(w, 'default').find('[data-testid="sbom-remove-override"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('FDAW-46 row 23: an fda resolved from the built-in reads Effective here: built-in', async () => {
+        answers([...CATALOG, { name: 'fda', resolution: { status: 'RESOLVED', source: 'DEFAULT', sourceObject: null,
+            profile: { name: 'fda', revision: 0 }, conflictingPerspectives: [] } }])
+        const { w } = await mountOverrides()
+        expect(rowOf(w, 'fda').findAll('td')[1].text()).toBe('Effective here: built-in')
+        expect(rowOf(w, 'default').findAll('td')[1].text()).toBe('Effective here: organization, revision 2')
         w.unmount()
     })
 

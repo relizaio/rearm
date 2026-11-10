@@ -27,9 +27,9 @@ export const SBOM_DEPENDENCY_DEPTH_OPTIONS: Option[] = [
     opt('TOP_LEVEL_ONLY', 'Top-level dependencies only'),
 ]
 
-export const SBOM_OPTIONAL_DEPENDENCIES_OPTIONS: Option[] = [
-    opt('INCLUDE', 'Include optional (dev) dependencies'),
-    opt('EXCLUDE', 'Exclude optional (dev) dependencies'),
+export const SBOM_COMPONENT_SCOPE_OPTIONS: Option[] = [
+    opt('ALL', 'All components the generators list'),
+    opt('RUNTIME_ONLY', 'Runtime only: leave out components with scope optional'),
 ]
 
 export const SBOM_STRUCTURE_OPTIONS: Option[] = [
@@ -59,6 +59,21 @@ export const SBOM_INTERNAL_METADATA_OPTIONS: Option[] = [
     opt('EXCLUDE', 'Exclude internal metadata'),
 ]
 
+export const SBOM_EXCLUDED_SCOPE_OPTIONS: Option[] = [
+    opt('EXCLUDE', 'Leave out components with scope excluded'),
+    opt('INCLUDE', 'Keep components with scope excluded'),
+]
+
+export const SBOM_PERSONAL_DATA_OPTIONS: Option[] = [
+    opt('EXCLUDE', 'Remove maintainer e-mails and handles'),
+    opt('INCLUDE', 'Keep maintainer e-mails and handles: every reader of this profile\'s documents receives them'),
+]
+
+export const SBOM_LOCAL_PATHS_OPTIONS: Option[] = [
+    opt('EXCLUDE', 'Remove local build paths'),
+    opt('INCLUDE', 'Keep local build paths'),
+]
+
 export const SBOM_VULNERABILITY_DOCUMENTS_OPTIONS: Option[] = [
     opt('NONE', 'None (reserved)'),
 ]
@@ -70,18 +85,24 @@ export const SBOM_FIELD_HELP: Record<string, string> = {
     description: 'Shown in the catalog only; at most 1024 characters.',
     mode: 'Override defines the name at this component; Follow takes one perspective\'s definition.',
     dependencyDepth: 'Whether published SBOMs carry the whole dependency tree or only top-level dependencies.',
-    optionalDependencies: 'Whether optional (development) dependencies stay in published SBOMs.',
+    componentScope: 'Runtime only leaves out components the SBOM marks scope optional (not needed at runtime) and '
+        + 'counts them in the document.',
     structure: 'The shape of the merged SBOM.',
     sources: 'Which SBOMs of a release are merged into what is published.',
     excludedCoverage: 'SBOMs of these coverage types are left out.',
     supportMetadata: 'Support facts woven into published SBOMs; needs the organization support injection.',
     internalMetadata: 'ReARM-internal metadata in published SBOMs.',
+    excludedScope: 'Whether components the generator marked scope excluded stay in published SBOMs.',
+    personalData: 'Whether maintainer e-mails and handles stay in published SBOMs; kept, every reader of this '
+        + 'profile\'s documents receives them.',
+    localPaths: 'Whether local build paths stay in published SBOMs.',
     vulnerabilityDocuments: 'Reserved for a later release.',
 }
 
 /** The recipe fields a save sends, in the order the editor shows them. */
-export const SBOM_PROFILE_FIELDS = ['dependencyDepth', 'optionalDependencies', 'structure', 'sources',
-    'excludedCoverage', 'supportMetadata', 'internalMetadata', 'vulnerabilityDocuments'] as const
+export const SBOM_PROFILE_FIELDS = ['dependencyDepth', 'componentScope', 'structure', 'sources',
+    'excludedCoverage', 'supportMetadata', 'internalMetadata', 'excludedScope', 'personalData', 'localPaths',
+    'vulnerabilityDocuments'] as const
 
 /** The server's NAME_PATTERN (SbomProfileData). */
 export const SBOM_PROFILE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
@@ -94,12 +115,15 @@ export interface SbomProfileForm {
     followedPerspective: string | null
     description: string
     dependencyDepth: string
-    optionalDependencies: string
+    componentScope: string
     structure: string
     sources: string[]
     excludedCoverage: string[]
     supportMetadata: string
     internalMetadata: string
+    excludedScope: string
+    personalData: string
+    localPaths: string
     vulnerabilityDocuments: string
 }
 
@@ -127,12 +151,15 @@ export function sbomBuiltInDefaults (): SbomProfileForm {
         followedPerspective: null,
         description: '',
         dependencyDepth: 'FULL',
-        optionalDependencies: 'INCLUDE',
+        componentScope: 'ALL',
         structure: 'FLAT',
         sources: ['DELIVERABLE', 'RELEASE', 'SOURCE_CODE'],
         excludedCoverage: ['DEV', 'TEST'],
         supportMetadata: 'EXCLUDE',
         internalMetadata: 'EXCLUDE',
+        excludedScope: 'EXCLUDE',
+        personalData: 'EXCLUDE',
+        localPaths: 'EXCLUDE',
         vulnerabilityDocuments: 'NONE',
     }
 }
@@ -175,6 +202,24 @@ export function sbomFormFromView (view: SbomEditorView | null | undefined, scope
 }
 
 /**
+ * Whether the editor offers a reset (at organization scope): for `default`, and for any name whose
+ * parent resolution is a built-in (the server's `fda`).
+ */
+export function sbomResetAvailable (view: SbomEditorView | null | undefined, name: string | null | undefined): boolean {
+    return name === SBOM_DEFAULT_NAME || view?.parent?.source === 'DEFAULT'
+}
+
+/** The recipe a reset brings back: the built-in parent's profile, else the built-in defaults. */
+export function sbomResetRecipe (view: SbomEditorView | null | undefined): Pick<SbomProfileForm, typeof SBOM_PROFILE_FIELDS[number]> {
+    return view?.parent?.source === 'DEFAULT' ? recipeOf(view.parent.profile) : recipeOf(null)
+}
+
+/** The reset button's text: which built-in it resets to. */
+export function sbomResetLabel (name: string | null | undefined): string {
+    return name === SBOM_DEFAULT_NAME ? 'Reset to built-in defaults' : 'Reset to the built-in ' + name + ' recipe'
+}
+
+/**
  * The component's perspectives that define the view's name, read off its parent resolution: at
  * COMPONENT scope the parent is the perspective step and below with no fallback, so one defining
  * perspective resolves with source PERSPECTIVE and that perspective as its object, more than one is a
@@ -208,15 +253,20 @@ export function sbomProfileInput (form: SbomProfileForm, scope: SbomScope): Reco
     return out
 }
 
-/** How a resolution's source reads; the built-in defaults for DEFAULT and for none. */
+/**
+ * How a resolution's source reads; the built-in defaults for DEFAULT and for none. A DEFAULT
+ * resolution of a named built-in other than `default` (the server's `fda`) reads built-in.
+ */
 export function sbomSourceLabel (source: string | null | undefined, sourceObject: string | null | undefined,
-    names: Record<string, string> = {}): string {
+    names: Record<string, string> = {}, name?: string | null): string {
+    if (source === 'DEFAULT' && name && name !== SBOM_DEFAULT_NAME) return 'built-in'
     return teaSourceLabel(source, sourceObject, names)
 }
 
 /** "<source label>, revision <n>"; the built-in defaults carry no revision. */
-function sourceWithRevision (r: SbomResolution, revision: number | null | undefined, names: Record<string, string>): string {
-    const label = sbomSourceLabel(r.source, r.sourceObject, names)
+function sourceWithRevision (r: SbomResolution, revision: number | null | undefined, names: Record<string, string>,
+    name?: string | null): string {
+    const label = sbomSourceLabel(r.source, r.sourceObject, names, name)
     if (!r.source || r.source === 'DEFAULT' || revision == null) return label
     return label + ', revision ' + revision
 }
@@ -238,18 +288,19 @@ export function sbomSourceLine (view: SbomEditorView | null | undefined, names: 
         return 'Conflict: the perspectives ' + conflictNames(parent, names) + ' each define ' + name
             + '; choose Override or Follow here'
     }
-    return 'No override: pre-filled from ' + sourceWithRevision(parent, parent.profile?.revision, names)
+    return 'No override: pre-filled from ' + sourceWithRevision(parent, parent.profile?.revision, names, name)
 }
 
 /** The resolver's effective view of a name at a scope, as one line. */
-export function sbomEffectiveLine (resolution: SbomResolution | null | undefined, names: Record<string, string> = {}): string {
+export function sbomEffectiveLine (resolution: SbomResolution | null | undefined, names: Record<string, string> = {},
+    name?: string | null): string {
     if (!resolution) return ''
     if (resolution.status === 'CONFLICT') {
         return 'Effective here: conflict between perspectives ' + conflictNames(resolution, names)
             + '; a publish naming this profile is refused'
     }
     if (resolution.status === 'NOT_FOUND') return 'Effective here: not found; a publish naming this profile is refused'
-    return 'Effective here: ' + sourceWithRevision(resolution, resolution.profile?.revision, names)
+    return 'Effective here: ' + sourceWithRevision(resolution, resolution.profile?.revision, names, name)
 }
 
 export interface SbomCatalogRow {
@@ -281,7 +332,7 @@ export function sbomCatalogRows (entries: any[] | null | undefined, storedRows: 
             name: e.name,
             status: r.status ?? null,
             source: r.source ?? null,
-            sourceLabel: sbomSourceLabel(r.source, r.sourceObject, names),
+            sourceLabel: sbomSourceLabel(r.source, r.sourceObject, names, e.name),
             revision: r.profile?.revision ?? null,
             storedHere: stored.has(e.name),
             profile: r.profile ?? null,
@@ -330,9 +381,9 @@ export function sbomPickerOptions (entries: any[] | null | undefined, selected: 
             out.push({ label: e.name + ' (not found)', value: e.name, title: sbomNotFoundWarning(e.name) })
         } else {
             const rev = r.profile?.revision
-            const label = sbomSourceLabel(r.source, r.sourceObject, names)
+            const label = sbomSourceLabel(r.source, r.sourceObject, names, e.name)
                 + (r.source && r.source !== 'DEFAULT' && rev != null ? ', r' + rev : '')
-            out.push({ label: e.name + ' (' + label + ')', value: e.name, title: sbomEffectiveLine(r, names) })
+            out.push({ label: e.name + ' (' + label + ')', value: e.name, title: sbomEffectiveLine(r, names, e.name) })
         }
     }
     for (const name of selected ?? []) {
@@ -355,12 +406,12 @@ export function sbomPickerLines (entries: any[] | null | undefined, selected: st
         if (!e) return { name, text: name + ': Not found at this scope: drop it or define it', danger: true }
         const r: SbomResolution = e.resolution ?? {}
         if (r.status === 'CONFLICT') {
-            return { name, text: name + ': ' + sbomEffectiveLine(r, names) + '. ' + sbomConflictWarning(name, r, names), danger: true }
+            return { name, text: name + ': ' + sbomEffectiveLine(r, names, name) + '. ' + sbomConflictWarning(name, r, names), danger: true }
         }
         if (r.status === 'NOT_FOUND') {
-            return { name, text: name + ': ' + sbomEffectiveLine(r, names) + '. ' + sbomNotFoundWarning(name), danger: true }
+            return { name, text: name + ': ' + sbomEffectiveLine(r, names, name) + '. ' + sbomNotFoundWarning(name), danger: true }
         }
-        return { name, text: name + ': ' + sbomEffectiveLine(r, names), danger: false }
+        return { name, text: name + ': ' + sbomEffectiveLine(r, names, name), danger: false }
     })
 }
 
@@ -416,12 +467,15 @@ export function sbomScopeWord (scope: SbomScope, objectIsProduct = false): strin
 
 const FIELD_OPTIONS: Record<string, Option[]> = {
     dependencyDepth: SBOM_DEPENDENCY_DEPTH_OPTIONS,
-    optionalDependencies: SBOM_OPTIONAL_DEPENDENCIES_OPTIONS,
+    componentScope: SBOM_COMPONENT_SCOPE_OPTIONS,
     structure: SBOM_STRUCTURE_OPTIONS,
     sources: SBOM_SOURCES_OPTIONS,
     excludedCoverage: SBOM_EXCLUDED_COVERAGE_OPTIONS,
     supportMetadata: SBOM_SUPPORT_METADATA_OPTIONS,
     internalMetadata: SBOM_INTERNAL_METADATA_OPTIONS,
+    excludedScope: SBOM_EXCLUDED_SCOPE_OPTIONS,
+    personalData: SBOM_PERSONAL_DATA_OPTIONS,
+    localPaths: SBOM_LOCAL_PATHS_OPTIONS,
     vulnerabilityDocuments: SBOM_VULNERABILITY_DOCUMENTS_OPTIONS,
 }
 

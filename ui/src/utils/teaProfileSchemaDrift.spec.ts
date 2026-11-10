@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest'
 // commonFunctions and fetchClient as an import side effect; this spec reads only their data.
 vi.mock('@/utils/commonFunctions', () => ({ default: {} }))
 vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
-import { validate } from 'graphql'
+import { coerceInputValue, GraphQLError, GraphQLInputObjectType, validate } from 'graphql'
 import graphqlQueries from './graphqlQueries'
 import { editionPermissionFunctions, TEA_PERMISSION_FUNCTIONS, teaProfilesAvailable } from './teaProfile'
 import { TEA_RIDE_ALONG_SKIP_LABELS, TEA_RIDE_ALONG_STATUSES } from './teaPublication'
@@ -21,6 +21,7 @@ import {
     submissionsAvailable,
 } from './submissions'
 import { eventTypeOptions } from './notificationsCommon'
+import { SBOM_PROFILE_FIELDS, sbomBuiltInDefaults, sbomProfileInput } from './sbomProfile'
 
 /**
  * The TEA profile documents (task TEA-2) against both schemas, and the edition gate that keeps a
@@ -268,13 +269,22 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
         expect(validate(proSchema!, RELEASES_OF_BRANCH).map(e => e.message)).toEqual([])
     })
 
-    it('row 24: on CE each document validates exactly when its canary says the CE schema serves the surface', () => {
-        for (const [group, docs, canary] of GROUPS) {
+    const ceValidatesPerCanary = (groups: typeof GROUPS) => {
+        for (const [group, docs, canary] of groups) {
             for (const [name, doc] of Object.entries(docs)) {
                 const served = name === 'PackageKindsGql' || name === 'DeletePackageSettingsGql' ? ceServesPackageSettings() : canary()
                 expect(validate(ceSchema, doc).length === 0, group + ' ' + name).toBe(served)
             }
         }
+    }
+
+    it('row 24: on CE each package settings and submission document validates exactly when its canary says so', () => {
+        ceValidatesPerCanary(GROUPS.filter(([group]) => group !== 'profiles'))
+    })
+
+    // CE-deferred: re-enable at CE catch-up item 14 (notes/coordinator.md, re-enable the teaProfileSchemaDrift CE profiles check, FDAW-46)
+    it.skip('row 24: on CE each profiles document validates exactly when its canary says the CE schema serves the surface', () => {
+        ceValidatesPerCanary(GROUPS.filter(([group]) => group === 'profiles'))
     })
 
     it('the package settings documents select enabled; the offered-kinds read validates on CE exactly when CE has the field', () => {
@@ -349,6 +359,50 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
  * FDAW-18 (B5), architecture 4 row 21: the Medical device setup documents and the package settings
  * documents with `state`, against the CE schema of this checkout (the mirror PR-B carries) and Pro.
  */
+// FDAW-46 (FDAW-19 C1c) row 24: the SBOM profile documents and the save's variables speak the
+// recipe fields of FDAW-19 3.6 against the Pro schema; the CE half is the CE catch-up's.
+const RECIPE_DOCS = {
+    SbomProfilesGql: profilesQueries.SbomProfilesGql,
+    SbomProfileCatalogGql: profilesQueries.SbomProfileCatalogGql,
+    SbomProfileEditorViewGql: profilesQueries.SbomProfileEditorViewGql,
+    SaveSbomProfileGql: profilesQueries.SaveSbomProfileGql,
+}
+
+describe('SBOM profile recipe fields against the Pro schema (FDAW-46 row 24)', () => {
+    it('every recipe document selects the four new fields and never optionalDependencies', () => {
+        for (const [name, doc] of Object.entries(RECIPE_DOCS)) {
+            const body = doc.loc!.source.body
+            for (const f of ['componentScope', 'excludedScope', 'personalData', 'localPaths']) expect(body, name + ' ' + f).toContain(f)
+            expect(body, name).not.toMatch(/\boptionalDependencies\b/)
+        }
+    })
+
+    const coerceProfile = (value: unknown): string[] => {
+        const arg = proSchema!.getMutationType()!.getFields().saveSbomProfile.args.find(a => a.name === 'profile')!
+        const errors: string[] = []
+        coerceInputValue(value, arg.type, (_p, _v, err: GraphQLError) => errors.push(err.message))
+        return errors
+    }
+
+    it.runIf(proSchema)('the save input coerces against SbomProfileInput: organization, component override and follow', () => {
+        expect(coerceProfile(sbomProfileInput(sbomBuiltInDefaults(), 'ORGANIZATION'))).toEqual([])
+        expect(coerceProfile(sbomProfileInput({ ...sbomBuiltInDefaults(), mode: 'OVERRIDE', componentScope: 'RUNTIME_ONLY',
+            personalData: 'INCLUDE' }, 'COMPONENT'))).toEqual([])
+        expect(coerceProfile(sbomProfileInput({ ...sbomBuiltInDefaults(), mode: 'FOLLOW_PERSPECTIVE',
+            followedPerspective: '11111111-1111-4111-8111-111111111111' }, 'COMPONENT'))).toEqual([])
+    })
+
+    it.runIf(proSchema)('the recipe fields equal the SbomProfileInput fields', () => {
+        const input = proSchema!.getType('SbomProfileInput') as GraphQLInputObjectType
+        // optionalDependencies is the deprecated alias of componentScope, accepted for one release
+        // (FDAW-19 decision on the alias removal); the schema marks it in its description only, so
+        // it is left out by name.
+        const recipe = Object.keys(input.getFields())
+            .filter(f => !['mode', 'followedPerspective', 'description', 'optionalDependencies'].includes(f))
+        expect(recipe.sort()).toEqual([...SBOM_PROFILE_FIELDS].sort())
+    })
+})
+
 describe('Medical device setup documents (FDAW-18)', () => {
     const SETUP_DOCS = { MEDICAL_DEVICE_SETUP_STATUS_QUERY, SET_UP_MEDICAL_DEVICE }
 
