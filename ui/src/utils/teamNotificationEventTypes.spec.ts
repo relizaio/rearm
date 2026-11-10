@@ -169,6 +169,18 @@ describe('board events are not team events (82880ea6)', () => {
     })
 })
 
+describe('license seat events are not team events (TPF-168)', () => {
+    it('never offers LICENSE_SEAT_EVENT to an ownership-scoped subscription: it names no component', async () => {
+        const { ownedComponentEventTypes, EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS } = await import('./teamNotificationEventTypes')
+        expect(EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS.has('LICENSE_SEAT_EVENT')).toBe(true)
+        const offered = ownedComponentEventTypes([
+            { label: 'License seats', value: 'LICENSE_SEAT_EVENT', proOnly: true },
+            { label: 'Release created', value: 'RELEASE_CREATED' },
+        ]).map(o => o.value)
+        expect(offered).toEqual(['RELEASE_CREATED'])
+    })
+})
+
 describe('Pro-only team events (TEA-5)', () => {
     it('offers the TEA publication events on Pro and drops them on CE, whose schema has no such value', async () => {
         const { ownedComponentEventTypes } = await import('./teamNotificationEventTypes')

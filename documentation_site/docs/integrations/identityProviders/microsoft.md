@@ -60,6 +60,8 @@ and save the manifest.
 
 9. In the Entra admin center or in the Azure portal, navigate to the `Enterprise applications` section, and find the application you just created. Click on it. Open `Users and groups` from the menu on the left and assign users to roles as desired via clicking `Add user/group`.
 
+10. Still in the enterprise application, open `Properties` from the menu on the left, set `Assignment required?` to `Yes` and save. This is Microsoft's own setting: with it, only the users and groups assigned to the application in step 9 can sign in, and everyone else in your tenant is stopped by Microsoft before reaching ReARM. Without it, any user of your tenant can sign in and, depending on the ReARM setting described under [Configure Client Group Mapper](#rearm-part-configure-client-group-mapper), is either refused by ReARM or gets an account with no role.
+
 ## ReARM Part - Configure Keycloak Groups
 1. Login to Keycloak with your administrative account by adding /kauth path to your ReARM URI.
 2. In Keycloak, select Reliza realm.
@@ -95,6 +97,8 @@ and save the manifest.
 7. Use `groups` as Name and as `Token claim name`.
 8. Toggle all selectors to On except `Full group path`.
 9. Click `Save`.
+
+ReARM reads this `groups` claim at sign-in and adds the user to every ReARM user group connected to one of the claimed groups (configured in the next section). When a user signs in for the first time and their claim matches no connected user group of the default organization, and they hold no pending invitation, ReARM Pro follows the default organization's **SSO users without a role** setting (Organization Settings > Admin Settings > General). The default, **Refuse sign-in**, creates no account and shows the user a message that no ReARM role is assigned (reference `NO-ROLE`); **Create account without a role** creates the account with permission `None`. See [License Seats](/configure/license-seats.md#sso-users-without-a-role).
 
 ## ReARM Part - Configure Keycloak Group Mapping to ReARM application
 1. Log in to ReARM as administrative user

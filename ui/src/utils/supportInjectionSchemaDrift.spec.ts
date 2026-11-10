@@ -19,22 +19,21 @@ const errorsAgainst = (schema: GraphQLSchema, doc: any) =>
 
 describe('the organizations query survives a backend without supportInjection', () => {
     /**
-     * THE ONE THAT MATTERS. Every page derives myorg from this query, so a document CE cannot
-     * answer takes the whole app down -- not just the setting. CORE is what the fallback
-     * serves, and it must be answerable by the mirror as it stands today.
+     * Every page derives myorg from this query, so a document the backend cannot answer takes the
+     * whole app down. Both documents select Settings.ssoUsersWithoutRole (TPF-168, license seats),
+     * a Pro field the CE mirror does not declare yet: the operator rule of 2026-11-01 accepts that
+     * drift until the CE sync (UI work targets the Pro schema, no fallback). What these two rows
+     * still guard is that nothing ELSE in either document is unknown to CE, so the CE sync of that
+     * one field is all the mirror needs.
      */
-    it('CORE is valid against the CE schema, so the app never blanks', () => {
-        expect(errorsAgainst(ceSchema, ORGANIZATIONS_CORE)).toEqual([])
+    const CE_ACCEPTED_DRIFT = ['Cannot query field "ssoUsersWithoutRole" on type "Settings".']
+
+    it('CORE is valid against the CE schema except the accepted ssoUsersWithoutRole drift', () => {
+        expect(errorsAgainst(ceSchema, ORGANIZATIONS_CORE)).toEqual(CE_ACCEPTED_DRIFT)
     })
 
-    /**
-     * NOTE: this used to assert FULL was still ahead of CE. The 2026-09 CE sync (#368) brought
-     * supportInjection over, so that canary was retired. The fallback stays for a backend
-     * without the field (in practice a Pro build older than it); with FULL valid on both
-     * schemas, what keeps it honest is that CORE still leaves the field out.
-     */
-    it('FULL is valid against the CE schema too', () => {
-        expect(errorsAgainst(ceSchema, ORGANIZATIONS_FULL)).toEqual([])
+    it('FULL is valid against the CE schema except the accepted ssoUsersWithoutRole drift', () => {
+        expect(errorsAgainst(ceSchema, ORGANIZATIONS_FULL)).toEqual(CE_ACCEPTED_DRIFT)
     })
 
     it('only FULL selects supportInjection', () => {

@@ -12,10 +12,8 @@
                     <p><strong>Base URI:</strong> {{ licenseData.baseUri }}</p>
                     <p><strong>Valid From:</strong> {{ formatDate(licenseData.validFrom) }}</p>
                     <p><strong>Valid To:</strong> {{ formatDate(licenseData.validTo) }}</p>
-                    <p><strong>Write Users:</strong> {{ licenseData.globalUserCounts?.writeUsers || 0 }} / {{ licenseData.maxWriteUsers }}</p>
-                    <p><strong>Read Users:</strong> {{ licenseData.globalUserCounts?.readUsers || 0 }}</p>
-                    <p><strong>Total Users:</strong> {{ licenseData.globalUserCounts?.totalUsers || 0 }} / {{ (licenseData.maxWriteUsers || 0) + (licenseData.maxReadUsers || 0) }}</p>
                     <n-button type="warning" @click="showLicenseModal = true">Update License</n-button>
+                    <LicenseSeatUsers ref="seatUsers" />
                 </div>
                 <div v-else>
                     <p>No valid license found.</p>
@@ -132,6 +130,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
 import TeaDomainAssignments from './TeaDomainAssignments.vue'
+import LicenseSeatUsers from './LicenseSeatUsers.vue'
 
 
 const store = useStore()
@@ -143,6 +142,8 @@ onMounted(async () => {
 const systemInfoIsSet: Ref<any> = ref({})
 const defaultOrganization = ref('')
 const licenseData: Ref<any> = ref(null)
+// The instance seat figures live only in the seat view's counts header (TPF-166 D2); reloaded after an upload.
+const seatUsers = ref<InstanceType<typeof LicenseSeatUsers> | null>(null)
 const showLicenseModal: Ref<boolean> = ref(false)
 const licenseString: Ref<string> = ref('')
 
@@ -177,13 +178,6 @@ async function initLoad() {
                         baseUri
                         validFrom
                         validTo
-                        maxWriteUsers
-                        maxReadUsers
-                        globalUserCounts {
-                            writeUsers
-                            readUsers
-                            totalUsers
-                        }
                     }
                 }
                 `,
@@ -207,13 +201,6 @@ async function uploadLicense() {
                         baseUri
                         validFrom
                         validTo
-                        maxWriteUsers
-                        maxReadUsers
-                        globalUserCounts {
-                            writeUsers
-                            readUsers
-                            totalUsers
-                        }
                     }
                 }`,
             variables: {
@@ -221,6 +208,8 @@ async function uploadLicense() {
             }
         })
         licenseData.value = resp.data.uploadLicense
+        // the seat view's header is the page's only copy of the instance figures: re-count it now (its Refresh path)
+        await seatUsers.value?.reload()
         showLicenseModal.value = false
         licenseString.value = ''
         Swal.fire('Success!', 'License uploaded successfully.', 'success')
