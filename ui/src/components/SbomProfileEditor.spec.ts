@@ -7,7 +7,7 @@
 // text in the object form of SweetAlert2. The GraphQL client and Swal are mocked.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { NSelect } from 'naive-ui'
+import { NFormItem, NSelect } from 'naive-ui'
 
 const query = vi.fn()
 const mutate = vi.fn()
@@ -17,7 +17,12 @@ vi.mock('sweetalert2', () => ({ default: { fire: (...a: any[]) => fire(...a) } }
 
 const { default: Editor } = await import('./SbomProfileEditor.vue')
 const { default: FieldLabel } = await import('./FieldLabel.vue')
-const { SBOM_FIELD_HELP, SBOM_PROFILE_FIELDS, sbomBuiltInDefaults, sbomProfileInput } = await import('@/utils/sbomProfile')
+const {
+    SBOM_COMPONENT_SCOPE_OPTIONS, SBOM_DEPENDENCY_DEPTH_OPTIONS, SBOM_EXCLUDED_COVERAGE_OPTIONS, SBOM_EXCLUDED_SCOPE_OPTIONS,
+    SBOM_FIELD_HELP, SBOM_INTERNAL_METADATA_OPTIONS, SBOM_LOCAL_PATHS_OPTIONS, SBOM_PERSONAL_DATA_OPTIONS,
+    SBOM_PROFILE_FIELDS, SBOM_SOURCES_OPTIONS, SBOM_STRUCTURE_OPTIONS, SBOM_SUPPORT_METADATA_OPTIONS,
+    SBOM_VULNERABILITY_DOCUMENTS_OPTIONS, sbomBuiltInDefaults, sbomProfileInput,
+} = await import('@/utils/sbomProfile')
 
 const P1 = { uuid: 'p1', name: 'Payments', type: 'PERSPECTIVE' }
 const P2 = { uuid: 'p2', name: 'Retail', type: 'PERSPECTIVE' }
@@ -45,9 +50,26 @@ const select = (w: any, testid: string) =>
     w.findAllComponents(NSelect).find((s: any) => s.attributes('data-testid') === testid)
 
 const SELECT_TESTIDS: Record<string, string> = {
-    dependencyDepth: 'sbom-dependency-depth', optionalDependencies: 'sbom-optional-dependencies', structure: 'sbom-structure',
+    dependencyDepth: 'sbom-dependency-depth', componentScope: 'sbom-component-scope', structure: 'sbom-structure',
     sources: 'sbom-sources', excludedCoverage: 'sbom-excluded-coverage', supportMetadata: 'sbom-support-metadata',
-    internalMetadata: 'sbom-internal-metadata', vulnerabilityDocuments: 'sbom-vulnerability-documents',
+    internalMetadata: 'sbom-internal-metadata', excludedScope: 'sbom-excluded-scope', personalData: 'sbom-personal-data',
+    localPaths: 'sbom-local-paths', vulnerabilityDocuments: 'sbom-vulnerability-documents',
+}
+
+const SELECT_OPTIONS: Record<string, { value: string }[]> = {
+    dependencyDepth: SBOM_DEPENDENCY_DEPTH_OPTIONS, componentScope: SBOM_COMPONENT_SCOPE_OPTIONS,
+    structure: SBOM_STRUCTURE_OPTIONS, sources: SBOM_SOURCES_OPTIONS, excludedCoverage: SBOM_EXCLUDED_COVERAGE_OPTIONS,
+    supportMetadata: SBOM_SUPPORT_METADATA_OPTIONS, internalMetadata: SBOM_INTERNAL_METADATA_OPTIONS,
+    excludedScope: SBOM_EXCLUDED_SCOPE_OPTIONS, personalData: SBOM_PERSONAL_DATA_OPTIONS, localPaths: SBOM_LOCAL_PATHS_OPTIONS,
+    vulnerabilityDocuments: SBOM_VULNERABILITY_DOCUMENTS_OPTIONS,
+}
+
+// FDAW-46 row 22: the label each field's form item shows (architecture 3.3), literal on purpose.
+const SELECT_LABELS: Record<string, string> = {
+    dependencyDepth: 'Dependency depth', componentScope: 'Component scope', structure: 'SBOM structure',
+    sources: 'SBOM sources', excludedCoverage: 'Excluded coverage', supportMetadata: 'Support metadata',
+    internalMetadata: 'Internal metadata', excludedScope: 'Excluded-scope components', personalData: 'Personal data',
+    localPaths: 'Local build paths', vulnerabilityDocuments: 'Vulnerability documents',
 }
 
 describe('SbomProfileEditor', () => {
@@ -70,6 +92,7 @@ describe('SbomProfileEditor', () => {
         const labels = w.findAllComponents(FieldLabel)
         for (const f of SBOM_PROFILE_FIELDS) {
             expect(select(w, SELECT_TESTIDS[f]), f).toBeDefined()
+            expect(select(w, SELECT_TESTIDS[f]).props('options'), f).toEqual(SELECT_OPTIONS[f])
             expect(labels.some((l: any) => l.props('tip') === SBOM_FIELD_HELP[f]), f).toBe(true)
         }
         expect(select(w, 'sbom-vulnerability-documents').props('disabled')).toBe(true)
@@ -108,16 +131,18 @@ describe('SbomProfileEditor', () => {
 
     it('row 14: Save sends the input of the form and emits saved', async () => {
         const w = await mountWith(view())
-        await select(w, 'sbom-optional-dependencies').vm.$emit('update:value', 'EXCLUDE')
+        await select(w, 'sbom-component-scope').vm.$emit('update:value', 'RUNTIME_ONLY')
         await w.find('[data-testid="sbom-save"]').trigger('click')
         await flushPromises()
         expect(mutate).toHaveBeenCalledTimes(1)
         const vars = mutate.mock.calls[0][0].variables
         expect(operation(mutate.mock.calls[0][0])).toBe('SaveSbomProfile')
         const expectedForm = { ...sbomBuiltInDefaults(), mode: 'OVERRIDE', dependencyDepth: 'TOP_LEVEL_ONLY',
-            structure: 'HIERARCHICAL', optionalDependencies: 'EXCLUDE' }
+            structure: 'HIERARCHICAL', componentScope: 'RUNTIME_ONLY' }
         expect(vars).toEqual({ org: 'o1', scope: 'COMPONENT', object: 'c1', name: 'top',
             profile: sbomProfileInput(expectedForm, 'COMPONENT') })
+        expect(vars.profile.componentScope).toBe('RUNTIME_ONLY')
+        expect(vars.profile).not.toHaveProperty('optionalDependencies')
         expect(w.emitted('saved')).toHaveLength(1)
     })
 
@@ -296,5 +321,121 @@ describe('SbomProfileEditor', () => {
         const w = await mountWith(view(), { isWritable: false })
         expect(w.text()).toContain('Read-only: changing SBOM profiles needs admin rights here.')
         expect(w.find('[data-testid="sbom-save"]').exists()).toBe(false)
+    })
+})
+
+// FDAW-46 (FDAW-19 C1c) row 22: each select bound to its own field, label and help text; the three
+// switches pre-filled and saved per field; the built-in fda labelled and reset to its recipe.
+const SWITCHES = ['excludedScope', 'personalData', 'localPaths'] as const
+const FDA = { ...sbomBuiltInDefaults(), name: 'fda', revision: 0, description: 'Built-in FDA premarket recipe',
+    componentScope: 'RUNTIME_ONLY', excludedCoverage: ['DEV', 'TEST', 'BUILD_TIME'], supportMetadata: 'INCLUDE' }
+const ORG = { scope: 'ORGANIZATION', objectUuid: null }
+
+describe('SbomProfileEditor: the four knobs and the built-in fda (FDAW-46 row 22)', () => {
+    beforeEach(() => {
+        query.mockReset()
+        mutate.mockReset()
+        fire.mockReset()
+        mutate.mockResolvedValue({ data: { saveSbomProfile: { name: 'top' }, deleteSbomProfile: true } })
+    })
+
+    it('each field has one form item holding its select and one label with its own text and help', async () => {
+        const w = await mountWith(view())
+        const items = w.findAllComponents(NFormItem)
+        for (const f of SBOM_PROFILE_FIELDS) {
+            const holding = items.filter((i: any) => i.findAllComponents(NSelect)
+                .some((s: any) => s.attributes('data-testid') === SELECT_TESTIDS[f]))
+            expect(holding, f).toHaveLength(1)
+            const labels = holding[0].findAllComponents(FieldLabel)
+            expect(labels, f).toHaveLength(1)
+            expect(labels[0].props('label'), f).toBe(SELECT_LABELS[f])
+            expect(labels[0].props('tip'), f).toBe(SBOM_FIELD_HELP[f])
+        }
+    })
+
+    it('the selects follow the field order; the four new ones are single and enabled, injection off too (mutation)', async () => {
+        const w = await mountWith(view({ supportInjection: 'DISABLED' }))
+        const order = w.findAllComponents(NSelect).map((s: any) => s.attributes('data-testid'))
+            .filter((t: string) => Object.values(SELECT_TESTIDS).includes(t))
+        expect(order).toEqual(SBOM_PROFILE_FIELDS.map(f => SELECT_TESTIDS[f]))
+        for (const f of ['componentScope', ...SWITCHES]) {
+            expect(select(w, SELECT_TESTIDS[f]).props('multiple'), f).toBe(false)
+            expect(select(w, SELECT_TESTIDS[f]).props('disabled'), f).toBe(false)
+        }
+    })
+
+    it.each(SWITCHES)('a stored row with %s INCLUDE pre-fills it, the other two EXCLUDE', async (s) => {
+        const w = await mountWith(view({ stored: profile({ [s]: 'INCLUDE' }) }))
+        expect(select(w, SELECT_TESTIDS[s]).props('value')).toBe('INCLUDE')
+        for (const other of SWITCHES.filter(o => o !== s)) expect(select(w, SELECT_TESTIDS[other]).props('value'), other).toBe('EXCLUDE')
+    })
+
+    it.each(SWITCHES)('setting %s to INCLUDE saves it, the other two EXCLUDE', async (s) => {
+        const w = await mountWith(view())
+        await select(w, SELECT_TESTIDS[s]).vm.$emit('update:value', 'INCLUDE')
+        await w.find('[data-testid="sbom-save"]').trigger('click')
+        await flushPromises()
+        const sent = mutate.mock.calls[0][0].variables.profile
+        expect(sent[s]).toBe('INCLUDE')
+        for (const other of SWITCHES.filter(o => o !== s)) expect(sent[other], other).toBe('EXCLUDE')
+    })
+
+    it('an unsaved fda at the organization pre-fills the built-in recipe, reads built-in, and resets to it', async () => {
+        const parent = resolved('DEFAULT', FDA)
+        const w = await mountWith(view({ stored: null, parent, effective: parent }), { ...ORG, name: 'fda' })
+        expect(select(w, 'sbom-component-scope').props('value')).toBe('RUNTIME_ONLY')
+        expect(w.find('[data-testid="sbom-source"]').text()).toBe('No override: pre-filled from built-in')
+        expect(w.find('[data-testid="sbom-effective"]').text()).toBe('Effective here: built-in')
+        expect(w.find('[data-testid="sbom-reset"]').text()).toBe('Reset to the built-in fda recipe')
+
+        await select(w, 'sbom-component-scope').vm.$emit('update:value', 'ALL')
+        await select(w, 'sbom-excluded-coverage').vm.$emit('update:value', ['DEV'])
+        await select(w, 'sbom-support-metadata').vm.$emit('update:value', 'EXCLUDE')
+        await w.find('[data-testid="sbom-description"] textarea').setValue('mine')
+        expect(select(w, 'sbom-component-scope').props('value')).toBe('ALL')
+        await w.find('[data-testid="sbom-reset"]').trigger('click')
+        await flushPromises()
+        expect(select(w, 'sbom-component-scope').props('value')).toBe('RUNTIME_ONLY')
+        expect(select(w, 'sbom-excluded-coverage').props('value')).toEqual(['DEV', 'TEST', 'BUILD_TIME'])
+        expect(select(w, 'sbom-support-metadata').props('value')).toBe('INCLUDE')
+        expect((w.find('[data-testid="sbom-description"] textarea').element as HTMLTextAreaElement).value).toBe('mine')
+
+        await w.find('[data-testid="sbom-save"]').trigger('click')
+        await flushPromises()
+        const expectedForm = { ...sbomBuiltInDefaults(), description: 'mine', componentScope: 'RUNTIME_ONLY',
+            excludedCoverage: ['DEV', 'TEST', 'BUILD_TIME'], supportMetadata: 'INCLUDE' }
+        expect(mutate.mock.calls[0][0].variables).toEqual({ org: 'o1', scope: 'ORGANIZATION', object: null, name: 'fda',
+            profile: sbomProfileInput(expectedForm, 'ORGANIZATION') })
+    })
+
+    it('with the support injection off, the fda reset keeps support metadata at EXCLUDE', async () => {
+        const parent = resolved('DEFAULT', FDA)
+        const w = await mountWith(view({ stored: null, parent, effective: parent, supportInjection: 'DISABLED' }),
+            { ...ORG, name: 'fda' })
+        await w.find('[data-testid="sbom-reset"]').trigger('click')
+        await flushPromises()
+        expect(select(w, 'sbom-component-scope').props('value')).toBe('RUNTIME_ONLY')
+        expect(select(w, 'sbom-support-metadata').props('value')).toBe('EXCLUDE')
+    })
+
+    it('default resets to the built-in defaults, with its own text', async () => {
+        const parent = resolved('DEFAULT', profile({ name: 'default' }))
+        const w = await mountWith(view({ stored: profile({ name: 'default', componentScope: 'RUNTIME_ONLY',
+            personalData: 'INCLUDE' }), parent, effective: parent }), { ...ORG, name: 'default' })
+        expect(select(w, 'sbom-component-scope').props('value')).toBe('RUNTIME_ONLY')
+        expect(w.find('[data-testid="sbom-reset"]').text()).toBe('Reset to built-in defaults')
+        await w.find('[data-testid="sbom-reset"]').trigger('click')
+        await flushPromises()
+        const d: any = sbomBuiltInDefaults()
+        for (const f of SBOM_PROFILE_FIELDS) expect(select(w, SELECT_TESTIDS[f]).props('value'), f).toEqual(d[f])
+    })
+
+    it('no reset for a stored name whose parent is not found, nor below the organization', async () => {
+        const top = await mountWith(view({ stored: profile(), parent: { status: 'NOT_FOUND', source: null,
+            sourceObject: null, profile: null, conflictingPerspectives: [] } }), { ...ORG, name: 'top' })
+        expect(top.find('[data-testid="sbom-reset"]').exists()).toBe(false)
+        const parent = resolved('DEFAULT', FDA)
+        const component = await mountWith(view({ stored: null, parent, effective: parent }), { name: 'fda' })
+        expect(component.find('[data-testid="sbom-reset"]').exists()).toBe(false)
     })
 })

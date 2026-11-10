@@ -24,6 +24,7 @@ vi.mock('./SbomProfileEditor.vue', () => ({ default: { name: 'SbomProfileEditor'
     emits: ['saved', 'removed', 'cancel'], render: () => null } }))
 
 const { default: Panel } = await import('./SbomProfilesPanel.vue')
+const { sbomBuiltInDefaults } = await import('@/utils/sbomProfile')
 
 const ORG = '44444444-4444-4444-8444-444444444444'
 const LISTED = '11111111-1111-4111-8111-111111111111'
@@ -37,6 +38,10 @@ const CATALOG = [
     { name: 'default', resolution: { status: 'RESOLVED', source: 'DEFAULT', sourceObject: null,
         profile: { name: 'default', revision: 0, dependencyDepth: 'FULL' }, conflictingPerspectives: [] } },
 ]
+// The catalog answers() serves; beforeEach resets it to CATALOG (FDAW-46 row 23 adds fda).
+let catalog: any[] = CATALOG
+const FDA = { ...sbomBuiltInDefaults(), name: 'fda', revision: 0, description: 'Built-in FDA premarket recipe',
+    componentScope: 'RUNTIME_ONLY', excludedCoverage: ['DEV', 'TEST', 'BUILD_TIME'], supportMetadata: 'INCLUDE' }
 const STORED = [{ name: 'top', scope: 'ORGANIZATION', revision: 1 }]
 const OF_ORG = [
     { uuid: 'r1', scope: 'ORGANIZATION', object: null, name: 'top', mode: null, revision: 1 },
@@ -52,7 +57,7 @@ function answers () {
         switch (op) {
         case 'SbomProfileCatalog':
             if (catalogFails) throw new Error('catalog read refused')
-            return { data: { sbomProfileCatalog: CATALOG } }
+            return { data: { sbomProfileCatalog: catalog } }
         case 'SbomProfiles': return { data: { sbomProfiles: STORED } }
         case 'SbomProfilesOfOrg': return { data: { sbomProfilesOfOrg: OF_ORG } }
         case 'TeaComponentName': return { data: { component: { uuid: ARCHIVED, name: 'old-widget', type: 'COMPONENT', status: 'ARCHIVED' } } }
@@ -81,6 +86,7 @@ describe('SbomProfilesPanel', () => {
         fire.mockReset()
         log.length = 0
         catalogFails = false
+        catalog = CATALOG
         answers()
         mutate.mockResolvedValue({ data: { deleteSbomProfile: true } })
     })
@@ -99,6 +105,43 @@ describe('SbomProfilesPanel', () => {
         expect(rows[1].find('[data-testid="sbom-delete-row"]').exists()).toBe(true)
         expect(query.mock.calls.find(c => operation(c[0]) === 'SbomProfileCatalog')![0].variables)
             .toEqual({ org: ORG, scope: 'ORGANIZATION', object: null })
+        w.unmount()
+    })
+
+    it('FDAW-46 row 23: lists fda as built-in with Edit and no Delete, each new column showing its own field', async () => {
+        catalog = [...CATALOG, { name: 'fda', resolution: { status: 'RESOLVED', source: 'DEFAULT', sourceObject: null,
+            profile: FDA, conflictingPerspectives: [] } }]
+        const w = await mountPanel()
+        const table = w.find('[data-testid="sbom-profile-rows"]')
+        const rows = table.findAll('tbody tr')
+        expect(rows).toHaveLength(3)
+        expect(rows.map((r: any) => r.findAll('td')[0].text())).toEqual(['default', 'fda', 'top'])
+        const headers = table.findAll('thead th').map((th: any) => th.text())
+        for (const h of ['Component scope', 'Excluded-scope components', 'Personal data', 'Local build paths']) {
+            expect(headers, h).toContain(h)
+        }
+        expect(headers).not.toContain('Optional dependencies')
+        const cell = (row: any, header: string) => row.findAll('td')[headers.indexOf(header)].text()
+        const fda = rows[1]
+        expect(cell(fda, 'Source')).toBe('built-in')
+        expect(cell(rows[0], 'Source')).toBe('built-in defaults')
+        expect(fda.find('[data-testid="sbom-edit"]').exists()).toBe(true)
+        expect(fda.find('[data-testid="sbom-delete-row"]').exists()).toBe(false)
+        expect(fda.text()).toContain('Runtime only: leave out components with scope optional')
+        expect(cell(fda, 'Component scope')).toBe('Runtime only: leave out components with scope optional')
+        expect(cell(fda, 'Excluded-scope components')).toBe('Leave out components with scope excluded')
+        expect(cell(fda, 'Personal data')).toBe('Remove maintainer e-mails and handles')
+        expect(cell(fda, 'Local build paths')).toBe('Remove local build paths')
+        w.unmount()
+    })
+
+    it('FDAW-46 row 23: the recipe columns follow the editor field order (mutation)', async () => {
+        const w = await mountPanel()
+        const headers = w.find('[data-testid="sbom-profile-rows"]').findAll('thead th').map((th: any) => th.text())
+        const from = headers.indexOf('Dependency depth')
+        expect(headers.slice(from, from + 10)).toEqual(['Dependency depth', 'Component scope', 'Structure', 'Sources',
+            'Excluded coverage', 'Support metadata', 'Internal metadata', 'Excluded-scope components', 'Personal data',
+            'Local build paths'])
         w.unmount()
     })
 

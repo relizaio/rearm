@@ -6,6 +6,7 @@
 import { regulatoryPackagesAvailable, packageKindLabel, packagePartLabel } from './packageSettings'
 import { teaActErrorText, teaShortSha } from './teaPublication'
 import { teaSourceLabel } from './teaProfile'
+import { SBOM_DEFAULT_NAME } from './sbomProfile'
 import { artifactDownloadRef, ArtifactDownloadRef } from './artifactDownload'
 
 /** One gate, two names: the product and release pages ask this one. */
@@ -151,15 +152,24 @@ export function submissionOtherRows (releases: any[] | null | undefined, heads: 
     }))
 }
 
+/** Whether a submission ref names no stored row: the server's built-in (source DEFAULT, row null). */
+export function submissionRefBuiltIn (ref: any): boolean {
+    return !ref || !ref.row || !ref.source || ref.source === 'DEFAULT'
+}
+
 /** "<source label>, r<n>", or the built-in defaults when the ref names no row. */
 export function submissionRefLabel (ref: any, names: Record<string, string> = {}): string {
-    if (!ref || !ref.row || !ref.source || ref.source === 'DEFAULT') return 'built-in defaults'
+    if (submissionRefBuiltIn(ref)) return 'built-in defaults'
     return teaSourceLabel(ref.source, ref.sourceObject, names) + ', r' + (ref.revision ?? 0)
 }
 
-/** "<name> (<source label>, r<n>)" for the SBOM profile a version applied. */
+/**
+ * "<name> (<source label>, r<n>)" for the SBOM profile a version applied; a built-in other than
+ * `default` (the server's `fda`) reads "<name> (built-in)".
+ */
 export function submissionProfileLabel (ref: any, names: Record<string, string> = {}): string {
     if (!ref) return ''
+    if (submissionRefBuiltIn(ref) && ref.name && ref.name !== SBOM_DEFAULT_NAME) return ref.name + ' (built-in)'
     return (ref.name ?? '') + ' (' + submissionRefLabel(ref, names) + ')'
 }
 

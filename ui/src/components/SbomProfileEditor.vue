@@ -61,8 +61,8 @@
             <n-space v-if="isWritable">
                 <n-button data-testid="sbom-save" type="primary" :loading="saving" :disabled="saveDisabled" @click="save">Save</n-button>
                 <n-button v-if="!createMode && view?.stored" data-testid="sbom-delete" type="error" @click="remove">Delete</n-button>
-                <n-button v-if="scope === 'ORGANIZATION' && effectiveName === SBOM_DEFAULT_NAME" data-testid="sbom-reset" @click="resetToDefaults">
-                    Reset to built-in defaults
+                <n-button v-if="scope === 'ORGANIZATION' && sbomResetAvailable(view, effectiveName)" data-testid="sbom-reset" @click="resetToDefaults">
+                    {{ sbomResetLabel(effectiveName) }}
                 </n-button>
             </n-space>
         </n-spin>
@@ -83,10 +83,12 @@ import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import FieldLabel from './FieldLabel.vue'
 import {
     Option, SbomProfileForm, SbomScope, SBOM_DEFAULT_NAME, SBOM_DEPENDENCY_DEPTH_OPTIONS, SBOM_DESCRIPTION_MAX,
-    SBOM_EXCLUDED_COVERAGE_OPTIONS, SBOM_FIELD_HELP, SBOM_INTERNAL_METADATA_OPTIONS, SBOM_MODE_OPTIONS,
-    SBOM_OPTIONAL_DEPENDENCIES_OPTIONS, SBOM_SOURCES_OPTIONS, SBOM_STRUCTURE_OPTIONS, SBOM_SUPPORT_METADATA_OPTIONS,
+    SBOM_COMPONENT_SCOPE_OPTIONS, SBOM_EXCLUDED_COVERAGE_OPTIONS, SBOM_EXCLUDED_SCOPE_OPTIONS, SBOM_FIELD_HELP,
+    SBOM_INTERNAL_METADATA_OPTIONS, SBOM_LOCAL_PATHS_OPTIONS, SBOM_MODE_OPTIONS, SBOM_PERSONAL_DATA_OPTIONS,
+    SBOM_SOURCES_OPTIONS, SBOM_STRUCTURE_OPTIONS, SBOM_SUPPORT_METADATA_OPTIONS,
     SBOM_FOLLOW_UNAVAILABLE, SBOM_VULNERABILITY_DOCUMENTS_OPTIONS, sbomBuiltInDefaults, sbomEffectiveLine,
-    sbomFormFromView, sbomNameError, sbomPerspectivesDefiningName, sbomProfileInput, sbomScopeWord, sbomSourceLine,
+    sbomFormFromView, sbomNameError, sbomPerspectivesDefiningName, sbomProfileInput, sbomResetAvailable,
+    sbomResetLabel, sbomResetRecipe, sbomScopeWord, sbomSourceLine,
 } from '@/utils/sbomProfile'
 import { deleteSbomProfileConfirmed } from '@/utils/sbomProfileDelete'
 
@@ -143,18 +145,21 @@ const followOptions = computed((): Option[] => !createMode.value ? props.perspec
     : definingPerspectives.value.map(p => ({ value: p.uuid, label: allNames.value[p.uuid] || p.name || p.uuid })))
 const injectionOff = computed(() => view.value?.supportInjection === 'DISABLED')
 const sourceLine = computed(() => sbomSourceLine(view.value, allNames.value, effectiveName.value || SBOM_DEFAULT_NAME))
-const effectiveLine = computed(() => sbomEffectiveLine(view.value?.effective, allNames.value))
+const effectiveLine = computed(() => sbomEffectiveLine(view.value?.effective, allNames.value, effectiveName.value))
 const scopeWord = computed(() => sbomScopeWord(props.scope, props.objectIsProduct))
 const saveDisabled = computed(() => Boolean(nameError.value) || !effectiveName.value)
 
 const selectFields = computed(() => [
     { field: 'dependencyDepth', label: 'Dependency depth', testid: 'sbom-dependency-depth', options: SBOM_DEPENDENCY_DEPTH_OPTIONS, multiple: false, disabled: false },
-    { field: 'optionalDependencies', label: 'Optional dependencies', testid: 'sbom-optional-dependencies', options: SBOM_OPTIONAL_DEPENDENCIES_OPTIONS, multiple: false, disabled: false },
+    { field: 'componentScope', label: 'Component scope', testid: 'sbom-component-scope', options: SBOM_COMPONENT_SCOPE_OPTIONS, multiple: false, disabled: false },
     { field: 'structure', label: 'SBOM structure', testid: 'sbom-structure', options: SBOM_STRUCTURE_OPTIONS, multiple: false, disabled: false },
     { field: 'sources', label: 'SBOM sources', testid: 'sbom-sources', options: SBOM_SOURCES_OPTIONS, multiple: true, disabled: false },
     { field: 'excludedCoverage', label: 'Excluded coverage', testid: 'sbom-excluded-coverage', options: SBOM_EXCLUDED_COVERAGE_OPTIONS, multiple: true, disabled: false },
     { field: 'supportMetadata', label: 'Support metadata', testid: 'sbom-support-metadata', options: SBOM_SUPPORT_METADATA_OPTIONS, multiple: false, disabled: injectionOff.value },
     { field: 'internalMetadata', label: 'Internal metadata', testid: 'sbom-internal-metadata', options: SBOM_INTERNAL_METADATA_OPTIONS, multiple: false, disabled: false },
+    { field: 'excludedScope', label: 'Excluded-scope components', testid: 'sbom-excluded-scope', options: SBOM_EXCLUDED_SCOPE_OPTIONS, multiple: false, disabled: false },
+    { field: 'personalData', label: 'Personal data', testid: 'sbom-personal-data', options: SBOM_PERSONAL_DATA_OPTIONS, multiple: false, disabled: false },
+    { field: 'localPaths', label: 'Local build paths', testid: 'sbom-local-paths', options: SBOM_LOCAL_PATHS_OPTIONS, multiple: false, disabled: false },
     { field: 'vulnerabilityDocuments', label: 'Vulnerability documents', testid: 'sbom-vulnerability-documents', options: SBOM_VULNERABILITY_DOCUMENTS_OPTIONS, multiple: false, disabled: true },
 ])
 
@@ -240,8 +245,10 @@ async function remove () {
     await load()
 }
 
+// Resets the recipe to the built-in the parent resolves (the server's fda) or the built-in defaults;
+// mode, followed perspective and description stay as they are.
 function resetToDefaults () {
-    form.value = { ...sbomBuiltInDefaults(), description: form.value.description }
+    form.value = { ...form.value, ...sbomResetRecipe(view.value) }
     if (injectionOff.value) form.value.supportMetadata = 'EXCLUDE'
 }
 

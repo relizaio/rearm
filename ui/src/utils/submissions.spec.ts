@@ -10,7 +10,7 @@ const {
     submissionHistoryText, submissionOtherRows, submissionPartRows, submissionReasonError, submissionReleaseRows,
     submissionResubmitConfirm, submissionVersionRows, submissionWithdrawConfirm, submissionStateText,
     submissionStateTagType, submissionCancelNote, submissionDateText, SUBMISSION_STATE_LABELS, SUBMISSION_ACT_LABELS,
-    submissionActorText, submissionKindDisabledText,
+    submissionActorText, submissionKindDisabledText, submissionProfileLabel,
 } = await import('./submissions')
 const { TEA_ACT_GATEWAY_TEXT } = await import('./teaPublication')
 
@@ -88,6 +88,33 @@ describe('the version and part rows (row 30)', () => {
         expect(manifestFileName(version(2))).toBe('submission-s1-v2-manifest.json')
         expect(manifestDownloadRef(version(2))).toEqual({ uuid: M1, version: 1, fileName: 'submission-s1-v2-manifest.json' })
         expect(manifestDownloadRef(version(2, { manifestArtifactVersion: null }))).toBeNull()
+    })
+})
+
+describe('the profile label of a named built-in (FDAW-46 row 23)', () => {
+    it('reads <name> (built-in) for a built-in ref of any name but default', () => {
+        expect(submissionProfileLabel({ name: 'fda', row: null, revision: 0, source: 'DEFAULT', sourceObject: null }))
+            .toBe('fda (built-in)')
+        expect(submissionProfileLabel({ name: 'fda', row: 'p1', revision: 2, source: null })).toBe('fda (built-in)')
+        expect(submissionProfileLabel({ name: 'fda', row: 'p1', revision: 2, source: 'DEFAULT' })).toBe('fda (built-in)')
+        expect(submissionProfileLabel({ name: 'fda', row: 'p1', revision: 3, source: 'ORGANIZATION' }))
+            .toBe('fda (organization, r3)')
+        expect(submissionProfileLabel({ name: 'default', row: null, revision: 0, source: 'DEFAULT' }))
+            .toBe('default (built-in defaults)')
+        expect(submissionProfileLabel({ name: null, row: null, source: 'DEFAULT' })).toBe(' (built-in defaults)')
+    })
+
+    it('a ref naming no stored row reads built-in whatever its source (mutation)', () => {
+        expect(submissionProfileLabel({ name: 'fda', row: null, revision: 0, source: 'ORGANIZATION' })).toBe('fda (built-in)')
+        expect(submissionProfileLabel({ name: 'default', row: null, revision: 0, source: 'ORGANIZATION' }))
+            .toBe('default (built-in defaults)')
+    })
+
+    it('a version that applied the built-in fda labels it built-in; the settings label is unchanged', () => {
+        const rows = submissionVersionRows({ versions: [version(1, { sbomProfile: { name: 'fda', row: null, revision: 0,
+            source: 'DEFAULT', sourceObject: null } })] })
+        expect(rows[0].profileLabel).toBe('fda (built-in)')
+        expect(rows[0].settingsLabel).toBe('organization, r3')
     })
 })
 

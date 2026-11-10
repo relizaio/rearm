@@ -16,13 +16,16 @@ const SBOM_PROFILE_FIELDS_GQL = `
     followedPerspective
     description
     dependencyDepth
-    optionalDependencies
+    componentScope
     structure
     sources
     excludedCoverage
     supportMetadata
     internalMetadata
     vulnerabilityDocuments
+    excludedScope
+    personalData
+    localPaths
     revision
     createdDate
     lastUpdatedBy
