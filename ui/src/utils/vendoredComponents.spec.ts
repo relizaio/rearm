@@ -45,6 +45,7 @@ describe('the panel list', () => {
         expect(query).toHaveBeenCalledTimes(1)
         expect(sentQueries(query)).toEqual(['releaseUnidentifiedComponents'])
         expect((query.mock.calls[0] as any)[0].variables).toEqual({ releaseUuid: RELEASE })
+        expect((query.mock.calls[0] as any)[0].fetchPolicy).toBe('network-only')
     })
 
     it('counts every listed node in its title, a describable false one too (F-6)', () => {
@@ -173,6 +174,39 @@ describe('Describe', () => {
             .toContain('a description must say something: supply an origin, a supplier, a licence or a description')
         expect(validateVendoredDescribe({ ...vendoredDescribeFormOf(null), origin: 'fork' })).toEqual([])
     })
+
+    it('a reason or blanks alone are not a description', () => {
+        const empty = 'a description must say something: supply an origin, a supplier, a licence or a description'
+        expect(validateVendoredDescribe({ ...vendoredDescribeFormOf(null), reason: 'vendored in 2019' })).toEqual([empty])
+        expect(validateVendoredDescribe({ origin: ' ', supplier: '  ', licence: '\t', description: ' ', reason: '' }))
+            .toEqual([empty])
+    })
+
+    it('Save trims the reason and sends null for a blank one', () => {
+        const form = { ...vendoredDescribeFormOf(null), origin: 'fork', reason: ' from upstream ' }
+        expect(describeVendoredVariables(RELEASE, row(), form, null).reason).toBe('from upstream')
+        expect(describeVendoredVariables(RELEASE, row(), { ...form, reason: '   ' }, null).reason).toBeNull()
+    })
+})
+
+/** The describe bounds, phrased as the server's SupportTextBounds refusals. */
+describe('the describe bounds', () => {
+    const form = (over: Record<string, string>) => ({ ...vendoredDescribeFormOf(null), origin: 'fork', ...over })
+
+    it.each(['origin', 'supplier', 'licence'])('%s is one line of at most 512 characters', (field) => {
+        expect(validateVendoredDescribe(form({ [field]: 'x'.repeat(512) }))).toEqual([])
+        expect(validateVendoredDescribe(form({ [field]: 'x'.repeat(513) })))
+            .toEqual([`${field} is longer than 512 characters`])
+        expect(validateVendoredDescribe(form({ [field]: 'a\nb' }))).toEqual([`${field} holds a control character`])
+    })
+
+    it.each(['description', 'reason'])('%s is multi-line text of at most 2048 characters', (field) => {
+        expect(validateVendoredDescribe(form({ [field]: 'x'.repeat(2048) }))).toEqual([])
+        expect(validateVendoredDescribe(form({ [field]: 'x'.repeat(2049) })))
+            .toEqual([`${field} is longer than 2048 characters`])
+        expect(validateVendoredDescribe(form({ [field]: 'line one\n\tline two' }))).toEqual([])
+        expect(validateVendoredDescribe(form({ [field]: 'a\u0007b' }))).toEqual([`${field} holds a control character`])
+    })
 })
 
 describe('Remove description', () => {
@@ -181,6 +215,11 @@ describe('Remove description', () => {
         await expect(removeVendored(c, RELEASE, row({ described: true }), '  ')).rejects
             .toThrow('removing a description needs a reason')
         expect(mutate).not.toHaveBeenCalled()
+    })
+
+    it('names a node without a version by its name alone', () => {
+        expect(vendoredRemoveSentence(row({ version: null })))
+            .toMatch(/^Removing the description makes libdosecalc unidentified again/)
     })
 
     it('shows the consequence sentence', () => {
@@ -238,6 +277,11 @@ describe('the vendored Attest seed', () => {
         expect((await loadVendoredSupportDetail(c, RELEASE, 'libdosecalc', '')).attestation).toBeNull()
     })
 
+    it('never seeds from another version of the same name', async () => {
+        const { c } = client([row({ described: true, component: { ...ATTESTED } })])
+        expect((await loadVendoredSupportDetail(c, RELEASE, 'libdosecalc', '2.4')).attestation).toBeNull()
+    })
+
     it('a described row with component null and a missing row both answer null', async () => {
         const { c } = client([row({ described: true, component: null })])
         expect(await loadVendoredSupportDetail(c, RELEASE, 'libdosecalc', '2.3')).toEqual({ kind: 'ok', attestation: null })
@@ -259,6 +303,23 @@ describe('the Describe baseline', () => {
     it('a node no longer described has no baseline', async () => {
         const { c } = client([row({ described: false, overlay: null })])
         expect((await openVendoredEditor(c, RELEASE, row({ described: true }), true)).stored).toBeNull()
+    })
+
+    it('the re-read decides described: a stale undescribed copy of a now described node gets its baseline', async () => {
+        const stored = { origin: 'fork', supplier: 'Acme' }
+        const { c, query } = client([row({ described: true, overlay: stored })], { copies: [{ uuid: 'ov-1' }] })
+        const seed = await openVendoredEditor(c, RELEASE, row({ described: false }), true)
+        expect(seed.stored).toEqual(stored)
+        expect(seed.copySources).toEqual([])
+        expect(sentQueries(query)).not.toContain('vendoredDescriptionsByName')
+    })
+
+    it('a stale described copy of a node no longer described offers the copy sources and no stored overlay', async () => {
+        const copies = [{ uuid: 'ov-1', name: 'libdosecalc', version: '2.2', origin: 'fork' }]
+        const { c } = client([row({ described: false, overlay: { supplier: 'Old' } })], { copies })
+        const seed = await openVendoredEditor(c, RELEASE, row({ described: true }), true)
+        expect(seed.stored).toBeNull()
+        expect(seed.copySources).toEqual(copies)
     })
 
     it('a form equal to the stored description sends nothing; a reason alone is not a change', () => {

@@ -39,6 +39,10 @@ describe('the presence rule', () => {
         expect(overlaySendsAnything({ ...overlayFormOf(stored), supplier: '' }, stored)).toBe(true)
     })
 
+    it('a licence-only edit is a change: Save stays enabled', () => {
+        expect(overlaySendsAnything({ ...overlayFormOf(stored), licence: 'Apache-2.0' }, stored)).toBe(true)
+    })
+
     it('never sends a description or an origin: those are for vendored components', () => {
         const v = overlayVariables('sc-1', { supplier: 'x', licence: 'y', reason: '' }, null)
         expect(Object.keys(v.overlay).sort()).toEqual(['licence', 'supplier'])
@@ -56,6 +60,17 @@ describe('the bounds', () => {
         expect(validateOverlay({ supplier: '', licence: '', reason: 'r'.repeat(2049) }))
             .toEqual(['reason is longer than 2048 characters'])
         expect(validateOverlay({ supplier: 'Acme', licence: 'MIT', reason: 'line one\nline two' })).toEqual([])
+    })
+
+    it('takes a value at the bound itself', () => {
+        expect(validateOverlay({ supplier: 's'.repeat(512), licence: 'l'.repeat(512), reason: 'r'.repeat(2048) }))
+            .toEqual([])
+    })
+
+    it('a reason may hold a tab and a line feed, never another control character', () => {
+        expect(validateOverlay({ supplier: '', licence: '', reason: 'a\tb\nc' })).toEqual([])
+        expect(validateOverlay({ supplier: '', licence: '', reason: 'a\u0000b' }))
+            .toEqual(['reason holds a control character'])
     })
 })
 

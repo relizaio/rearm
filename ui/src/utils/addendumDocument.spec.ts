@@ -224,6 +224,10 @@ describe('the vendored row', () => {
         expect(row[3]).toBe(NOT_ASSESSED)
     })
 
+    it('a vendored row without a purl stays empty, never `null (vendored, ...)`', () => {
+        expect(addendumRow(comp({ purl: null as any, vendored: true }))[2]).toBeNull()
+    })
+
     it('a component without the flag is unlabelled', () => {
         expect(addendumRow(comp({ vendored: false }))[2]).toBe('pkg:maven/org.apache/log4j-core@2.14.1')
     })
