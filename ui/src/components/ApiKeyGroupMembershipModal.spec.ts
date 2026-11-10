@@ -9,7 +9,7 @@ const mutate = vi.fn(async (_: any): Promise<any> => ({ data: { setApiKeyGroupsO
 vi.mock('@/utils/graphql', () => ({ default: { mutate: (m: any) => mutate(m), query: vi.fn() } }))
 
 const { default: MembershipModal } = await import('./ApiKeyGroupMembershipModal.vue')
-const { NCheckbox } = await import('naive-ui')
+const { NCheckbox, NModal } = await import('naive-ui')
 
 const G1 = { uuid: 'g1', name: 'ci', status: 'ACTIVE', apiKeys: ['k1'] }
 const G2 = { uuid: 'g2', name: 'Alpha', status: 'ACTIVE', apiKeys: [] }
@@ -135,5 +135,60 @@ describe('ApiKeyGroupMembershipModal double submit (row 21)', () => {
         await flushPromises()
         expect(mutate).toHaveBeenCalledTimes(1)
         expect(w.emitted('saved')).toHaveLength(1)
+    })
+})
+
+// FDAW-40 row 22e (FDAW-25 3.12): the customers of one external key, the same modal in its CUSTOMER kind.
+describe('ApiKeyGroupMembershipModal kind CUSTOMER (FDAW-40 row 22e)', () => {
+    const C1 = { uuid: 'c1', name: 'Zeta', status: 'ACTIVE', kind: 'CUSTOMER', apiKeys: ['x1'] }
+    const C2 = { uuid: 'c2', name: 'Acme', status: 'ACTIVE', kind: 'CUSTOMER', apiKeys: [] }
+    const INTERNAL = { uuid: 'g1', name: 'ci', status: 'ACTIVE', apiKeys: ['x1'] }
+    const EXT = { uuid: 'x1', type: 'EXTERNAL', holderName: 'Acme' }
+    const customer = (overrides: Record<string, any> = {}) => open({ kind: 'CUSTOMER', apiKey: EXT, groups: [C1, C2, INTERNAL], ...overrides })
+    const title = (w: any) => w.findComponent(NModal).attributes('title')
+
+    it('titles the modal by holder and shows the CUSTOMER lead and rows only', () => {
+        const { w } = customer()
+        expect(title(w)).toBe('Customers of Acme')
+        expect(w.find('p.subtle').text()).toBe('Checked customers add their TEA grants to what this key reads on TEA. A key cannot be added to an inactive customer; it can be removed from one.')
+        expect(boxes(w).map((b: any) => b.attributes('data-testid'))).toEqual(['api-key-group-of-key-c2', 'api-key-group-of-key-c1'])
+        expect(box(w, 'c1').props('checked')).toBe(true)
+        expect(box(w, 'g1')).toBeUndefined()
+    })
+
+    it('shows the external-key note and no checkbox for a Free Form key', () => {
+        const { w } = customer({ apiKey: { uuid: 'k1', type: 'FREEFORM', notes: 'one' } })
+        expect(w.find('[data-testid="api-key-groups-of-key-not-freeform"]').text()).toBe('Only external keys can be members of a customer group.')
+        expect(boxes(w)).toHaveLength(0)
+    })
+
+    it('says so when the organization has no customers', () => {
+        const { w } = customer({ groups: [INTERNAL] })
+        expect(w.find('[data-testid="api-key-groups-of-key-empty"]').exists()).toBe(true)
+        expect(w.text()).toContain('No customers in this organization yet')
+    })
+
+    it('titles a key with a blank holder name by its uuid', () => {
+        const { w } = customer({ apiKey: { uuid: 'x1', type: 'EXTERNAL', holderName: '  ' } })
+        expect(title(w)).toBe('Customers of x1')
+    })
+
+    it('saves the checked customer uuids only, never the INTERNAL group holding the key', async () => {
+        const { w } = customer()
+        await set(w, 'c2', true)
+        await save(w).trigger('click')
+        await flushPromises()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(mutate.mock.calls[0][0].variables).toEqual({ orgUuid: 'o1', apiKeyUuid: 'x1', groupUuids: ['c2', 'c1'] })
+    })
+
+    it('without kind keeps the INTERNAL title, lead, empty text and the Free Form note', () => {
+        const { w } = open({ groups: [C1, INTERNAL] })
+        expect(title(w)).toMatch(/^API key groups of /)
+        expect(boxes(w).map((b: any) => b.attributes('data-testid'))).toEqual(['api-key-group-of-key-g1'])
+        const ext = open({ apiKey: EXT })
+        expect(ext.w.find('[data-testid="api-key-groups-of-key-not-freeform"]').text()).toBe('Only Free Form keys can be members of API key groups.')
+        const none = open({ groups: [C1] })
+        expect(none.w.text()).toContain('No API key groups in this organization yet')
     })
 })

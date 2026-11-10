@@ -251,6 +251,18 @@ describe('TEA surfaces contract', () => {
         expect(src('../utils/orgSettingsTabs.ts')).toMatch(/export const PROGRAMMATIC_SUBTABS = \[[^\]]*'externalKeys'[^\]]*\] as const/)
     })
 
+    // Customers (FDAW-40 row 22h, FDAW-25 3.12): groups of external keys, beside them and under the same TEA condition
+    it('OrgSettings hosts the Customers pane right after External Keys, admin-only where TEA is served', () => {
+        const os = src('OrgSettings.vue')
+        const ext = os.indexOf('<n-tab-pane name="externalKeys" tab="External Keys" v-if="teaProfilesAvailable(myUser?.installationType)">')
+        const cust = os.indexOf('<n-tab-pane v-if="isOrgAdmin && teaProfilesAvailable(myUser?.installationType)" name="customers" tab="Customers">')
+        expect(ext).toBeGreaterThan(0)
+        expect(cust).toBeGreaterThan(ext)
+        expect(os.slice(ext + 1, cust)).not.toContain('<n-tab-pane')
+        expect(os.slice(cust, os.indexOf('</n-tab-pane>', cust))).toContain('<TeaCustomersPanel :org-uuid="orgResolved" :notify="notify" :is-org-admin="isOrgAdmin" :products="orgProducts" :components="orgComponents" :perspectives="perspectives" />')
+        expect(src('../utils/orgSettingsTabs.ts')).toMatch(/export const PROGRAMMATIC_SUBTABS = \[[^\]]*'externalKeys', 'customers'\] as const/)
+    })
+
     it('the Scoped Keys table never lists an EXTERNAL key', () => {
         const os = src('OrgSettings.vue')
         const start = os.indexOf('const computedProgrammaticAccessKeys')

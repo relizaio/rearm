@@ -24,13 +24,15 @@
             <n-input v-model:value="externalKeysSearch" clearable class="mb-2" style="max-width: 460px"
                 placeholder="Search keys by uuid, key id, holder or notes" data-testid="keys-search-externalKeys" />
             <n-spin :show="loading">
-                <n-data-table data-testid="external-keys-table" :columns="externalKeyFields" :data="shownRows" :scroll-x="2520"
+                <n-data-table data-testid="external-keys-table" :columns="externalKeyFields" :data="shownRows" :scroll-x="2740"
                     :row-key="(r: any) => r.uuid" class="table-hover">
                     <template #empty><n-empty data-testid="keys-empty-externalKeys" :description="keysEmptyText(externalKeysSearch)" /></template>
                 </n-data-table>
             </n-spin>
         </div>
         <ApiKeyPermissionsModal v-model:show="showGrants" :api-key="grantsKey" :org-uuid="orgUuid" :notify="notify" @saved="reload" />
+        <ApiKeyGroupMembershipModal v-model:show="showCustomers" kind="CUSTOMER" :api-key="customersKey" :groups="customerGroups"
+            :org-uuid="orgUuid" :notify="notify" @saved="reload" />
     </div>
 </template>
 
@@ -41,6 +43,9 @@
  * published on TEA, nothing else. Pro only (the host gates it with teaProfilesAvailable), and it
  * reads its own documents, since the CE schema has none of these fields. Its own component for the
  * reason TeaOrgPanel is: OrgSettings is large enough.
+ *
+ * FDAW-25 3.12: a Customers column names the active customer groups holding each key, and an admin
+ * sets them from the key's row (the membership modal in its CUSTOMER kind).
  */
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { NAlert, NButton, NDataTable, NEmpty, NIcon, NInput, NSpin } from 'naive-ui'
@@ -55,8 +60,11 @@ import {
     EXTERNAL_GRANTS_NONE, filterApiKeysBySearch, teaTokenUrl
 } from '@/utils/apiKeyControls'
 import { uuidCopyColumn } from '@/utils/uuidCopyColumn'
+import { apiKeyGroupsOfKey } from '@/utils/apiKeyGroupInput'
+import { loadApiKeyGroups } from '@/utils/apiKeyGroupsQuery'
 import { normalizeSearchTerm } from '@/utils/tableSearch'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
+import ApiKeyGroupMembershipModal from './ApiKeyGroupMembershipModal.vue'
 
 const props = withDefaults(defineProps<{
     orgUuid: string
@@ -79,6 +87,11 @@ function keysEmptyText (raw: string): string { const t = normalizeSearchTerm(raw
 const discovery = ref<any>(null)
 const showGrants = ref(false)
 const grantsKey = ref<any>(null)
+// the organization's CUSTOMER groups (FDAW-25 3.12); supported false hides the column on a server without them
+const customerGroups = ref<any[]>([])
+const customersSupported = ref(false)
+const showCustomers = ref(false)
+const customersKey = ref<any>(null)
 
 const tokenUrl = computed(() => teaTokenUrl(discovery.value?.apiBase))
 const productUuids = computed(() => new Set<string>((store.getters.productsOfOrg(props.orgUuid) || []).map((p: any) => p.uuid)))
@@ -99,6 +112,20 @@ async function reload () {
         fail(e)
     } finally {
         loading.value = false
+    }
+    await loadCustomerGroups()
+}
+
+/** The CUSTOMER groups, after the keys: a failure here is notified and leaves the keys shown. */
+async function loadCustomerGroups () {
+    try {
+        const r = await loadApiKeyGroups(graphqlClient, props.orgUuid, 'CUSTOMER')
+        customerGroups.value = r.groups
+        customersSupported.value = r.supported
+    } catch (e: any) {
+        console.error(e)
+        customerGroups.value = []
+        fail(e)
     }
 }
 
@@ -197,6 +224,11 @@ function openGrants (row: any) {
     showGrants.value = true
 }
 
+function openCustomers (row: any) {
+    customersKey.value = commonFunctions.deepCopy(row)
+    showCustomers.value = true
+}
+
 const externalKeyFields = computed(() => [
     apiKeyTypeColumn,
     apiKeyIdsColumn(),
@@ -226,6 +258,19 @@ const externalKeyFields = computed(() => [
             return h('span', { 'data-testid': 'external-key-grants', style: summary === EXTERNAL_GRANTS_NONE ? 'color: #f0a020;' : '' }, summary)
         }
     },
+    ...(customersSupported.value ? [{
+        key: 'customers', width: 220, title: 'Customers',
+        render: (row: any) => {
+            const names = apiKeyGroupsOfKey(customerGroups.value, row.uuid).map(g => g.name)
+            return h('div', { style: 'display: flex; align-items: center;' }, [
+                h('span', { 'data-testid': 'external-key-customers' }, names.length ? names.join(', ') : '\u2014'),
+                props.isOrgAdmin
+                    ? h(NIcon, { title: 'Set customers', class: 'icons clickable', size: 18, style: 'margin-left: 6px;',
+                        'data-testid': 'external-key-customers-edit', onClick: () => openCustomers(row) }, { default: () => h(Pencil) })
+                    : null
+            ])
+        }
+    }] : []),
     { key: 'status', width: 200, title: 'Status', render: controls.statusCell },
     { key: 'secrets', width: 420, title: 'Secrets', render: controls.secretsCell },
     { key: 'notes', width: 180, title: 'Notes', sorter: apiKeySorters.notes },
