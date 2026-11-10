@@ -9,6 +9,7 @@ import type { DriftFallbackClient } from './graphqlDriftFallback'
 import type { MutationClient } from './setSbomComponentSupport'
 import type { SupportDetailResult } from './sbomComponentSupportDetail'
 import { orgWriteSentence } from './orgWrite'
+import { OVERLAY_REASON_MAX_LENGTH, OVERLAY_SUPPLIER_MAX_LENGTH, overlayFieldValue } from './overlayInput'
 
 /**
  * The panel's list and the vendored Attest seed, one document (FDAW-51 3.3.1). The selection
@@ -206,6 +207,25 @@ function sameVersion (a: string | null | undefined, b: string | null | undefined
 }
 
 /**
+ * One node of the list, re-read network-only: the panel's list copy is never a form's seed or
+ * baseline. Null when the node is no longer listed.
+ */
+export async function loadVendoredRow (
+    client: DriftFallbackClient,
+    releaseUuid: string,
+    name: string,
+    version: string | null
+): Promise<VendoredRow | null> {
+    const resp = await client.query({
+        query: RELEASE_UNIDENTIFIED_COMPONENTS,
+        variables: { releaseUuid },
+        fetchPolicy: 'network-only'
+    })
+    const rows = ((resp.data as any)?.releaseUnidentifiedComponents ?? []) as VendoredRow[]
+    return rows.find(r => r.name === name && sameVersion(r.version, version)) ?? null
+}
+
+/**
  * The vendored Attest form's seed (FDAW-51 3.3.1): the node's `component`, re-read network-only
  * (the panel's list copy is never the seed, the stale-copy rule of sbomComponentSupportDetail),
  * never through getReleaseSbomComponentGraph, which answers null for a row with no artifact
@@ -217,13 +237,7 @@ export async function loadVendoredSupportDetail (
     name: string,
     version: string | null
 ): Promise<SupportDetailResult> {
-    const resp = await client.query({
-        query: RELEASE_UNIDENTIFIED_COMPONENTS,
-        variables: { releaseUuid },
-        fetchPolicy: 'network-only'
-    })
-    const rows = ((resp.data as any)?.releaseUnidentifiedComponents ?? []) as VendoredRow[]
-    const row = rows.find(r => r.name === name && sameVersion(r.version, version))
+    const row = await loadVendoredRow(client, releaseUuid, name, version)
     if (!row?.component) return { kind: 'ok', attestation: null }
     return { kind: 'ok', attestation: row.component as any }
 }
@@ -263,16 +277,17 @@ export function vendoredOverlayInput (
     form: VendoredDescribeForm,
     stored: VendoredDescription | null | undefined
 ): { origin: string | null, supplier: string | null, licence: string | null, description: string | null } {
-    const field = (typed: string, was: string | null | undefined): string | null => {
-        const t = (typed ?? '').trim()
-        return t === (was ?? '').trim() ? null : t
-    }
     return {
-        origin: field(form.origin, stored?.origin),
-        supplier: field(form.supplier, stored?.supplier),
-        licence: field(form.licence, stored?.licence),
-        description: field(form.description, stored?.description)
+        origin: overlayFieldValue(form.origin, stored?.origin),
+        supplier: overlayFieldValue(form.supplier, stored?.supplier),
+        licence: overlayFieldValue(form.licence, stored?.licence),
+        description: overlayFieldValue(form.description, stored?.description)
     }
+}
+
+/** False when the save would change nothing: no audit revision for an edit that never happened. */
+export function vendoredSendsAnything (form: VendoredDescribeForm, stored: VendoredDescription | null | undefined): boolean {
+    return Object.values(vendoredOverlayInput(form, stored)).some(v => v !== null)
 }
 
 /** The variables of describeVendoredComponent: the node's name and version, never a key. */
@@ -296,17 +311,21 @@ const CONTROL = /[\u0000-\u001f\u007f]/
 // eslint-disable-next-line no-control-regex
 const CONTROL_BUT_TAB_LF = /[\u0000-\u0008\u000b-\u001f\u007f]/
 
+/** The server's bounds (SupportTextBounds): one-line origin, supplier and licence; multi-line description and reason. */
+export const VENDORED_LINE_MAX_LENGTH = OVERLAY_SUPPLIER_MAX_LENGTH
+export const VENDORED_TEXT_MAX_LENGTH = OVERLAY_REASON_MAX_LENGTH
+
 /** The bounds of a describe, phrased as the server's refusals; content rules stay the server's. */
 export function validateVendoredDescribe (form: VendoredDescribeForm): string[] {
     const out: string[] = []
     const line = (field: string, value: string) => {
         const v = (value ?? '').trim()
-        if (v.length > 512) out.push(`${field} is longer than 512 characters`)
+        if (v.length > VENDORED_LINE_MAX_LENGTH) out.push(`${field} is longer than ${VENDORED_LINE_MAX_LENGTH} characters`)
         else if (CONTROL.test(v)) out.push(`${field} holds a control character`)
     }
     const text = (field: string, value: string) => {
         const v = (value ?? '').trim()
-        if (v.length > 2048) out.push(`${field} is longer than 2048 characters`)
+        if (v.length > VENDORED_TEXT_MAX_LENGTH) out.push(`${field} is longer than ${VENDORED_TEXT_MAX_LENGTH} characters`)
         else if (CONTROL_BUT_TAB_LF.test(v)) out.push(`${field} holds a control character`)
     }
     line('origin', form.origin)
@@ -323,6 +342,8 @@ export function validateVendoredDescribe (form: VendoredDescribeForm): string[] 
 /** What the Describe editor shows when it opens. */
 export interface VendoredEditorSeed {
     identifier: string
+    /** The stored description, re-read when the editor opens: the form's seed and its patch baseline. */
+    stored: VendoredDescription | null
     copySources: VendoredCopySource[]
     readOnly: boolean
 }
@@ -345,8 +366,11 @@ export async function openVendoredEditor (
         fetchPolicy: 'network-only'
     })
     const identifier = (idResp.data as any)?.vendoredIdentifier ?? ''
+    const fresh = await loadVendoredRow(client, releaseUuid, row.name, row.version)
+    const described = fresh ? fresh.described : row.described
+    const stored = described ? (fresh?.overlay ?? null) : null
     let copySources: VendoredCopySource[] = []
-    if (!row.described && canWriteOrg) {
+    if (!described && canWriteOrg) {
         const resp = await client.query({
             query: VENDORED_DESCRIPTIONS_BY_NAME,
             variables: { releaseUuid, name: row.name },
@@ -354,7 +378,7 @@ export async function openVendoredEditor (
         })
         copySources = ((resp.data as any)?.vendoredDescriptionsByName ?? []) as VendoredCopySource[]
     }
-    return { identifier, copySources, readOnly: !canWriteOrg }
+    return { identifier, stored, copySources, readOnly: !canWriteOrg }
 }
 
 export async function describeVendored (client: MutationClient, variables: Record<string, unknown>): Promise<void> {

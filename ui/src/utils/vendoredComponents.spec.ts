@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { DESCRIBE_VENDORED_COMPONENT, RELEASE_UNIDENTIFIED_COMPONENTS, REMOVE_VENDORED_DESCRIPTION,
     VENDORED_DESCRIPTIONS_BY_NAME, VENDORED_IDENTIFIER, VENDORED_ORG_WRITE_SENTENCE, copyVendoredDescription,
-    describeVendored, describeVendoredVariables, loadUnidentifiedComponents, loadVendoredSupportDetail,
+    describeVendored, describeVendoredVariables, loadUnidentifiedComponents, loadVendoredSupportDetail, vendoredSendsAnything,
     openVendoredEditor, removeVendored, validateVendoredDescribe, vendoredDescribeFormOf, vendoredPanelTitle,
     vendoredRemoveSentence, vendoredRowActions, vendoredStateTag } from './vendoredComponents'
 import type { VendoredRow } from './vendoredComponents'
@@ -106,7 +106,7 @@ describe('Describe', () => {
         const { c, query } = client([])
         const seed = await openVendoredEditor(c, RELEASE, row({ described: true }), true)
         expect(seed.identifier).toBe(KEY)
-        expect(sentQueries(query)).toEqual(['vendoredIdentifier'])
+        expect(sentQueries(query)).toEqual(['vendoredIdentifier', 'releaseUnidentifiedComponents'])
         expect((query.mock.calls[0] as any)[0].variables).toEqual({ releaseUuid: RELEASE, name: 'libdosecalc', version: '2.3' })
     })
 
@@ -115,8 +115,9 @@ describe('Describe', () => {
             supplier: 'Acme', licence: 'MIT', description: 'dose calculation' }]
         const { c, query } = client([], { copies })
         const seed = await openVendoredEditor(c, RELEASE, row(), true)
-        expect(sentQueries(query)).toEqual(['vendoredIdentifier', 'vendoredDescriptionsByName'])
-        expect((query.mock.calls[1] as any)[0].variables).toEqual({ releaseUuid: RELEASE, name: 'libdosecalc' })
+        expect(sentQueries(query)).toEqual(['vendoredIdentifier', 'releaseUnidentifiedComponents',
+            'vendoredDescriptionsByName'])
+        expect((query.mock.calls[2] as any)[0].variables).toEqual({ releaseUuid: RELEASE, name: 'libdosecalc' })
         expect(seed.copySources).toEqual(copies)
         expect(seed.readOnly).toBe(false)
     })
@@ -241,5 +242,29 @@ describe('the vendored Attest seed', () => {
         const { c } = client([row({ described: true, component: null })])
         expect(await loadVendoredSupportDetail(c, RELEASE, 'libdosecalc', '2.3')).toEqual({ kind: 'ok', attestation: null })
         expect(await loadVendoredSupportDetail(c, RELEASE, 'absent', '1.0')).toEqual({ kind: 'ok', attestation: null })
+    })
+})
+
+/** Review fixes inside the design: a fresh baseline, and no save of nothing. */
+describe('the Describe baseline', () => {
+    it('re-reads the stored description network-only instead of trusting the list copy', async () => {
+        const stale = row({ described: true, overlay: { supplier: 'Acme' } })
+        const { c, query } = client([row({ described: true, overlay: { supplier: 'Beta', origin: 'fork' } })])
+        const seed = await openVendoredEditor(c, RELEASE, stale, true)
+        expect(seed.stored).toEqual({ supplier: 'Beta', origin: 'fork' })
+        const listRead = query.mock.calls.map((x: any) => x[0]).find((o: any) => o.query === RELEASE_UNIDENTIFIED_COMPONENTS)
+        expect(listRead.fetchPolicy).toBe('network-only')
+    })
+
+    it('a node no longer described has no baseline', async () => {
+        const { c } = client([row({ described: false, overlay: null })])
+        expect((await openVendoredEditor(c, RELEASE, row({ described: true }), true)).stored).toBeNull()
+    })
+
+    it('a form equal to the stored description sends nothing; a reason alone is not a change', () => {
+        const stored = { origin: 'fork', supplier: 'Acme', licence: 'MIT', description: 'd' }
+        expect(vendoredSendsAnything({ ...vendoredDescribeFormOf(stored), reason: 'r' }, stored)).toBe(false)
+        expect(vendoredSendsAnything({ ...vendoredDescribeFormOf(stored), licence: '' }, stored)).toBe(true)
+        expect(vendoredSendsAnything({ ...vendoredDescribeFormOf(null), origin: 'fork' }, null)).toBe(true)
     })
 })

@@ -155,7 +155,11 @@ export async function loadComponentOverlay (
         variables: { releaseUuid, sbomComponentUuid },
         fetchPolicy: 'network-only'
     })
-    return (resp.data as any)?.getReleaseSbomComponentGraph?.component?.overlay ?? null
+    const component = (resp.data as any)?.getReleaseSbomComponentGraph?.component
+    // A vanished row is an error, never an empty baseline: an empty form compared with an
+    // empty baseline could not clear a stored value and would tell the operator none exists.
+    if (!component) throw new Error('sbom component not found')
+    return component.overlay ?? null
 }
 
 /** One overlay write. Throws on refusal (the server's `licence invalid: ...` text included). */

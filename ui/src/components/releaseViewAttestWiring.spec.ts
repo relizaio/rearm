@@ -226,9 +226,23 @@ describe('the overlay UI is wired into ReleaseView', () => {
     })
 
     it.each(['describe', 'attest', 'remove'])('the panel\'s %s goes through vendoredRowActions with isWritable and canWriteOrg', (a) => {
-        const button = elementAt(`vendored-${a}`, 300)
-        expect(button).toContain(`vendoredRowActions(v, isWritable, canWriteOrg).${a}.shown`)
-        expect(button).toContain(`vendoredRowActions(v, isWritable, canWriteOrg).${a}.disabled`)
+        expect(code).toMatch(/actions: vendoredRowActions\(v, isWritable\.value, canWriteOrg\.value\)/)
+        expect(source).toContain('<tr v-for="{ v, actions } in vendoredRowsView"')
+        const button = source.slice(source.lastIndexOf('<n-button', source.indexOf(`data-testid="vendored-${a}"`)),
+            source.indexOf(`data-testid="vendored-${a}"`) + 200)
+        expect(button).toContain(`v-if="actions.${a}.shown"`)
+        expect(button).toContain(`:disabled="actions.${a}.disabled"`)
+    })
+
+    it('seeds Describe from the re-read description and saves only a change', () => {
+        const open = anyFunctionBody('openVendoredDescribe')
+        expect(open).toMatch(/vendoredDescribeFormOf\(seed\.stored\)/)
+        expect(open).not.toMatch(/vrow\.overlay/)
+        const save = anyFunctionBody('saveVendoredDescription')
+        expect(save).toMatch(/!vendoredFormSends\.value/)
+        expect(save).toMatch(/vendoredEditorSeed\.value\?\.stored/)
+        expect(save).toMatch(/if \(gen === vendoredEditorGen\) vendoredEditorOpen\.value = false/)
+        expect(anyFunctionBody('saveOverlay')).toMatch(/if \(gen === overlayGen\) overlayModalOpen\.value = false/)
     })
 
     it('refetches the panel after every mutation', () => {
@@ -270,7 +284,9 @@ describe('the Supplier half is wired into ReleaseView', () => {
         const half = source.slice(source.indexOf("bulkStage === 'compose' && bulkTab === 'supplier'"))
         expect(half.slice(0, 400)).toContain('v-if="!canWriteOrg"')
         expect(half.slice(0, 400)).toContain('BULK_SUPPLIER_ORG_WRITE_SENTENCE')
-        expect(half).toContain('<n-form label-placement="top" :disabled="!canWriteOrg">')
+        expect(half).toContain('<n-form label-placement="top" :disabled="bulkSupplierCounting || !canWriteOrg">')
+        expect(anyFunctionBody('collectSupplierCount')).toMatch(/bulkSupplierCounting\.value = true/)
+        expect(code).toMatch(/overCap \? SUPPLIER_SELECTOR_OVER_CAP_TEXT/)
         expect(half).toContain('v-for="o in SUPPLIER_SELECTOR_FORM_OPTIONS"')
         expect(code).toMatch(/orgWriteSentence\('A bulk supplier assignment'\)/)
     })

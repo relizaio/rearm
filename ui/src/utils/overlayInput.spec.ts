@@ -87,6 +87,11 @@ describe('the documents', () => {
         expect(await loadComponentOverlay({ query } as any, 'rel-1', 'sc-1')).toBeNull()
     })
 
+    it('a vanished row is an error, never an empty baseline', async () => {
+        const query = vi.fn(async () => ({ data: { getReleaseSbomComponentGraph: null } }))
+        await expect(loadComponentOverlay({ query } as any, 'rel-1', 'sc-1')).rejects.toThrow('sbom component not found')
+    })
+
     it('saves through setSbomComponentOverlay with the built variables', async () => {
         const mutate = vi.fn(async (_o: any) => ({ data: { setSbomComponentOverlay: { uuid: 'sc-1',
             overlay: { supplier: 'Acme' } } } }))

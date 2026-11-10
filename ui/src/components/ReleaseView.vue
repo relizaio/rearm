@@ -1005,7 +1005,7 @@
                         This writes the same supplier to every matching component that holds none.
                         A component that already holds a supplier is skipped, never replaced.
                     </n-alert>
-                    <n-form label-placement="top" :disabled="!canWriteOrg">
+                    <n-form label-placement="top" :disabled="bulkSupplierCounting || !canWriteOrg">
                         <n-form-item label="Components">
                             <n-radio-group v-model:value="bulkSupplierSelector.form" size="small"
                                 data-testid="bulk-supplier-selector-form">
@@ -1051,7 +1051,8 @@
                             :loading="bulk.collecting.value"
                             @click="collectBulkTargets">Review selection</n-button>
                         <n-button v-if="bulkStage === 'compose' && bulkTab === 'supplier'" size="small" type="primary"
-                            :disabled="bulkSupplierErrors.length > 0 || !canWriteOrg"
+                            :disabled="bulkSupplierErrors.length > 0 || bulkSupplierCounting || !canWriteOrg"
+                            :loading="bulkSupplierCounting"
                             data-testid="bulk-supplier-review"
                             @click="collectSupplierCount">Review selection</n-button>
                         <n-button v-if="bulkStage === 'confirm' && !bulk.submitting.value"
@@ -1334,20 +1335,20 @@
                             <div style="font-size: 12px; color: #999; margin-left: 8px;">{{ VENDORED_COPY_FROM_HINT }}</div>
                         </n-form-item>
                         <n-form-item label="Origin">
-                            <n-input v-model:value="vendoredForm.origin" :maxlength="512" />
+                            <n-input v-model:value="vendoredForm.origin" :maxlength="VENDORED_LINE_MAX_LENGTH" />
                         </n-form-item>
                         <n-form-item label="Supplier">
-                            <n-input v-model:value="vendoredForm.supplier" :maxlength="512" />
+                            <n-input v-model:value="vendoredForm.supplier" :maxlength="VENDORED_LINE_MAX_LENGTH" />
                         </n-form-item>
                         <n-form-item label="Licence (SPDX)">
-                            <n-input v-model:value="vendoredForm.licence" :maxlength="512" />
+                            <n-input v-model:value="vendoredForm.licence" :maxlength="VENDORED_LINE_MAX_LENGTH" />
                         </n-form-item>
                         <n-form-item label="Description">
                             <n-input v-model:value="vendoredForm.description" type="textarea" :rows="3"
-                                :maxlength="2048" />
+                                :maxlength="VENDORED_TEXT_MAX_LENGTH" />
                         </n-form-item>
                         <n-form-item label="Reason (audit only, never exported)">
-                            <n-input v-model:value="vendoredForm.reason" :maxlength="2048" />
+                            <n-input v-model:value="vendoredForm.reason" :maxlength="VENDORED_TEXT_MAX_LENGTH" />
                         </n-form-item>
                     </n-form>
                     <template v-if="!vendoredEditorSeed.readOnly">
@@ -1360,7 +1361,8 @@
                         <n-button size="small" @click="cancelVendoredDescribe">
                             {{ vendoredEditorSeed?.readOnly ? 'Close' : 'Cancel' }}</n-button>
                         <n-button v-if="vendoredEditorSeed && !vendoredEditorSeed.readOnly" size="small" type="primary"
-                            :disabled="vendoredEditorLoading || vendoredEditorSaving || vendoredFormErrors.length > 0"
+                            :disabled="vendoredEditorLoading || vendoredEditorSaving || vendoredFormErrors.length > 0
+                                || !vendoredFormSends"
                             :loading="vendoredEditorSaving"
                             data-testid="vendored-save"
                             @click="saveVendoredDescription">Save</n-button>
@@ -1381,7 +1383,7 @@
                     </n-alert>
                     <n-form label-placement="top">
                         <n-form-item label="Reason (required; audit only, never exported)">
-                            <n-input v-model:value="vendoredRemoveReason" :maxlength="2048"
+                            <n-input v-model:value="vendoredRemoveReason" :maxlength="VENDORED_TEXT_MAX_LENGTH"
                                 data-testid="vendored-remove-reason" />
                         </n-form-item>
                     </n-form>
@@ -2094,7 +2096,7 @@
                                 <p v-if="!vendoredError && !vendoredRows.length" style="font-size: 12px;">
                                     Every component of the merged SBOM carries an identifier.</p>
                                 <table v-else-if="vendoredRows.length" style="width: 100%; font-size: 12px;">
-                                    <tr v-for="v in vendoredRows" :key="(v.group || '') + '/' + v.name + '@' + (v.version ?? '')"
+                                    <tr v-for="{ v, actions } in vendoredRowsView" :key="(v.group || '') + '/' + v.name + '@' + (v.version ?? '')"
                                         data-testid="unidentified-row">
                                         <td>{{ v.group ? v.group + ':' : '' }}{{ v.name }}</td>
                                         <td>{{ v.version }}</td>
@@ -2102,20 +2104,20 @@
                                         <td style="word-break: break-all;">{{ v.described ? v.key : '' }}</td>
                                         <td>
                                             <n-space size="small" align="center">
-                                                <n-button v-if="vendoredRowActions(v, isWritable, canWriteOrg).describe.shown"
+                                                <n-button v-if="actions.describe.shown"
                                                     size="small" data-testid="vendored-describe"
-                                                    :disabled="vendoredRowActions(v, isWritable, canWriteOrg).describe.disabled"
+                                                    :disabled="actions.describe.disabled"
                                                     @click="openVendoredDescribe(v)">Describe</n-button>
-                                                <span v-if="vendoredRowActions(v, isWritable, canWriteOrg).refusal"
+                                                <span v-if="actions.refusal"
                                                     data-testid="vendored-refusal" style="color: #999;">
-                                                    {{ vendoredRowActions(v, isWritable, canWriteOrg).refusal }}</span>
-                                                <n-button v-if="vendoredRowActions(v, isWritable, canWriteOrg).attest.shown"
+                                                    {{ actions.refusal }}</span>
+                                                <n-button v-if="actions.attest.shown"
                                                     size="small" type="primary" ghost data-testid="vendored-attest"
-                                                    :disabled="vendoredRowActions(v, isWritable, canWriteOrg).attest.disabled"
+                                                    :disabled="actions.attest.disabled"
                                                     @click="openVendoredAttestForm(v)">Attest</n-button>
-                                                <n-button v-if="vendoredRowActions(v, isWritable, canWriteOrg).remove.shown"
+                                                <n-button v-if="actions.remove.shown"
                                                     size="small" type="error" ghost data-testid="vendored-remove"
-                                                    :disabled="vendoredRowActions(v, isWritable, canWriteOrg).remove.disabled"
+                                                    :disabled="actions.remove.disabled"
                                                     @click="openVendoredRemove(v)">Remove description</n-button>
                                             </n-space>
                                         </td>
@@ -2797,7 +2799,7 @@ import { useBulkAttest, validateBulkInput, emptyBulkForm, groupNotWritten } from
 import { hasOrgWrite, orgWriteSentence } from '@/utils/orgWrite'
 import { SELECTOR_FORM_OPTIONS, SELECTOR_SCOPE_OPTIONS, SELECTOR_OVER_CAP_TEXT, emptySelectorChoice, fetchSelectorCount,
     isSelectorForm, selectorCountText, selectorLabel, submitBySelector, validateSelector,
-    SUPPLIER_SELECTOR_FORM_OPTIONS, SUPPLIER_MAX_LENGTH, SUPPLIER_REASON_MAX_LENGTH, emptySupplierSelectorChoice,
+    SUPPLIER_SELECTOR_FORM_OPTIONS, SUPPLIER_SELECTOR_OVER_CAP_TEXT, SUPPLIER_MAX_LENGTH, SUPPLIER_REASON_MAX_LENGTH, emptySupplierSelectorChoice,
     emptySupplierForm, submitSupplierBySelector, validateSupplierSweep } from '@/utils/bulkSelectorForm'
 import type { BulkSelectorChoice, BulkSupplierInput, SelectorCount } from '@/utils/bulkSelectorForm'
 import { OVERLAY_LICENCE_MAX_LENGTH, OVERLAY_REASON_MAX_LENGTH, OVERLAY_SUPPLIER_MAX_LENGTH, loadComponentOverlay,
@@ -2808,7 +2810,7 @@ import { VENDORED_COPY_FROM_HINT, VENDORED_COPY_FROM_LABEL, VENDORED_IDENTIFIER_
     copyVendoredDescription, describeVendored, describeVendoredVariables, loadUnidentifiedComponents,
     loadVendoredSupportDetail, openVendoredEditor as loadVendoredEditorSeed, removeVendored, validateVendoredDescribe,
     vendoredDescribeFormOf, vendoredLabel, vendoredPanelTitle, vendoredRemoveSentence, vendoredRowActions,
-    vendoredStateTag } from '@/utils/vendoredComponents'
+    vendoredSendsAnything, vendoredStateTag, VENDORED_LINE_MAX_LENGTH, VENDORED_TEXT_MAX_LENGTH } from '@/utils/vendoredComponents'
 import type { VendoredDescribeForm, VendoredEditorSeed, VendoredRow } from '@/utils/vendoredComponents'
 import { END_OF_SUPPORT_CODES, justifiedUnknownLabel, justifiedUnknownOptions } from '@/utils/justifiedUnknownLabels'
 import MissingHashesPanel from '@/components/MissingHashesPanel.vue'
@@ -5487,10 +5489,12 @@ const bulkSupplierSelector: BulkSelectorChoice = reactive(emptySupplierSelectorC
 const bulkSupplierForm: BulkSupplierInput = reactive(emptySupplierForm())
 const bulkSupplierErrors: ComputedRef<string[]> = computed(
     (): string[] => validateSupplierSweep(bulkSupplierSelector, bulkSupplierForm))
+/** True while the confirm stage's count is in flight: the form is frozen so the count matches what is sent. */
+const bulkSupplierCounting: Ref<boolean> = ref(false)
 /** The half the shown result was composed on, so the counts line says what was written. */
 const bulkResultHalf: Ref<'support' | 'supplier'> = ref('support')
 const bulkSupplierCountLine: ComputedRef<string> = computed((): string => bulkSelectorCount.value
-    ? (bulkSelectorCount.value.overCap ? SELECTOR_OVER_CAP_TEXT
+    ? (bulkSelectorCount.value.overCap ? SUPPLIER_SELECTOR_OVER_CAP_TEXT
         : selectorCountText(bulkSelectorCount.value.matched, bulkSupplierSelector.scope))
     : '')
 const bulkSelectorCountLine: ComputedRef<string> = computed((): string => bulkSelectorCount.value
@@ -5555,6 +5559,7 @@ function openBulkAttest () {
     if (!resuming) Object.assign(bulkSelector, emptySelectorChoice())
     Object.assign(bulkSupplierSelector, emptySupplierSelectorChoice())
     Object.assign(bulkSupplierForm, emptySupplierForm())
+    bulkSupplierCounting.value = false
     bulkSelectorCount.value = null
     bulkTab.value = 'support'
     bulkModalOpen.value = true
@@ -5657,6 +5662,7 @@ async function collectSupplierCount () {
     const gen = ++bulkGen
     bulk.error.value = null
     bulkSelectorCount.value = null
+    bulkSupplierCounting.value = true
     try {
         const count = await fetchSelectorCount(graphqlClient as any, updatedRelease.value.orgDetails.uuid,
             bulkSupplierSelector, updatedRelease.value.uuid)
@@ -5666,6 +5672,8 @@ async function collectSupplierCount () {
         bulkStage.value = 'confirm'
     } catch (err: any) {
         if (gen === bulkGen) bulk.error.value = commonFunctions.parseGraphQLError(err?.message || String(err))
+    } finally {
+        if (gen === bulkGen) bulkSupplierCounting.value = false
     }
 }
 
@@ -5908,11 +5916,13 @@ async function saveOverlay () {
     if (overlaySaving.value || overlayAccess.value.readOnly || overlayErrors.value.length
         || !overlaySendsAnything(overlayForm, overlayStored.value)) return
     overlaySaving.value = true
+    const gen = overlayGen
     let saved = false
     try {
         const uuid = overlayRow.value.component?.uuid || overlayRow.value.sbomComponentUuid
         await saveComponentOverlay(graphqlClient as any, overlayVariables(uuid, overlayForm, overlayStored.value))
-        overlayModalOpen.value = false
+        // Only the editor this save came from: another row's editor opened meanwhile stays open.
+        if (gen === overlayGen) overlayModalOpen.value = false
         saved = true
     } catch (err: any) {
         // The server's text as is: `licence invalid: ...`, the bounds, the supplier content rule.
@@ -5938,6 +5948,9 @@ const vendoredLoaded: Ref<boolean> = ref(false)
 const vendoredLoading: Ref<boolean> = ref(false)
 const vendoredError: Ref<string | null> = ref(null)
 let vendoredGen = 0
+/** Each listed node with its actions, computed once per render rather than per button. */
+const vendoredRowsView = computed(() => vendoredRows.value
+    .map(v => ({ v, actions: vendoredRowActions(v, isWritable.value, canWriteOrg.value) })))
 
 async function loadVendoredPanel () {
     if (!updatedRelease.value?.uuid) return
@@ -5972,6 +5985,8 @@ const vendoredEditorSeed: Ref<VendoredEditorSeed | null> = ref(null)
 const vendoredForm: VendoredDescribeForm = reactive(vendoredDescribeFormOf(null))
 const vendoredCopyChoice: Ref<string | null> = ref(null)
 const vendoredFormErrors: ComputedRef<string[]> = computed((): string[] => validateVendoredDescribe(vendoredForm))
+const vendoredFormSends: ComputedRef<boolean> = computed(
+    (): boolean => vendoredSendsAnything(vendoredForm, vendoredEditorSeed.value?.stored))
 const vendoredCopyOptions = computed(() => (vendoredEditorSeed.value?.copySources ?? [])
     .map(c => ({ label: vendoredLabel(c), value: c.uuid })))
 let vendoredEditorGen = 0
@@ -5982,13 +5997,15 @@ async function openVendoredDescribe (vrow: VendoredRow) {
     vendoredEditorRow.value = vrow
     vendoredEditorSeed.value = null
     vendoredCopyChoice.value = null
-    Object.assign(vendoredForm, vendoredDescribeFormOf(vrow.overlay))
+    Object.assign(vendoredForm, vendoredDescribeFormOf(null))
     vendoredEditorOpen.value = true
     vendoredEditorLoading.value = true
     try {
         const seed = await loadVendoredEditorSeed(graphqlClient as any, updatedRelease.value.uuid, vrow, canWriteOrg.value)
         if (gen !== vendoredEditorGen) return
+        // Seeded from the re-read description, never the panel's list copy.
         vendoredEditorSeed.value = seed
+        Object.assign(vendoredForm, vendoredDescribeFormOf(seed.stored))
     } catch (err: any) {
         if (gen !== vendoredEditorGen) return
         notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
@@ -6012,14 +6029,16 @@ function onVendoredCopyFrom (uuid: string | null) {
 
 async function saveVendoredDescription () {
     const vrow = vendoredEditorRow.value
-    if (!vrow || vendoredEditorSaving.value || !canWriteOrg.value || vendoredFormErrors.value.length) return
+    if (!vrow || vendoredEditorSaving.value || !canWriteOrg.value || vendoredFormErrors.value.length
+        || !vendoredFormSends.value) return
     vendoredEditorSaving.value = true
+    const gen = vendoredEditorGen
     let saved = false
     try {
         // The node's own name and version; the server mints the key, a copy is never an alias.
-        await describeVendored(graphqlClient as any,
-            describeVendoredVariables(updatedRelease.value.uuid, vrow, vendoredForm, vrow.overlay))
-        vendoredEditorOpen.value = false
+        await describeVendored(graphqlClient as any, describeVendoredVariables(updatedRelease.value.uuid, vrow,
+            vendoredForm, vendoredEditorSeed.value?.stored))
+        if (gen === vendoredEditorGen) vendoredEditorOpen.value = false
         saved = true
     } catch (err: any) {
         notify('error', 'Not saved', commonFunctions.parseGraphQLError(err.message))

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { BULK_SET_SUPPORT_BY_SELECTOR, SELECTOR_OVER_CAP_TEXT, SUPPORT_BULK_SELECTOR_COUNT, emptySelectorChoice,
     fetchSelectorCount, selectorCountText, selectorInput, selectorRelease, submitBySelector, validateSelector,
-    BULK_SET_SUPPLIER_BY_SELECTOR, SUPPLIER_SELECTOR_FORM_OPTIONS, emptySupplierForm, emptySupplierSelectorChoice,
+    BULK_SET_SUPPLIER_BY_SELECTOR, SUPPLIER_SELECTOR_FORM_OPTIONS, SUPPLIER_SELECTOR_OVER_CAP_TEXT, emptySupplierForm, emptySupplierSelectorChoice,
     submitSupplierBySelector, validateSupplierSweep }
     from './bulkSelectorForm'
 import type { BulkSelectorChoice } from './bulkSelectorForm'
@@ -226,6 +226,12 @@ describe('the supplier sweep', () => {
         const out = await submitSupplierBySelector(c, 'org-1', SUP, 'rel-1', { supplier, reason: '' })
         expect(out.aborted).toBe(true)
         expect(mutate).not.toHaveBeenCalled()
+    })
+
+    it('the over-cap line points to no Shown components, which this half does not offer', () => {
+        expect(SUPPLIER_SELECTOR_OVER_CAP_TEXT).toBe('Matches more than 1000 components; narrow the selector by'
+            + ' namespace or to this release')
+        expect(SUPPLIER_SELECTOR_OVER_CAP_TEXT).not.toContain('Shown components')
     })
 
     it('refuses the explicit form and an over-long supplier', () => {

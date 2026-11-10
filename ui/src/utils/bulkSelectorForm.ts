@@ -205,6 +205,10 @@ export async function submitBySelector (
 export const SUPPLIER_SELECTOR_FORM_OPTIONS: Array<{ label: string, value: BulkSelectorForm }> =
     SELECTOR_FORM_OPTIONS.filter(o => o.value !== 'EXPLICIT')
 
+/** The supplier half's over-cap line: it has no Shown components to point to. */
+export const SUPPLIER_SELECTOR_OVER_CAP_TEXT = `Matches more than ${BULK_SELECTOR_CAP} components; narrow the`
+    + ' selector by namespace or to this release'
+
 /** By ecosystem, This release: the supplier half has no explicit form to default to. */
 export function emptySupplierSelectorChoice (): BulkSelectorChoice {
     return { form: 'TYPE', type: '', namespace: '', scope: 'RELEASE' }
