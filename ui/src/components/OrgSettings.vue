@@ -800,6 +800,10 @@
                     <n-tab-pane name="externalKeys" tab="External Keys" v-if="teaProfilesAvailable(myUser?.installationType)">
                         <ExternalKeysPanel :org-uuid="orgResolved" :notify="notify" :is-org-admin="isOrgAdmin" />
                     </n-tab-pane>
+                    <!-- Customers hold external keys, so they sit beside them (FDAW-25 3.12). -->
+                    <n-tab-pane v-if="isOrgAdmin && teaProfilesAvailable(myUser?.installationType)" name="customers" tab="Customers">
+                        <TeaCustomersPanel :org-uuid="orgResolved" :notify="notify" :is-org-admin="isOrgAdmin" :products="orgProducts" :components="orgComponents" :perspectives="perspectives" />
+                    </n-tab-pane>
                 </n-tabs>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :sibling-keys="programmaticAccessKeys" :org-uuid="orgResolved" :notify="notify" :api-key-groups="apiKeyGroupsOfKey(apiKeyGroups, selectedEditKey?.uuid)" @saved="loadProgrammaticAccessKeys(false)" />
                 <ApiKeyGroupMembershipModal v-model:show="showKeyGroupsModal" :api-key="keyGroupsKey" :groups="apiKeyGroups" :sibling-keys="programmaticAccessKeys" :org-uuid="orgResolved" :notify="notify" @saved="onKeyGroupsSaved" />
@@ -1540,6 +1544,7 @@ import ApiKeyDeclareModal from './ApiKeyDeclareModal.vue'
 import { canDeclareKey, canReleaseKeyName, declaredSourceDetail, declaredSourceLabel, releasePayload, secretExpiresLabel } from '@/utils/apiKeyDeclaration'
 import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import ExternalKeysPanel from './ExternalKeysPanel.vue'
+import TeaCustomersPanel from './TeaCustomersPanel.vue'
 import SbomSigningKeysPanel from './SbomSigningKeysPanel.vue'
 import OrgDeclaredLicensePanel from './OrgDeclaredLicensePanel.vue'
 import { UNSUPPORTED_NOTE } from '@/utils/declaredLicense'
@@ -1646,6 +1651,13 @@ async function loadTabSpecificData (tabName: string) {
         ])
         loadProgrammaticAccessKeys(true)
         loadApiKeyGroupsOfOrg()
+    } else if (tabName === "customers") {
+        // the customer editor's grant pickers only; the panel loads its own groups and keys
+        await Promise.all([
+            loadPerspectives(),
+            store.dispatch('fetchComponents', orgResolved.value),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
     } else if (tabName === "freeFormKeys") {
         // Same as programmaticAccess — formatValuesForApiKeys() resolves
         // the Updated By column against users.value, so the user list
@@ -1956,6 +1968,7 @@ if (landing.programmaticSubTab) programmaticSubTab.value = landing.programmaticS
 // API Key Groups loads its pickers and the groups when its sub-tab opens, as it did as a top-level tab. Set up after
 // the landing above: a link to it already loads them through the Programmatic Access tab.
 watch(programmaticSubTab, (sub) => { if (sub === 'apiKeyGroups') loadTabSpecificData('apiKeyGroups') })
+watch(programmaticSubTab, (sub) => { if (sub === 'customers') loadTabSpecificData('customers') })
 // Default Policies sub-tab is approvalPoliciesInner (Approval Policies) — the
 // most common entry point. Approval Roles / Entries are configuration of
 // vocabulary used inside the policies.
@@ -2451,7 +2464,7 @@ const apiKeyGroupsSupported = ref(true)
 async function loadApiKeyGroupsOfOrg () {
     keyCombinedPermissions.value = {}
     try {
-        const r = await loadApiKeyGroups(graphqlClient, orgResolved.value)
+        const r = await loadApiKeyGroups(graphqlClient, orgResolved.value, 'INTERNAL')
         apiKeyGroups.value = r.groups
         apiKeyGroupsSupported.value = r.supported
     } catch (error: any) {

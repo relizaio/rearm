@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.ApiKeyGroupStatus;
 import io.reliza.common.Utils;
 import io.reliza.model.ApiKeyGroup;
@@ -70,7 +71,7 @@ public class ApiKeyGroupServiceReadsTest {
 				row(UUID.randomUUID(), ApiKeyGroupStatus.ACTIVE, "foreign", KEY),
 				row(ORG, ApiKeyGroupStatus.ACTIVE, "notmember", UUID.randomUUID())));
 
-		List<Set<UserPermission>> sets = service().permissionSetsForKey(KEY, ORG);
+		List<Set<UserPermission>> sets = service().permissionSetsForKey(KEY, ORG, ApiKeyGroupKind.INTERNAL);
 		assertEquals(1, sets.size(), sets.toString());
 		assertEquals(Set.of("good"), tags(sets));
 	}
@@ -84,18 +85,45 @@ public class ApiKeyGroupServiceReadsTest {
 				row(UUID.randomUUID(), ApiKeyGroupStatus.ACTIVE, "foreign", KEY),
 				row(ORG, ApiKeyGroupStatus.ACTIVE, "notmember", UUID.randomUUID())));
 
-		List<ApiKeyGroupData> groups = service().activeGroupsHoldingKey(KEY, ORG);
+		List<ApiKeyGroupData> groups = service().activeGroupsHoldingKey(KEY, ORG, ApiKeyGroupKind.INTERNAL);
 		assertEquals(1, groups.size(), groups.toString());
 		assertEquals(Set.of("good"), tags(List.of(groups.get(0).getOrgPermissions(ORG))));
-		assertEquals(groups.stream().map(g -> g.getOrgPermissions(ORG)).toList(), service().permissionSetsForKey(KEY, ORG));
-		assertTrue(service().activeGroupsHoldingKey(null, ORG).isEmpty());
-		assertTrue(service().activeGroupsHoldingKey(KEY, null).isEmpty());
+		assertEquals(groups.stream().map(g -> g.getOrgPermissions(ORG)).toList(), service().permissionSetsForKey(KEY, ORG, ApiKeyGroupKind.INTERNAL));
+		assertTrue(service().activeGroupsHoldingKey(null, ORG, ApiKeyGroupKind.INTERNAL).isEmpty());
+		assertTrue(service().activeGroupsHoldingKey(KEY, null, ApiKeyGroupKind.INTERNAL).isEmpty());
 	}
 
 	@Test
 	public void noKeyOrNoOrganizationAddsNothingAndReadsNothing() {
-		assertTrue(service().permissionSetsForKey(null, ORG).isEmpty());
-		assertTrue(service().permissionSetsForKey(KEY, null).isEmpty());
+		assertTrue(service().permissionSetsForKey(null, ORG, ApiKeyGroupKind.INTERNAL).isEmpty());
+		assertTrue(service().permissionSetsForKey(KEY, null, ApiKeyGroupKind.INTERNAL).isEmpty());
+	}
+
+	/** FDAW-37 row 12: a group row of the one kind, with its approval tag, for the kind filter. */
+	private static ApiKeyGroup kindRow(ApiKeyGroupKind kind, String tag) {
+		ApiKeyGroupData d = ApiKeyGroupData.apiKeyGroupDataFactory(CreateApiKeyGroupDto.builder()
+				.name("g-" + tag + "-" + UUID.randomUUID()).org(ORG).kind(kind).build());
+		d.addApiKey(KEY);
+		d.setPermission(PermissionScope.ORGANIZATION, ORG, PermissionType.READ_ONLY, List.of(tag));
+		ApiKeyGroup r = new ApiKeyGroup();
+		r.setUuid(UUID.randomUUID());
+		r.setRecordData(Utils.dataToRecord(d));
+		return r;
+	}
+
+	@Test
+	public void eachKindReadsOnlyItsOwnGroupsAndNoKindReadsNothing() {
+		when(repository.findByApiKeyAndOrg(anyString(), anyString())).thenReturn(List.of(
+				kindRow(ApiKeyGroupKind.INTERNAL, "internal"), kindRow(ApiKeyGroupKind.CUSTOMER, "customer")));
+
+		assertEquals(Set.of("internal"), tags(service().permissionSetsForKey(KEY, ORG, ApiKeyGroupKind.INTERNAL)));
+		assertEquals(Set.of("customer"), tags(service().permissionSetsForKey(KEY, ORG, ApiKeyGroupKind.CUSTOMER)));
+		assertEquals(List.of(ApiKeyGroupKind.INTERNAL),
+				service().activeGroupsHoldingKey(KEY, ORG, ApiKeyGroupKind.INTERNAL).stream().map(ApiKeyGroupData::getKind).toList());
+		assertEquals(List.of(ApiKeyGroupKind.CUSTOMER),
+				service().activeGroupsHoldingKey(KEY, ORG, ApiKeyGroupKind.CUSTOMER).stream().map(ApiKeyGroupData::getKind).toList());
+		assertTrue(service().permissionSetsForKey(KEY, ORG, null).isEmpty());
+		assertTrue(service().activeGroupsHoldingKey(KEY, ORG, null).isEmpty());
 	}
 
 	@Test

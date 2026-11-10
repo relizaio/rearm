@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import graphql.ExecutionResult;
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.ApiKey;
@@ -100,7 +101,7 @@ public class ApiKeyGroupKeySideTest extends ApiKeyGroupKeySideTestBase {
 		assertEquals(List.of("BOARD_READ"), boardSources.get(0).get("functions"));
 
 		assertTrue(reads(as(fresh(k)), org, a), "the enforcement side of the same fixture");
-		List<ApiKeyGroupData> holding = apiKeyGroupService.activeGroupsHoldingKey(k.getUuid(), org.getUuid());
+		List<ApiKeyGroupData> holding = apiKeyGroupService.activeGroupsHoldingKey(k.getUuid(), org.getUuid(), ApiKeyGroupKind.INTERNAL);
 		assertEquals(1, holding.size());
 		assertEquals(g.getUuid(), holding.get(0).getUuid());
 		assertSameAsEnforced(k, org, r);

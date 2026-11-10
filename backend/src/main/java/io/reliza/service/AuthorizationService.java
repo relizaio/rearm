@@ -27,6 +27,7 @@ import org.springframework.web.context.request.ServletWebRequest;
 import com.netflix.graphql.dgs.exceptions.DgsEntityNotFoundException;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.AuthorizationStatus;
 import io.reliza.common.CommonVariables.CallType;
@@ -118,7 +119,7 @@ public class AuthorizationService {
 	@Autowired
 	private AgentIdentityService agentIdentityService;
 
-	// TPF-91: a FREEFORM key's effective permissions union its ACTIVE API key groups (keyPermissions)
+	// TPF-91: a FREEFORM key's effective permissions union its ACTIVE INTERNAL API key groups (keyPermissions)
 	@Autowired
 	@Lazy
 	private ApiKeyGroupService apiKeyGroupService;
@@ -1447,7 +1448,7 @@ public class AuthorizationService {
 	}
 
 	/**
-	 * The key's permissions in its org. FREEFORM: its own grants union every ACTIVE API key group of
+	 * The key's permissions in its org. FREEFORM: its own grants union every ACTIVE INTERNAL API key group of
 	 * its organization holding it (TPF-91), the whole story. USER: the stored set, the ceiling the
 	 * callers intersect with the owner. FEDERATED: the trust rules.
 	 *
@@ -1470,7 +1471,7 @@ public class AuthorizationService {
 	/**
 	 * The effective permissions of a STORED RBAC key in its organization (TPF-118/TPF-123 extracts this from
 	 * keyPermissions so the browser read answers the rows every check enforces, from the same code):
-	 * FREEFORM: its own grants union every ACTIVE API key group of the organization holding it (TPF-91),
+	 * FREEFORM: its own grants union every ACTIVE INTERNAL API key group of the organization holding it (TPF-91),
 	 * read per call, no cache; any other stored type (USER): its own grants, the ceiling the callers
 	 * intersect with the owner. A FEDERATED identity stores no set and is not answered here: keyPermissions
 	 * takes it to the trust rules before calling this.
@@ -1478,9 +1479,9 @@ public class AuthorizationService {
 	public Set<UserPermission> effectiveStoredKeyPermissions(UUID keyUuid, ApiTypeEnum type, ApiKeyData akd, UUID org) {
 		Set<UserPermission> own = akd.getPermissions(org).getOrgPermissionsAsSet(org);
 		if (type == ApiTypeEnum.FREEFORM) {
-			// own grants union every ACTIVE API key group of this org holding the key (TPF-91); read per call, no cache
+			// own grants union every ACTIVE INTERNAL API key group of this org holding the key (TPF-91); read per call, no cache
 			return OrganizationService.combinePermissions(own, org,
-					apiKeyGroupService.permissionSetsForKey(keyUuid, org)).getOrgPermissionsAsSet(org);
+					apiKeyGroupService.permissionSetsForKey(keyUuid, org, ApiKeyGroupKind.INTERNAL)).getOrgPermissionsAsSet(org);
 		}
 		return own;   // USER: the stored ceiling, intersected with ownerSide by the callers, exactly as today
 	}
@@ -1794,7 +1795,7 @@ public class AuthorizationService {
 		// without triggering security alerts on every fallback caller.
 		//
 		// TPF-91 (decision 10): a FREEFORM key's org-wide entry is read from its effective set, its own grants
-		// union every ACTIVE API key group of its organization holding it, through keyPermissions (the same
+		// union every ACTIVE INTERNAL API key group of its organization holding it, through keyPermissions (the same
 		// combinePermissions / permissionSetsForKey pair as every other check); read per call, no cache. A
 		// USER key keeps its own row here (the owner check below is its ceiling); a FEDERATED identity row
 		// stores nothing and stays refused, as today.

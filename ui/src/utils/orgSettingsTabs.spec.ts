@@ -18,6 +18,6 @@ describe('the Organization Settings tab a link lands on', () => {
     })
 
     it('lists API Key Groups right after Free Form Keys', () => {
-        expect([...PROGRAMMATIC_SUBTABS]).toEqual(['freeFormKeys', 'apiKeyGroups', 'userKeys', 'scopedKeys', 'federatedIdentities', 'externalKeys'])
+        expect([...PROGRAMMATIC_SUBTABS]).toEqual(['freeFormKeys', 'apiKeyGroups', 'userKeys', 'scopedKeys', 'federatedIdentities', 'externalKeys', 'customers'])
     })
 })

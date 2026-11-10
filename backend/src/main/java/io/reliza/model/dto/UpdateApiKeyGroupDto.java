@@ -17,10 +17,11 @@ import lombok.Data;
 
 /**
  * Input of updateApiKeyGroup (TPF-91): a null field keeps the stored value; apiKeys replaces the
- * member list (FREEFORM keys of the group's organization only); permissions replace the group's set.
+ * member list (keys of the group's organization, of the type its kind admits); permissions replace
+ * the group's set. A group's kind is set at create and never changes, so it has no field here.
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 public class UpdateApiKeyGroupDto {
 	@JsonProperty("groupId")
 	private UUID groupId;

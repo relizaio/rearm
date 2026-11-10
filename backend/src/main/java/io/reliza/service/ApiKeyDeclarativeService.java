@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import io.reliza.common.CliSessionCodes;
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey;
@@ -547,7 +548,7 @@ public class ApiKeyDeclarativeService {
 	}
 
 	/**
-	 * A key's effective permissions in its organization (TPF-91): {@code own} union every ACTIVE API key group
+	 * A key's effective permissions in its organization (TPF-91): {@code own} union every ACTIVE INTERNAL API key group
 	 * of the organization holding the key, through the helper keyPermissions uses, as the list the
 	 * stronger-than-caller checks demand. {@code own} is the stored grants, or on a declared change the
 	 * permissions the file declares. The export, the list and the change diff keep currentPermissions: a file
@@ -568,7 +569,7 @@ public class ApiKeyDeclarativeService {
 					null == d.functions() ? List.of() : d.functions(), null == d.approvals() ? List.of() : d.approvals());
 		}
 		Set<UserPermission> combined = OrganizationService.combinePermissions(p.getOrgPermissionsAsSet(org), org,
-				apiKeyGroupService.permissionSetsForKey(ak.getUuid(), org)).getOrgPermissionsAsSet(org);
+				apiKeyGroupService.permissionSetsForKey(ak.getUuid(), org, ApiKeyGroupKind.INTERNAL)).getOrgPermissionsAsSet(org);
 		return permissionDtos(org, combined);
 	}
 

@@ -287,9 +287,9 @@ type Query {
 	
 	# User Groups
 	getUserGroups(org: ID!): [UserGroupWebDto]
-	"Active and inactive API key groups of the organization; organization administrators only"
-	apiKeyGroupsOfOrg(org: ID!): [ApiKeyGroupWebDto]
-	"A key's effective permissions in the organization, the rows every check enforces (its own grants union every ACTIVE API key group holding it for a FREEFORM key; the own grants for a USER key), each with its sources; organization administrators only. FREEFORM and USER keys only: a key of any other type (an object key such as INSTANCE or COMPONENT, or a FEDERATED identity, whose set comes from the trust rules) is refused with 'Only FREEFORM and USER keys carry a permission set'. The stored set: never the owner-intersected set of a USER key"
+	"Active and inactive API key groups of the organization, of one kind when kind is given, of both when it is not; organization administrators only"
+	apiKeyGroupsOfOrg(org: ID!, kind: ApiKeyGroupKind): [ApiKeyGroupWebDto]
+	"A key's effective permissions in the organization, the rows every check enforces (its own grants union every ACTIVE INTERNAL API key group holding it for a FREEFORM key; the own grants for a USER key), each with its sources; organization administrators only. FREEFORM and USER keys only: a key of any other type (an object key such as INSTANCE or COMPONENT, or a FEDERATED identity, whose set comes from the trust rules) is refused with 'Only FREEFORM and USER keys carry a permission set'. The stored set: never the owner-intersected set of a USER key"
 	combinedApiKeyOrgPermissions(orgUuid: ID!, apiKeyUuid: ID!): CombinedApiKeyOrgPermissions
 	getTeams(org: ID!): [TeamWebDto]
 
@@ -1242,11 +1242,11 @@ type Mutation {
 	createUserGroup(userGroup: CreateUserGroupInput!): UserGroupWebDto
 	updateUserGroup(userGroup: UpdateUserGroupInput!): UserGroupWebDto
 	createApiKeyGroup(apiKeyGroup: CreateApiKeyGroupInput!): ApiKeyGroupWebDto
-	"Null fields keep their stored value; apiKeys replaces the member list (FREEFORM keys of this organization only)"
+	"Null fields keep their stored value; apiKeys replaces the member list (keys of this organization only: FREEFORM keys in an INTERNAL group, EXTERNAL keys in a CUSTOMER group); a CUSTOMER group carries TEA grants only"
 	updateApiKeyGroup(apiKeyGroup: UpdateApiKeyGroupInput!): ApiKeyGroupWebDto
 	"Deactivates the group (status INACTIVE): its members lose its permissions on their next call; restore with updateApiKeyGroup status ACTIVE"
 	deleteApiKeyGroup(groupUuid: ID!): ApiKeyGroupWebDto
-	"Sets the API key groups of one FREEFORM key of the organization to exactly this list, in one transaction: the key is added to each listed group it is not in and removed from each unlisted group it is in; other members and the groups' permissions are untouched; a changed group gets one audit row. A key cannot be added to an INACTIVE group (restore the group first); it can be removed from one. Organization administrators only"
+	"Sets the API key groups of one key of the organization to exactly this list, in one transaction: a FREEFORM key among the INTERNAL groups, an EXTERNAL key among the CUSTOMER groups, and a listed group of the other kind is refused. The key is added to each listed group it is not in and removed from each unlisted group of its kind it is in; other members and the groups' permissions are untouched; a changed group gets one audit row. A key cannot be added to an INACTIVE group (restore the group first); it can be removed from one. Organization administrators only"
 	setApiKeyGroupsOfKey(orgUuid: ID!, apiKeyUuid: ID!, groupUuids: [ID!]!): [ApiKeyGroupWebDto]
 	createTeam(team: CreateTeamInput!): TeamWebDto
 	updateTeam(team: UpdateTeamInput!): TeamWebDto
@@ -2399,6 +2399,8 @@ input CreateApiKeyGroupInput {
 	name: String!
 	description: String
 	org: ID!
+	"Set at create and never changed; INTERNAL when absent"
+	kind: ApiKeyGroupKind
 }
 
 input CreateVulnAnalysisInput {
@@ -5720,6 +5722,11 @@ enum ApiKeyGroupStatus {
 	INACTIVE
 }
 
+enum ApiKeyGroupKind {
+	INTERNAL
+	CUSTOMER
+}
+
 type UserGroupWebDto {
 	uuid: ID
 	name: String
@@ -5755,6 +5762,7 @@ type ApiKeyGroupWebDto {
 	apiKeyDetails: [ApiKeyRef]
 	permissions: Permissions
 	status: ApiKeyGroupStatus
+	kind: ApiKeyGroupKind
 	createdDate: DateTime
 	lastUpdatedBy: ID
 }

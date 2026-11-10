@@ -121,6 +121,7 @@ import { apiKeyLabel } from '@/utils/apiKeyLabel'
 import {
     buildApiKeyGroupUpdateInput, freeformKeyOptions, permissionsFromScopedModel, scopedModelFromPermissions
 } from '@/utils/apiKeyGroupInput'
+import { kindOf } from '@/utils/apiKeyGroupsQuery'
 import ScopedPermissions from './ScopedPermissions.vue'
 
 const props = defineProps<{
@@ -185,8 +186,10 @@ const scoped: Ref<any> = ref(emptyScoped())
 const formOriginal: Ref<GroupForm | null> = ref(null)
 const scopedOriginal: Ref<any> = ref(null)
 
+// INTERNAL groups only (FDAW-25 3.12): a customer group is the Customers tab's, whatever list arrives.
 const shownGroups = computed(() => {
-    const groups = showInactive.value ? (props.groups || []) : (props.groups || []).filter((g: any) => g.status === 'ACTIVE')
+    const internal = (props.groups || []).filter((g: any) => kindOf(g) === 'INTERNAL')
+    const groups = showInactive.value ? internal : internal.filter((g: any) => g.status === 'ACTIVE')
     return [...groups].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }))
 })
 const editorTitle = computed(() => form.value.uuid ? 'API Key Group Settings for ' + (editing.value?.name || form.value.name) : 'Add API Key Group')
@@ -279,7 +282,7 @@ async function create () {
     try {
         const resp: any = await graphqlClient.mutate({
             mutation: CREATE_API_KEY_GROUP,
-            variables: { apiKeyGroup: { name, description: form.value.description, org: props.orguuid } }
+            variables: { apiKeyGroup: { name, description: form.value.description, org: props.orguuid, kind: 'INTERNAL' } }
         })
         const created = resp?.data?.createApiKeyGroup
         props.notify('success', 'Created', `Created API key group "${name}"`)

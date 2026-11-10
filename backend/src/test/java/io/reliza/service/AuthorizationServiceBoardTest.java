@@ -22,6 +22,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.PerspectiveType;
 import io.reliza.common.CommonVariables.StatusEnum;
@@ -277,7 +278,7 @@ public class AuthorizationServiceBoardTest {
 		when(keys.isMatchingApiKey(ahp)).thenReturn(keyUuid);
 		// the key is in no API key group (TPF-91): its own grant alone decides the consent
 		ApiKeyGroupService groups = mock(ApiKeyGroupService.class);
-		when(groups.permissionSetsForKey(keyUuid, org)).thenReturn(List.of());
+		when(groups.permissionSetsForKey(keyUuid, org, ApiKeyGroupKind.INTERNAL)).thenReturn(List.of());
 		ReflectionTestUtils.setField(svc, "apiKeyGroupService", groups);
 		// an org-wide grant of both consent functions: the key consents, and is still a scope admin
 		io.reliza.model.ApiKeyData akd = io.reliza.model.ApiKeyData.apiKeyDataFactory(org);

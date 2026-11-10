@@ -104,9 +104,9 @@ public class ApiKeyGroupKeySideMembershipTest extends ApiKeyGroupKeySideTestBase
 		signInAs(admin);
 
 		assertRefused(gqlSetGroups(org.getUuid(), u.getUuid(), g1.getUuid()), SET_GROUPS_FIELD,
-				"Only FREEFORM keys can join an API key group: " + u.getUuid());
+				"API key not found: " + u.getUuid());
 		assertRefused(gqlSetGroups(org.getUuid(), instance.getUuid(), g1.getUuid()), SET_GROUPS_FIELD,
-				"Only FREEFORM keys can join an API key group: " + instance.getUuid());
+				"API key not found: " + instance.getUuid());
 		assertRefused(gqlCombined(org.getUuid(), instance.getUuid()), COMBINED_FIELD,
 				"Only FREEFORM and USER keys carry a permission set: " + instance.getUuid());
 		assertRefused(gqlCombined(org.getUuid(), component.getUuid()), COMBINED_FIELD,

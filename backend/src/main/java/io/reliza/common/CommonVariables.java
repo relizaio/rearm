@@ -517,6 +517,14 @@ public class CommonVariables {
 
 		private ApiKeyGroupStatus () {}
 	}
+
+	/** INTERNAL groups hold FREEFORM keys and feed RBAC; CUSTOMER groups hold EXTERNAL keys and feed TEA reads only (FDAW-25). */
+	public enum ApiKeyGroupKind {
+		INTERNAL,
+		CUSTOMER;
+
+		private ApiKeyGroupKind () {}
+	}
 	
 	public enum TableName {
 		AGENTS("agents"),

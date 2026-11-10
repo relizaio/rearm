@@ -23,6 +23,8 @@ vi.mock('vuex', () => ({
 
 const { default: Panel } = await import('./ExternalKeysPanel.vue')
 const { default: graphqlQueries } = await import('@/utils/graphqlQueries')
+const { API_KEY_GROUPS_OF_ORG_QUERY } = await import('@/utils/apiKeyGroupsQuery')
+const { default: MembershipModal } = await import('./ApiKeyGroupMembershipModal.vue')
 
 const ORG = 'o1'
 const API_BASE = 'https://rearm.example.com/tea/7d0b5a0e-1111-4222-8333-944445555666'
@@ -39,9 +41,13 @@ const KEYS = [
     key('k3', 'Initech', [], '2026-10-01T10:00:00Z'),
 ]
 
-function answer (apiBase: string | null, keys: any[] = KEYS) {
+function answer (apiBase: string | null, keys: any[] = KEYS, customerGroups: any[] | Error = []) {
     query.mockImplementation(async (opts: any) => {
         if (opts.query === graphqlQueries.ExternalApiKeysGql) return { data: { externalApiKeys: keys } }
+        if (opts.query === API_KEY_GROUPS_OF_ORG_QUERY) {
+            if (customerGroups instanceof Error) throw customerGroups
+            return { data: { apiKeyGroupsOfOrg: customerGroups } }
+        }
         if (opts.query === graphqlQueries.TeaOrgDiscoveryGql) {
             return { data: { teaOrgDiscovery: { org: ORG, teaUuid: apiBase ? 'tea' : null, apiBase, wellKnownDocument: null } } }
         }
@@ -50,10 +56,10 @@ function answer (apiBase: string | null, keys: any[] = KEYS) {
 }
 
 const notify = vi.fn()
-async function mountPanel () {
+async function mountPanel (isOrgAdmin = true) {
     const w = mount(Panel, {
-        props: { orgUuid: ORG, notify, isOrgAdmin: true },
-        global: { stubs: { ApiKeyPermissionsModal: true } },
+        props: { orgUuid: ORG, notify, isOrgAdmin },
+        global: { stubs: { ApiKeyPermissionsModal: true, ApiKeyGroupMembershipModal: true } },
     })
     await flushPromises()
     return w
@@ -198,8 +204,8 @@ describe('ExternalKeysPanel', () => {
         expect(at).toBe(columns.findIndex((c: any) => c.key === 'ids') + 1)
         expect(columns[at].width).toBe(320)
         expect(w.findAll('thead th').map(x => x.text()))
-            .toEqual(['Type', 'IDs', 'UUID', 'Holder', 'Created', 'Last Accessed', 'Grants', 'Status', 'Secrets', 'Notes', 'Manage'])
-        expect(table.props('scrollX')).toBe(2520)
+            .toEqual(['Type', 'IDs', 'UUID', 'Holder', 'Created', 'Last Accessed', 'Grants', 'Customers', 'Status', 'Secrets', 'Notes', 'Manage'])
+        expect(table.props('scrollX')).toBe(2740)
     })
 
     it('row 37: Holder, Created, Last Accessed and Notes sort; the other columns do not', async () => {
@@ -243,5 +249,128 @@ describe('ExternalKeysPanel', () => {
         ])
         const v = await mountPanel()
         expect(holders(v)).toEqual(['Initech', 'Globex', 'Acme Auditors'])
+    })
+})
+
+// FDAW-40 row 22g (FDAW-25 3.12): the Customers column and the key's customers modal.
+describe('ExternalKeysPanel customers (FDAW-40 row 22g)', () => {
+    const ACME = { uuid: 'c1', name: 'Acme customer', status: 'ACTIVE', kind: 'CUSTOMER', apiKeys: ['k1'] }
+    const OLD = { uuid: 'c2', name: 'Old customer', status: 'INACTIVE', kind: 'CUSTOMER', apiKeys: ['k1'] }
+    const groupCalls = () => query.mock.calls.filter((c: any[]) => c[0].query === API_KEY_GROUPS_OF_ORG_QUERY)
+    const customersOf = (w: any) => w.findAll('[data-testid="external-key-customers"]').map((x: any) => x.text())
+    const holders = (w: any): string[] => w.findAll('[data-testid="external-key-holder"]').map((x: any) => x.text())
+    const drift = () => {
+        const err: any = new Error("Validation error of type FieldUndefined: Field 'apiKeyGroupsOfOrg' is undefined")
+        err.errors = [{ message: err.message, extensions: { classification: 'ValidationError' } }]
+        return err
+    }
+
+    beforeEach(() => {
+        query.mockReset()
+        mutate.mockReset()
+        fire.mockReset()
+        notify.mockReset()
+    })
+
+    it('names the ACTIVE customers holding each key, a dash for none, from the CUSTOMER list', async () => {
+        answer(API_BASE, KEYS, [ACME, OLD])
+        const w = await mountPanel()
+        expect(groupCalls()).toHaveLength(1)
+        expect(groupCalls()[0][0].variables).toEqual({ org: ORG, kind: 'CUSTOMER' })
+        expect(customersOf(w)).toEqual(['Acme customer', '\u2014', '\u2014'])
+    })
+
+    it('the edit icon opens the membership modal in its CUSTOMER kind on that key', async () => {
+        answer(API_BASE, KEYS, [ACME, OLD])
+        const w = await mountPanel()
+        const modal = w.findComponent(MembershipModal)
+        expect(modal.props('kind')).toBe('CUSTOMER')
+        expect(modal.props('groups')).toEqual([ACME, OLD])
+        expect(modal.props('show')).toBe(false)
+        const edits = w.findAll('[data-testid="external-key-customers-edit"]')
+        expect(edits).toHaveLength(3)
+        expect(edits[0].attributes('title')).toBe('Set customers')
+        await edits[0].trigger('click')
+        await flushPromises()
+        expect(modal.props('show')).toBe(true)
+        expect(modal.props('apiKey').uuid).toBe('k1')
+    })
+
+    it('hides the column on a drift answer and still shows the keys', async () => {
+        answer(API_BASE, KEYS, drift())
+        const w = await mountPanel()
+        expect(holders(w)).toEqual(['Acme Auditors', 'Globex', 'Initech'])
+        expect(w.findAll('thead th').map(x => x.text())).not.toContain('Customers')
+        expect(w.find('[data-testid="external-key-customers"]').exists()).toBe(false)
+        expect(notify).not.toHaveBeenCalled()
+    })
+
+    it('notifies another error once and still shows the keys', async () => {
+        const e: any = new Error('Not authorized')
+        e.errors = [{ message: 'Not authorized', extensions: { classification: 'DataFetchingException' } }]
+        answer(API_BASE, KEYS, e)
+        const w = await mountPanel()
+        expect(holders(w)).toEqual(['Acme Auditors', 'Globex', 'Initech'])
+        expect(notify).toHaveBeenCalledTimes(1)
+        expect(notify.mock.calls[0][0]).toBe('error')
+        expect(notify.mock.calls[0][2]).toContain('Not authorized')
+    })
+
+    it('hides the column again when a later load fails', async () => {
+        const e: any = new Error('Not authorized')
+        e.errors = [{ message: 'Not authorized', extensions: { classification: 'DataFetchingException' } }]
+        answer(API_BASE, KEYS, [ACME])
+        const w = await mountPanel()
+        expect(customersOf(w)).toEqual(['Acme customer', '\u2014', '\u2014'])
+        answer(API_BASE, KEYS, e)
+        w.findComponent(MembershipModal).vm.$emit('saved', { added: [], removed: [] })
+        await flushPromises()
+        expect(holders(w)).toEqual(['Acme Auditors', 'Globex', 'Initech'])
+        expect(notify).toHaveBeenCalledTimes(1)
+        expect(notify.mock.calls[0][0]).toBe('error')
+        expect(notify.mock.calls[0][2]).toContain('Not authorized')
+        expect(w.find('[data-testid="external-key-customers"]').exists()).toBe(false)
+    })
+
+    it('shows the names and no edit icon to a non-admin', async () => {
+        answer(API_BASE, KEYS, [ACME])
+        const w = await mountPanel(false)
+        expect(customersOf(w)).toEqual(['Acme customer', '\u2014', '\u2014'])
+        expect(w.find('[data-testid="external-key-customers-edit"]').exists()).toBe(false)
+    })
+
+    it('reloads the CUSTOMER list when the modal saves', async () => {
+        answer(API_BASE, KEYS, [ACME])
+        const w = await mountPanel()
+        expect(groupCalls()).toHaveLength(1)
+        w.findComponent(MembershipModal).vm.$emit('saved', { added: [], removed: ['c1'] })
+        await flushPromises()
+        expect(groupCalls()).toHaveLength(2)
+    })
+})
+
+// FDAW-40 mutation round: cells the surviving mutants showed missing.
+describe('ExternalKeysPanel customers column details (FDAW-40 mutation)', () => {
+    beforeEach(() => {
+        query.mockReset()
+        notify.mockReset()
+    })
+
+    it('joins two customers of one key with a comma and a space', async () => {
+        answer(API_BASE, KEYS, [
+            { uuid: 'c1', name: 'Acme customer', status: 'ACTIVE', kind: 'CUSTOMER', apiKeys: ['k1'] },
+            { uuid: 'c2', name: 'Beta customer', status: 'ACTIVE', kind: 'CUSTOMER', apiKeys: ['k1'] },
+        ])
+        const w = await mountPanel()
+        expect(w.findAll('[data-testid="external-key-customers"]')[0].text()).toBe('Acme customer, Beta customer')
+    })
+
+    it('shows no Customers column while the CUSTOMER list has not answered', async () => {
+        answer(API_BASE, KEYS, [])
+        const base = query.getMockImplementation()!
+        query.mockImplementation((opts: any) => opts.query === API_KEY_GROUPS_OF_ORG_QUERY ? new Promise(() => {}) : base(opts))
+        const w = await mountPanel()
+        expect(w.findAll('[data-testid="external-key-holder"]')).toHaveLength(3)
+        expect(w.findAll('thead th').map(x => x.text())).not.toContain('Customers')
     })
 })

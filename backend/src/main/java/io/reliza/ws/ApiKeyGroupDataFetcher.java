@@ -20,6 +20,7 @@ import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 
+import io.reliza.common.CommonVariables.ApiKeyGroupKind;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
@@ -130,7 +131,7 @@ public class ApiKeyGroupDataFetcher {
 		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
 		Set<UserPermission> effective = authorizationService.effectiveStoredKeyPermissions(ak.getUuid(), ak.getObjectType(), akd, orgUuid);
 		List<ApiKeyGroupData> groups = ak.getObjectType() == ApiTypeEnum.FREEFORM
-				? apiKeyGroupService.activeGroupsHoldingKey(ak.getUuid(), orgUuid) : List.of();
+				? apiKeyGroupService.activeGroupsHoldingKey(ak.getUuid(), orgUuid, ApiKeyGroupKind.INTERNAL) : List.of();
 		return CombinedApiKeyOrgPermissionsDto.of(ak.getUuid(), orgUuid, effective, akd, groups);
 	}
 
@@ -155,8 +156,10 @@ public class ApiKeyGroupDataFetcher {
 		// TPF-91 security F-2: the system state is answered before any argument or row is read
 		authorizationService.validateSystemOperational(CallType.ADMIN);
 		UUID org = InputConversion.convert(dfe.getArgument("org"), UUID.class, "org");
+		ApiKeyGroupKind kind = InputConversion.convert(dfe.getArgument("kind"), ApiKeyGroupKind.class, "kind");
 		authorizeOrgAdmin(ud, org);
 		return apiKeyGroupService.getAllApiKeyGroupsByOrganization(org).stream()
+				.filter(g -> null == kind || g.getKind() == kind)
 				.map(ApiKeyGroupData::toWebDto)
 				.toList();
 	}
