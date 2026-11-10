@@ -150,7 +150,7 @@ describe('ApiKeyGroupsOfOrg (row 14)', () => {
         await w.find('[data-testid="api-key-group-name"] input').setValue('  new  ')
         await button(w, 'Create group').trigger('click')
         await flushPromises()
-        expect(mutate.mock.calls[0][0].variables).toEqual({ apiKeyGroup: { name: 'new', description: '', org: ORG } })
+        expect(mutate.mock.calls[0][0].variables).toEqual({ apiKeyGroup: { name: 'new', description: '', org: ORG, kind: 'INTERNAL' } })
         expect(w.emitted('changed')).toHaveLength(1)
         expect(w.findComponent(NSelect).exists()).toBe(true)
     })
@@ -175,5 +175,24 @@ describe('ApiKeyGroupsOfOrg (row 14)', () => {
         await editFirst(w)
         await w.find('[data-testid="api-key-group-name"] input').setValue('   ')
         expect(button(w, 'Save changes').attributes('disabled')).toBeDefined()
+    })
+})
+
+// FDAW-40 row 22f (FDAW-25 3.12): the API Key Groups tab lists INTERNAL groups only, whatever list arrives.
+describe('ApiKeyGroupsOfOrg kind filter (FDAW-40 row 22f)', () => {
+    beforeEach(() => { mutate.mockReset(); mutate.mockImplementation(async () => ({ data: {} })); dialogWarning.mockReset() })
+
+    it('never shows an ACTIVE customer group, with the switch off or on', async () => {
+        const customer = { uuid: 'c1', name: 'Cust', description: '', org: ORG, status: 'ACTIVE', kind: 'CUSTOMER', apiKeys: [], apiKeyDetails: [], permissions: { permissions: [] } }
+        const { w } = open({ groups: [G1, customer] })
+        await flushPromises()
+        const rows = () => w.findAll('[data-testid="api-key-groups-table"] tbody tr').map((r: any) => r.text())
+        expect(rows()).toHaveLength(1)
+        expect(rows()[0]).toContain('ci')
+        expect(w.find('[data-testid="api-key-groups-table"]').text()).not.toContain('Cust')
+        await showInactive(w)
+        expect(rows()).toHaveLength(1)
+        expect(rows()[0]).toContain('ci')
+        expect(w.find('[data-testid="api-key-groups-table"]').text()).not.toContain('Cust')
     })
 })

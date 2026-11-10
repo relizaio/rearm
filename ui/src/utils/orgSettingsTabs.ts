@@ -1,8 +1,8 @@
 // Organization Settings tabs that moved under Programmatic Access. An old link (?tab=freeFormKeys, ?tab=apiKeyGroups)
 // lands on Programmatic Access with that sub-tab selected.
 
-/** The Programmatic Access sub-tabs, in the order they show. API Key Groups follows Free Form Keys: groups hold FREEFORM keys. */
-export const PROGRAMMATIC_SUBTABS = ['freeFormKeys', 'apiKeyGroups', 'userKeys', 'scopedKeys', 'federatedIdentities', 'externalKeys'] as const
+/** The Programmatic Access sub-tabs, in the order they show. API Key Groups follows Free Form Keys: groups hold FREEFORM keys; Customers follows External Keys: customers hold EXTERNAL keys. */
+export const PROGRAMMATIC_SUBTABS = ['freeFormKeys', 'apiKeyGroups', 'userKeys', 'scopedKeys', 'federatedIdentities', 'externalKeys', 'customers'] as const
 export type ProgrammaticSubTab = typeof PROGRAMMATIC_SUBTABS[number]
 
 /** The tab every former top-level key tab now lives under. */

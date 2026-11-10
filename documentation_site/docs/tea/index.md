@@ -341,6 +341,8 @@ JSON answers, artifact metadata included, carry `Cache-Control: no-cache` for an
 
 The visibility of the TEA publishing settings a component resolves to decides who reads what it published: PUBLIC settings publish to anyone, PRIVATE settings only to holders of an [external key](../configure/programmatic-access#external-keys-tea) whose grants cover the object. An external key is a key the organization hands to a party outside it; it reaches nothing but TEA. The holder exchanges it for a one-hour Bearer token at the token endpoint on the organization's API base, `POST <API base>/v1.0.0/token` with `grant_type=client_credentials`, where the API base is the one the organization is served at: `<your ReARM URL>/tea/<organization TEA id>`, or `https://<domain>/tea` on a [custom domain](#custom-domains-rearm-pro).
 
+A key's grants are its own plus those of every active [customer](../configure/programmatic-access#customers) that holds it.
+
 An external key is the only key TEA accepts, and reading TEA is the only thing an external key can do: it has no write authority anywhere, reaches no GraphQL field, no download and no CLI, and reads no regulatory submission (see [Regulatory Packages and Submissions](../workflows/regulatory-packages)).
 
 The full exchange, with an example and every answer of the token endpoint, is under [Exchanging an external key for a token](../configure/programmatic-access#exchanging-an-external-key-for-a-token). The rules a consumer needs:

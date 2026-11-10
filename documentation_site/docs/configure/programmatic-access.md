@@ -43,21 +43,24 @@ the number of SBOM profiles a TEA publishing settings row may name, which differ
 | Creating a component into a perspective (`perspective` input, `--perspective`) | Supported | Not applicable: CE has no perspectives |
 | A federated exchange that no trust rule admits (an unknown issuer, an identity token that does not verify, no rule matching the identity) | One answer, `invalid_grant` `assertion not accepted: ...`; the cause is in the server log | The answer names the cause, for example `no trust rule matches this identity` |
 | External keys (the **External Keys** tab and the TEA token endpoint) | Supported | Supported, with grants on the organization, products and components (CE has no perspectives; a perspective grant is refused) |
+| Customers (the **Customers** tab: groups of external keys with TEA grants) | Supported | Supported, with grants on the organization, products and components (CE has no perspectives; a perspective grant is refused) |
 | SBOM profiles and TEA publishing (the programmatic reads `sbomProfilesProgrammatic` and `sbomProfileEffectiveProgrammatic`, the publish preview `releaseTeaPublicationViewProgrammatic`, and the publish, re-publish and hide operations; no programmatic operation reads or writes TEA publishing settings) | Organization, perspective and component scope; a TEA publishing settings row names up to 10 SBOM profiles | Organization and component scope (CE has no perspectives), the one SBOM profile `default`, and a TEA publishing settings row names exactly one SBOM profile |
 | Regulatory submissions (the programmatic reads `submissionsOfReleaseProgrammatic`, `submissionsOfComponentProgrammatic`, `submissionProgrammatic`, `submissionVersionProgrammatic`, and the part downloads) | Supported for FREEFORM and USER keys with read access; no key can create, resubmit or withdraw | Not offered: on CE these reads answer an empty list (by release or by component) or nothing (by submission), there is no part to download, and no key can act on any edition |
 
 ## Managing keys in the UI
 
 Keys for an organization live under **Organization Settings -> Programmatic Access**, which only
-organization administrators see. It is split into five tabs:
+organization administrators see. It is split into these tabs:
 
 | Tab | What it holds |
 |---|---|
 | **Free Form Keys** | Organization keys whose permissions you compose yourself. Used by CI, integrations and agents. **Key Requests**, requests from members for a Free Form key, sit at the top of this tab when there are any. |
+| **API Key Groups** | Groups of Free Form keys that share one set of permissions; a key holds its own permissions plus those of every active group it belongs to. |
 | **User Keys** | Personal keys belonging to members of the organization. |
 | **Scoped Keys** | Keys bound to one object (component, instance, cluster, organization-wide and approval keys), carrying that object's access. |
 | **Federated Identities** | Trust rules that let CI authenticate with its own identity token instead of a stored secret, plus the per-repository identities those rules have created. See [GitHub Actions without a secret](#github-actions-without-a-secret). |
-| **External Keys** | ReARM Pro. Keys for parties outside the organization, which read what the organization published on TEA and nothing else: they hold no write authority, reach no download and never see a regulatory submission. See [External keys (TEA)](#external-keys-tea). |
+| **External Keys** | Keys for parties outside the organization, which read what the organization published on TEA and nothing else: they hold no write authority, reach no download and never see a regulatory submission. See [External keys (TEA)](#external-keys-tea). |
+| **Customers** | Groups of external keys, one per outside party, whose TEA grants every key in the group reads. See [Customers](#customers). |
 
 Your own keys are on your profile, in the **API Keys** tab under **Your API Keys**. From there you
 can **Create key** for yourself, or **Request a Free Form key** if you need one an administrator has
@@ -251,6 +254,29 @@ token expires, and send the token as `Authorization: Bearer <token>` on TEA requ
 
 The TEA endpoints that apply these rules are documented on the [Transparency Exchange API](../tea/)
 page.
+
+### Customers
+
+A customer is a group of external keys, usually all the keys of one outside party, with TEA
+grants. Every key in the group reads what the customer's grants cover, on top of the key's own
+grants: a key may belong to several customers, and its own grants still count. The grants are
+read-only and TEA-only, like a key's, and they are read live on every TEA request, so a change
+takes effect at the key's next request.
+
+Customers are managed under **Organization Settings -> Programmatic Access -> Customers**, by
+organization administrators. The tab creates a customer, picks its keys from the organization's
+external keys, sets its grants, and deactivates or restores it. Deactivating a customer stops
+every key in it from reading what the customer grants at the key's next request; the keys keep
+their own grants. The **Customers** column of the **External Keys** tab names the active customers
+holding each key, and sets them from the key's row.
+
+- A customer's name holds at most 512 characters and its description at most 2048; neither may
+  hold a control or format character.
+- Membership never mixes: only external keys can join a customer, and a Free Form key cannot. An
+  external key cannot join an API key group either.
+- Names do mix: customers and API key groups share one set of names in the organization, inactive
+  groups included, so a name used by either is refused for the other. Restore an inactive group
+  rather than creating a new one under its name.
 
 ## Secrets: rotation, expiry and the kill switch
 

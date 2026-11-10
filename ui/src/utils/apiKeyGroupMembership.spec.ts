@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-    COMBINED_API_KEY_ORG_PERMISSIONS_QUERY, SET_API_KEY_GROUPS_OF_KEY_MUTATION, desiredGroupUuids,
-    loadCombinedApiKeyOrgPermissions, membershipDiff, membershipRows, setApiKeyGroupsOfKey
+    COMBINED_API_KEY_ORG_PERMISSIONS_QUERY, SET_API_KEY_GROUPS_OF_KEY_MUTATION, desiredGroupUuids, isEligibleForKind,
+    loadCombinedApiKeyOrgPermissions, membershipDiff, membershipRows, notEligibleText, setApiKeyGroupsOfKey
 } from './apiKeyGroupMembership'
 
 // TPF-124 (architecture 4.5, test rows 16 and 19): the key side of API key group membership.
@@ -96,5 +96,32 @@ describe('setApiKeyGroupsOfKey (rows 16 and 19)', () => {
             const client = { mutate: async () => { throw e } }
             await expect(setApiKeyGroupsOfKey(client, 'o1', 'k1', ['g2'])).rejects.toBe(e)
         }
+    })
+})
+
+// FDAW-40 row 22d (FDAW-25 3.12): membership by kind.
+describe('membership by kind (row 22d)', () => {
+    it('isEligibleForKind admits FREEFORM for INTERNAL and EXTERNAL for CUSTOMER only', () => {
+        expect(isEligibleForKind({ type: 'FREEFORM' }, 'INTERNAL')).toBe(true)
+        expect(isEligibleForKind({ type: 'EXTERNAL' }, 'INTERNAL')).toBe(false)
+        expect(isEligibleForKind({ type: 'EXTERNAL' }, 'CUSTOMER')).toBe(true)
+        expect(isEligibleForKind({ type: 'FREEFORM' }, 'CUSTOMER')).toBe(false)
+        expect(isEligibleForKind({ type: 'USER' }, 'INTERNAL')).toBe(false)
+        expect(isEligibleForKind({ type: 'USER' }, 'CUSTOMER')).toBe(false)
+        expect(isEligibleForKind(null, 'INTERNAL')).toBe(false)
+        expect(isEligibleForKind(null, 'CUSTOMER')).toBe(false)
+    })
+
+    it('notEligibleText answers the two exact texts', () => {
+        expect(notEligibleText('INTERNAL')).toBe('Only Free Form keys can be members of API key groups.')
+        expect(notEligibleText('CUSTOMER')).toBe('Only external keys can be members of a customer group.')
+    })
+
+    it('membershipRows keeps the groups of the kind asked for, an absent kind reading INTERNAL', () => {
+        const customer = { uuid: 'c1', name: 'Acme', status: 'ACTIVE', kind: 'CUSTOMER', apiKeys: ['k1'] }
+        const internal = { uuid: 'g1', name: 'ci', status: 'ACTIVE', apiKeys: ['k1'] }
+        expect(membershipRows([customer, internal], 'k1', 'CUSTOMER').map(r => r.uuid)).toEqual(['c1'])
+        expect(membershipRows([customer, internal], 'k1').map(r => r.uuid)).toEqual(['g1'])
+        expect(membershipRows([customer, internal], 'k1', 'INTERNAL').map(r => r.uuid)).toEqual(['g1'])
     })
 })
