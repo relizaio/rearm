@@ -722,6 +722,7 @@
                     style="margin-bottom: 12px;" data-testid="bulk-half">
                     <n-radio-button value="support" label="Support" />
                     <n-radio-button value="hashes" label="Missing hashes" data-testid="bulk-missing-hashes-tab" />
+                    <n-radio-button value="supplier" label="Supplier" data-testid="bulk-supplier-tab" />
                 </n-radio-group>
                 <div v-if="bulkStage === 'compose' && bulkTab === 'hashes'">
                     <missing-hashes-panel v-if="updatedRelease?.uuid" :release-uuid="updatedRelease.uuid" />
@@ -814,6 +815,30 @@
                         style="margin-top: 8px;">{{ bulk.error.value }}</n-alert>
                 </div>
 
+                <!-- CONFIRM of the Supplier half: the server's count, then one sweep -->
+                <div v-else-if="bulkStage === 'confirm' && bulkTab === 'supplier'">
+                    <n-alert :type="bulkSelectorCount?.overCap ? 'error' : 'warning'" :show-icon="true"
+                        style="margin-bottom: 12px;">
+                        <div style="font-size: 14px; font-weight: 600;" data-testid="bulk-selector-count">
+                            {{ bulkSupplierCountLine }}
+                        </div>
+                        <div style="font-size: 12px; margin-top: 6px;">
+                            Selector <strong>{{ bulkSupplierSelector.form === 'TYPE' ? 'ecosystem' : 'namespace' }}
+                                {{ selectorLabel(bulkSupplierSelector) }}</strong>,
+                            {{ bulkSupplierSelector.scope === 'RELEASE' ? 'in this release'
+                                : 'across the organization, every product' }}.
+                            There is no bulk undo.
+                        </div>
+                    </n-alert>
+                    <n-alert type="default" :show-icon="false" style="font-size: 12px;">
+                        Writing: supplier <strong>"{{ bulkSupplierForm.supplier }}"</strong>
+                        on the matching components that hold none.
+                        <div style="margin-top: 4px;">
+                            Audit reason (not exported):
+                            <strong>"{{ bulkSupplierForm.reason || '(none)' }}"</strong>
+                        </div>
+                    </n-alert>
+                </div>
                 <!-- CONFIRM: the count alone cannot catch a filter that silently reset -->
                 <div v-else-if="bulkStage === 'confirm' && bulkSelector.form !== 'EXPLICIT'">
                     <n-alert :type="bulkSelectorCount?.overCap ? 'error' : 'warning'" :show-icon="true"
@@ -897,12 +922,13 @@
                         :type="bulkResult.failed || bulkResult.aborted ? 'warning' : 'success'"
                         :show-icon="true">
                         <span data-testid="bulk-result-counts">{{ bulkResult.matched }} matched,
-                            {{ bulkResult.applied }} attested.</span>
+                            {{ bulkResult.applied }} {{ bulkResultHalf === 'supplier' ? 'assigned a supplier' : 'attested' }}.</span>
                         <span v-if="bulkResult.skippedRoot">
                             {{ bulkResult.skippedRoot }} skipped as the release's own
                             {{ bulkResult.skippedRoot === 1 ? 'component' : 'components' }}.</span>
                         <span v-if="bulkResult.skippedHasEndOfSupport">
                             {{ bulkResult.skippedHasEndOfSupport }} skipped: already hold an end of support.</span>
+                        <span v-if="bulkResult.skippedHasSupplier"> {{ bulkResult.skippedHasSupplier }} skipped: already hold a supplier.</span>
                         <span v-if="bulkResult.failed"> {{ bulkResult.failed }} failed.</span>
                         <div v-if="bulkResult.bulkActs.length" style="font-size: 12px; margin-top: 4px;"
                             data-testid="bulk-result-act">
@@ -968,6 +994,52 @@
                     </div>
                 </div>
 
+                <!-- The Supplier half (FDAW-15 3.6): the two selector forms only, one supplier sweep
+                     recorded as one SUPPLIER act; organization write, like the support half. -->
+                <div v-if="bulkStage === 'compose' && bulkTab === 'supplier'">
+                    <n-alert v-if="!canWriteOrg" type="info" :show-icon="true" style="margin-bottom: 12px;"
+                        data-testid="bulk-supplier-org-write">
+                        {{ BULK_SUPPLIER_ORG_WRITE_SENTENCE }}
+                    </n-alert>
+                    <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px;">
+                        This writes the same supplier to every matching component that holds none.
+                        A component that already holds a supplier is skipped, never replaced.
+                    </n-alert>
+                    <n-form label-placement="top" :disabled="!canWriteOrg">
+                        <n-form-item label="Components">
+                            <n-radio-group v-model:value="bulkSupplierSelector.form" size="small"
+                                data-testid="bulk-supplier-selector-form">
+                                <n-radio-button v-for="o in SUPPLIER_SELECTOR_FORM_OPTIONS" :key="o.value"
+                                    :value="o.value" :label="o.label" />
+                            </n-radio-group>
+                        </n-form-item>
+                        <n-space style="margin-bottom: 12px;">
+                            <n-input v-model:value="bulkSupplierSelector.type" size="small" style="width: 220px;"
+                                placeholder="Ecosystem (purl type), e.g. deb" />
+                            <n-input v-if="bulkSupplierSelector.form === 'NAMESPACE'"
+                                v-model:value="bulkSupplierSelector.namespace"
+                                size="small" style="width: 220px;" placeholder="Namespace, e.g. debian" />
+                        </n-space>
+                        <n-form-item label="Scope">
+                            <n-radio-group v-model:value="bulkSupplierSelector.scope" size="small">
+                                <n-radio v-for="o in SELECTOR_SCOPE_OPTIONS" :key="o.value" :value="o.value"
+                                    :label="o.label" />
+                            </n-radio-group>
+                        </n-form-item>
+                        <n-form-item label="Supplier">
+                            <n-input v-model:value="bulkSupplierForm.supplier" :maxlength="SUPPLIER_MAX_LENGTH"
+                                data-testid="bulk-supplier-value" placeholder="The third-party supplier's name" />
+                        </n-form-item>
+                        <n-form-item label="Reason for this sweep (audit only, never exported)">
+                            <n-input v-model:value="bulkSupplierForm.reason" :maxlength="SUPPLIER_REASON_MAX_LENGTH"
+                                placeholder="Why this batch is being written." />
+                        </n-form-item>
+                    </n-form>
+                    <n-alert v-for="e in bulkSupplierErrors" :key="e" type="error" :show-icon="false"
+                        style="margin-top: 8px; font-size: 12px;">{{ e }}</n-alert>
+                    <n-alert v-if="bulk.error.value" type="error" :show-icon="true"
+                        style="margin-top: 8px;">{{ bulk.error.value }}</n-alert>
+                </div>
                 <template #footer>
                     <n-space justify="end">
                         <n-button size="small" :disabled="bulk.submitting.value"
@@ -978,9 +1050,20 @@
                             :disabled="bulkErrors.length > 0 || bulk.collecting.value || !canWriteOrg"
                             :loading="bulk.collecting.value"
                             @click="collectBulkTargets">Review selection</n-button>
+                        <n-button v-if="bulkStage === 'compose' && bulkTab === 'supplier'" size="small" type="primary"
+                            :disabled="bulkSupplierErrors.length > 0 || !canWriteOrg"
+                            data-testid="bulk-supplier-review"
+                            @click="collectSupplierCount">Review selection</n-button>
                         <n-button v-if="bulkStage === 'confirm' && !bulk.submitting.value"
                             size="small" @click="bulkBackToCompose">Back</n-button>
-                        <n-button v-if="bulkStage === 'confirm'" size="small" type="error"
+                        <n-button v-if="bulkStage === 'confirm' && bulkTab === 'supplier'" size="small" type="error"
+                            :disabled="bulk.submitting.value || bulkSupplierErrors.length > 0 || !canWriteOrg
+                                || !bulkSelectorCount || bulkSelectorCount.overCap || !bulkSelectorCount.matched"
+                            :loading="bulk.submitting.value"
+                            data-testid="bulk-supplier-confirm"
+                            @click="runBulkSupplier">
+                            Assign to {{ bulkSelectorCount?.matched ?? 0 }} components</n-button>
+                        <n-button v-if="bulkStage === 'confirm' && bulkTab !== 'supplier'" size="small" type="error"
                             :disabled="bulk.submitting.value || bulkErrors.length > 0
                                 || (bulkSelector.form === 'EXPLICIT' ? !bulkCollected.ids.length
                                     : (!bulkSelectorCount || bulkSelectorCount.overCap || !bulkSelectorCount.matched))"
@@ -1001,7 +1084,8 @@
                 v-model:show="attestModalOpen"
                 preset="card"
                 style="width: 640px;"
-                title="Record support attestation">
+                :title="attestTarget?.kind === 'vendored' ? 'Record support attestation (vendored component)'
+                    : 'Record support attestation'">
                 <div v-if="attestLoading"><n-spin size="small" /> Loading current attestation...</div>
                 <div v-else>
                     <n-alert v-if="attestForm.isUnRetract()" type="warning" :show-icon="true"
@@ -1171,6 +1255,145 @@
                                 || !attestForm.canSubmit()"
                             :loading="attestSaving"
                             @click="saveAttestation">Save</n-button>
+                    </n-space>
+                </template>
+            </n-modal>
+            <!-- Component overlay editor (FDAW-15 3.6): read-only with the sentence, no Save, for a
+                 caller without organization write. Text bindings only: every value is the server's. -->
+            <n-modal
+                v-model:show="overlayModalOpen"
+                preset="card"
+                style="width: 560px;"
+                title="Supplier and licence"
+                data-testid="overlay-editor">
+                <div v-if="overlayLoading"><n-spin size="small" /> Loading the stored supplier and licence...</div>
+                <div v-else>
+                    <n-alert v-if="overlayAccess.readOnly" type="info" :show-icon="true" style="margin-bottom: 12px;"
+                        data-testid="overlay-org-write">
+                        {{ overlayAccess.sentence }}
+                    </n-alert>
+                    <n-form label-placement="top" :disabled="overlayAccess.readOnly">
+                        <n-form-item label="Third-party supplier">
+                            <n-input v-model:value="overlayForm.supplier" :maxlength="OVERLAY_SUPPLIER_MAX_LENGTH" />
+                            <n-tag v-if="overlayStored?.supplierBulkAct" size="small" style="margin-left: 6px;"
+                                data-testid="overlay-supplier-bulk">bulk</n-tag>
+                        </n-form-item>
+                        <n-form-item label="Third-party licence (SPDX expression)">
+                            <n-input v-model:value="overlayForm.licence" :maxlength="OVERLAY_LICENCE_MAX_LENGTH"
+                                placeholder="e.g. MIT OR Apache-2.0" />
+                        </n-form-item>
+                        <n-form-item label="Reason (audit only, never exported)">
+                            <n-input v-model:value="overlayForm.reason" type="textarea" :rows="2"
+                                :maxlength="OVERLAY_REASON_MAX_LENGTH" />
+                        </n-form-item>
+                    </n-form>
+                    <div v-if="overlayStored?.assertedAt" style="font-size: 12px; color: #999;">
+                        Revision {{ overlayStored.revision }}, by {{ overlayStored.assertedByName || 'an unknown user' }}
+                        at {{ overlayStored.assertedAt }}
+                    </div>
+                    <n-alert v-for="e in overlayErrors" :key="e" type="error" :show-icon="false"
+                        style="margin-top: 8px; font-size: 12px;">{{ e }}</n-alert>
+                </div>
+                <template #footer>
+                    <n-space justify="end">
+                        <n-button size="small" @click="cancelOverlayEditor">
+                            {{ overlayAccess.readOnly ? 'Close' : 'Cancel' }}</n-button>
+                        <n-button v-if="!overlayAccess.readOnly" size="small" type="primary"
+                            :disabled="overlayLoading || overlaySaving || overlayErrors.length > 0
+                                || !overlaySendsAnything(overlayForm, overlayStored)"
+                            :loading="overlaySaving"
+                            data-testid="overlay-save"
+                            @click="saveOverlay">Save</n-button>
+                    </n-space>
+                </template>
+            </n-modal>
+            <!-- Describe a vendored component (FDAW-15 3.6): the identifier the server will mint, the
+                 copy source for an enabled editor only (F-17), the node's own name and version on Save. -->
+            <n-modal
+                v-model:show="vendoredEditorOpen"
+                preset="card"
+                style="width: 600px;"
+                :title="vendoredEditorRow ? 'Describe ' + vendoredLabel(vendoredEditorRow) : 'Describe'"
+                data-testid="vendored-editor">
+                <div v-if="vendoredEditorLoading"><n-spin size="small" /> Loading the identifier...</div>
+                <div v-else-if="vendoredEditorSeed">
+                    <n-alert v-if="vendoredEditorSeed.readOnly" type="info" :show-icon="true" style="margin-bottom: 12px;"
+                        data-testid="vendored-org-write">
+                        {{ VENDORED_ORG_WRITE_SENTENCE }}
+                    </n-alert>
+                    <div style="font-size: 13px; margin-bottom: 10px; word-break: break-all;"
+                        data-testid="vendored-identifier">
+                        Identifier: {{ vendoredEditorSeed.identifier }}
+                        <div style="font-size: 12px; color: #999;">{{ VENDORED_IDENTIFIER_NOTE }}</div>
+                    </div>
+                    <n-form label-placement="top" :disabled="vendoredEditorSeed.readOnly">
+                        <n-form-item v-if="!vendoredEditorSeed.readOnly && vendoredCopyOptions.length"
+                            :label="VENDORED_COPY_FROM_LABEL">
+                            <n-select :value="vendoredCopyChoice" :options="vendoredCopyOptions" clearable
+                                data-testid="vendored-copy-from" @update:value="onVendoredCopyFrom" />
+                            <div style="font-size: 12px; color: #999; margin-left: 8px;">{{ VENDORED_COPY_FROM_HINT }}</div>
+                        </n-form-item>
+                        <n-form-item label="Origin">
+                            <n-input v-model:value="vendoredForm.origin" :maxlength="512" />
+                        </n-form-item>
+                        <n-form-item label="Supplier">
+                            <n-input v-model:value="vendoredForm.supplier" :maxlength="512" />
+                        </n-form-item>
+                        <n-form-item label="Licence (SPDX)">
+                            <n-input v-model:value="vendoredForm.licence" :maxlength="512" />
+                        </n-form-item>
+                        <n-form-item label="Description">
+                            <n-input v-model:value="vendoredForm.description" type="textarea" :rows="3"
+                                :maxlength="2048" />
+                        </n-form-item>
+                        <n-form-item label="Reason (audit only, never exported)">
+                            <n-input v-model:value="vendoredForm.reason" :maxlength="2048" />
+                        </n-form-item>
+                    </n-form>
+                    <template v-if="!vendoredEditorSeed.readOnly">
+                        <n-alert v-for="e in vendoredFormErrors" :key="e" type="error" :show-icon="false"
+                            style="margin-top: 8px; font-size: 12px;">{{ e }}</n-alert>
+                    </template>
+                </div>
+                <template #footer>
+                    <n-space justify="end">
+                        <n-button size="small" @click="cancelVendoredDescribe">
+                            {{ vendoredEditorSeed?.readOnly ? 'Close' : 'Cancel' }}</n-button>
+                        <n-button v-if="vendoredEditorSeed && !vendoredEditorSeed.readOnly" size="small" type="primary"
+                            :disabled="vendoredEditorLoading || vendoredEditorSaving || vendoredFormErrors.length > 0"
+                            :loading="vendoredEditorSaving"
+                            data-testid="vendored-save"
+                            @click="saveVendoredDescription">Save</n-button>
+                    </n-space>
+                </template>
+            </n-modal>
+            <!-- Remove a vendored description: a reason and the consequence sentence first (3.10). -->
+            <n-modal
+                v-model:show="vendoredRemoveOpen"
+                preset="card"
+                style="width: 560px;"
+                title="Remove description"
+                data-testid="vendored-remove-dialog">
+                <div v-if="vendoredRemoveRow">
+                    <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px;"
+                        data-testid="vendored-remove-sentence">
+                        {{ vendoredRemoveSentence(vendoredRemoveRow) }}
+                    </n-alert>
+                    <n-form label-placement="top">
+                        <n-form-item label="Reason (required; audit only, never exported)">
+                            <n-input v-model:value="vendoredRemoveReason" :maxlength="2048"
+                                data-testid="vendored-remove-reason" />
+                        </n-form-item>
+                    </n-form>
+                </div>
+                <template #footer>
+                    <n-space justify="end">
+                        <n-button size="small" @click="vendoredRemoveOpen = false">Cancel</n-button>
+                        <n-button size="small" type="error"
+                            :disabled="vendoredRemoving || !canWriteOrg || !vendoredRemoveReason.trim()"
+                            :loading="vendoredRemoving"
+                            data-testid="vendored-remove-confirm"
+                            @click="confirmVendoredRemove">Remove description</n-button>
                     </n-space>
                 </template>
             </n-modal>
@@ -1854,6 +2077,52 @@
                         <div v-else>
                             <p>Open this tab to load SBOM components.</p>
                         </div>
+                        <!-- Components without an identifier (FDAW-15 3.6): the keyless nodes of the
+                             release's merged SBOM. For a reader it lists and offers no action; the
+                             actions are disabled with the sentence without organization write.
+                             Text bindings only: every value comes from the SBOM and the server. -->
+                        <n-collapse v-if="vendoredLoaded || vendoredError" style="margin-top: 12px;"
+                            data-testid="unidentified-components">
+                            <n-collapse-item :title="vendoredPanelTitle(vendoredRows)" name="unidentified">
+                                <n-alert v-if="vendoredError" type="error" :show-icon="false" style="font-size: 12px;">
+                                    {{ vendoredError }}</n-alert>
+                                <n-alert v-if="isWritable && !canWriteOrg && vendoredRows.length" type="info"
+                                    :show-icon="true" style="margin-bottom: 8px; font-size: 12px;"
+                                    data-testid="unidentified-org-write">
+                                    {{ VENDORED_ORG_WRITE_SENTENCE }}
+                                </n-alert>
+                                <p v-if="!vendoredError && !vendoredRows.length" style="font-size: 12px;">
+                                    Every component of the merged SBOM carries an identifier.</p>
+                                <table v-else-if="vendoredRows.length" style="width: 100%; font-size: 12px;">
+                                    <tr v-for="v in vendoredRows" :key="(v.group || '') + '/' + v.name + '@' + (v.version ?? '')"
+                                        data-testid="unidentified-row">
+                                        <td>{{ v.group ? v.group + ':' : '' }}{{ v.name }}</td>
+                                        <td>{{ v.version }}</td>
+                                        <td><n-tag size="small" data-testid="vendored-state">{{ vendoredStateTag(v) }}</n-tag></td>
+                                        <td style="word-break: break-all;">{{ v.described ? v.key : '' }}</td>
+                                        <td>
+                                            <n-space size="small" align="center">
+                                                <n-button v-if="vendoredRowActions(v, isWritable, canWriteOrg).describe.shown"
+                                                    size="small" data-testid="vendored-describe"
+                                                    :disabled="vendoredRowActions(v, isWritable, canWriteOrg).describe.disabled"
+                                                    @click="openVendoredDescribe(v)">Describe</n-button>
+                                                <span v-if="vendoredRowActions(v, isWritable, canWriteOrg).refusal"
+                                                    data-testid="vendored-refusal" style="color: #999;">
+                                                    {{ vendoredRowActions(v, isWritable, canWriteOrg).refusal }}</span>
+                                                <n-button v-if="vendoredRowActions(v, isWritable, canWriteOrg).attest.shown"
+                                                    size="small" type="primary" ghost data-testid="vendored-attest"
+                                                    :disabled="vendoredRowActions(v, isWritable, canWriteOrg).attest.disabled"
+                                                    @click="openVendoredAttestForm(v)">Attest</n-button>
+                                                <n-button v-if="vendoredRowActions(v, isWritable, canWriteOrg).remove.shown"
+                                                    size="small" type="error" ghost data-testid="vendored-remove"
+                                                    :disabled="vendoredRowActions(v, isWritable, canWriteOrg).remove.disabled"
+                                                    @click="openVendoredRemove(v)">Remove description</n-button>
+                                            </n-space>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </n-collapse-item>
+                        </n-collapse>
                     </div>
                         </n-tab-pane>
                         <n-tab-pane name="hbomSub" :tab="`HBOM Components${hbomComponents.length ? ' · ' + hbomComponents.length : ''}`">
@@ -2527,15 +2796,28 @@ import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
 import { useBulkAttest, validateBulkInput, emptyBulkForm, groupNotWritten } from '@/utils/useBulkAttest'
 import { hasOrgWrite, orgWriteSentence } from '@/utils/orgWrite'
 import { SELECTOR_FORM_OPTIONS, SELECTOR_SCOPE_OPTIONS, SELECTOR_OVER_CAP_TEXT, emptySelectorChoice, fetchSelectorCount,
-    isSelectorForm, selectorCountText, selectorLabel, submitBySelector, validateSelector } from '@/utils/bulkSelectorForm'
-import type { BulkSelectorChoice, SelectorCount } from '@/utils/bulkSelectorForm'
+    isSelectorForm, selectorCountText, selectorLabel, submitBySelector, validateSelector,
+    SUPPLIER_SELECTOR_FORM_OPTIONS, SUPPLIER_MAX_LENGTH, SUPPLIER_REASON_MAX_LENGTH, emptySupplierSelectorChoice,
+    emptySupplierForm, submitSupplierBySelector, validateSupplierSweep } from '@/utils/bulkSelectorForm'
+import type { BulkSelectorChoice, BulkSupplierInput, SelectorCount } from '@/utils/bulkSelectorForm'
+import { OVERLAY_LICENCE_MAX_LENGTH, OVERLAY_REASON_MAX_LENGTH, OVERLAY_SUPPLIER_MAX_LENGTH, loadComponentOverlay,
+    overlayEditorAccess, overlayFormOf, overlaySendsAnything, overlayVariables, saveComponentOverlay,
+    validateOverlay } from '@/utils/overlayInput'
+import type { OverlayForm, StoredOverlay } from '@/utils/overlayInput'
+import { VENDORED_COPY_FROM_HINT, VENDORED_COPY_FROM_LABEL, VENDORED_IDENTIFIER_NOTE, VENDORED_ORG_WRITE_SENTENCE,
+    copyVendoredDescription, describeVendored, describeVendoredVariables, loadUnidentifiedComponents,
+    loadVendoredSupportDetail, openVendoredEditor as loadVendoredEditorSeed, removeVendored, validateVendoredDescribe,
+    vendoredDescribeFormOf, vendoredLabel, vendoredPanelTitle, vendoredRemoveSentence, vendoredRowActions,
+    vendoredStateTag } from '@/utils/vendoredComponents'
+import type { VendoredDescribeForm, VendoredEditorSeed, VendoredRow } from '@/utils/vendoredComponents'
 import { END_OF_SUPPORT_CODES, justifiedUnknownLabel, justifiedUnknownOptions } from '@/utils/justifiedUnknownLabels'
 import MissingHashesPanel from '@/components/MissingHashesPanel.vue'
 import type { BulkAttestInput, BulkCollectResult, BulkOutcome, NotWrittenGroup } from '@/utils/useBulkAttest'
 import { useAttestationForm } from '@/utils/useAttestationForm'
+import type { AttestTarget } from '@/utils/useAttestationForm'
 import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils/supportAttestationInput'
 import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
-import { setSbomComponentSupportVars } from '@/utils/setSbomComponentSupport'
+import { setSbomComponentSupportVars, setVendoredComponentSupportVars } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
 import { useReleaseDeclaredLicense } from '@/utils/useReleaseDeclaredLicense'
 import { EXPRESSION_HINT, RELEASE_CLEARED, RELEASE_INTRO, RELEASE_PLACEHOLDER, RELEASE_SAVED, UNSUPPORTED_NOTE,
@@ -3526,7 +3808,10 @@ async function fetchHbomComponents (releaseUuid: string, forceRefresh: boolean =
 }
 // Lazy-load whichever BOM sub-tab (SBOM / HBOM) the user opens.
 function handleBomSubTabSwitch (subTab: string) {
-    if (subTab === 'sbomSub') loadSbomComponents()
+    if (subTab === 'sbomSub') {
+        loadSbomComponents()
+        loadVendoredPanel()
+    }
     else if (subTab === 'hbomSub') fetchHbomComponents(updatedRelease.value.uuid)
 }
 
@@ -3703,6 +3988,7 @@ async function goToRelease (uuid: string) {
     // piecemeal is how the tab label kept showing the old release's count over an empty
     // pane, and how a trailing debounce could re-mark the list loaded with A's rows.
     sbomPaging.reset()
+    resetVendoredPanel()
     // The gauge belongs to the release that was showing, and has its own fence for the same
     // reason: a coverage response for the previous release would caption this one with the
     // old disclosure count. Clearing the ref alone only handles the synchronous case.
@@ -4935,6 +5221,7 @@ const canWriteOrg: ComputedRef<boolean> = computed((): boolean =>
     hasOrgWrite(Object.values(myUser?.permissions?.permissions || {}), release.value?.orgDetails?.uuid))
 const ATTEST_ALL_ORG_WRITE_SENTENCE = orgWriteSentence('Attest all shown')
 const BULK_ASSESSMENT_ORG_WRITE_SENTENCE = orgWriteSentence('A bulk support assessment')
+const BULK_SUPPLIER_ORG_WRITE_SENTENCE = orgWriteSentence('A bulk supplier assignment')
 
 const canUpdateLifecycle: ComputedRef<boolean> = computed((): boolean => {
     const orguuid = updatedRelease.value.orgDetails?.uuid
@@ -5194,7 +5481,18 @@ const bulkAssessedAt: Ref<string> = ref('')
 /** Shown components (the walk), By ecosystem or By namespace, and the release scope (FDAW-14 3.9). */
 const bulkSelector: BulkSelectorChoice = reactive(emptySelectorChoice())
 const bulkSelectorCount: Ref<SelectorCount | null> = ref(null)
-const bulkTab: Ref<'support' | 'hashes'> = ref('support')
+const bulkTab: Ref<'support' | 'hashes' | 'supplier'> = ref('support')
+/** The Supplier half (FDAW-15 3.6): the two selector forms only, a supplier and a reason. */
+const bulkSupplierSelector: BulkSelectorChoice = reactive(emptySupplierSelectorChoice())
+const bulkSupplierForm: BulkSupplierInput = reactive(emptySupplierForm())
+const bulkSupplierErrors: ComputedRef<string[]> = computed(
+    (): string[] => validateSupplierSweep(bulkSupplierSelector, bulkSupplierForm))
+/** The half the shown result was composed on, so the counts line says what was written. */
+const bulkResultHalf: Ref<'support' | 'supplier'> = ref('support')
+const bulkSupplierCountLine: ComputedRef<string> = computed((): string => bulkSelectorCount.value
+    ? (bulkSelectorCount.value.overCap ? SELECTOR_OVER_CAP_TEXT
+        : selectorCountText(bulkSelectorCount.value.matched, bulkSupplierSelector.scope))
+    : '')
 const bulkSelectorCountLine: ComputedRef<string> = computed((): string => bulkSelectorCount.value
     ? (bulkSelectorCount.value.overCap ? SELECTOR_OVER_CAP_TEXT
         : selectorCountText(bulkSelectorCount.value.matched, bulkSelector.scope))
@@ -5255,6 +5553,8 @@ function openBulkAttest () {
     bulkCollected.value = emptyBulkSelection()
     if (!resuming) Object.assign(bulkForm, emptyBulkForm())
     if (!resuming) Object.assign(bulkSelector, emptySelectorChoice())
+    Object.assign(bulkSupplierSelector, emptySupplierSelectorChoice())
+    Object.assign(bulkSupplierForm, emptySupplierForm())
     bulkSelectorCount.value = null
     bulkTab.value = 'support'
     bulkModalOpen.value = true
@@ -5310,6 +5610,7 @@ async function collectBulkTargets () {
 }
 
 async function runBulkAttest () {
+    bulkResultHalf.value = 'support'
     // Re-checked at the moment of the write, not only at the moment of the click that led
     // here. The compose stage stays mounted through the walk, so the values validated
     // before "Review selection" are not necessarily the values about to be sent -- and
@@ -5347,6 +5648,42 @@ async function runBulkAttest () {
     }
 }
 
+/**
+ * The Supplier half's confirm stage: the server's count for the same selector and scope the
+ * sweep will send (supportBulkSelectorCount, the support half's query and gate). No walk.
+ */
+async function collectSupplierCount () {
+    if (!updatedRelease.value?.uuid || bulkSupplierErrors.value.length || !canWriteOrg.value) return
+    const gen = ++bulkGen
+    bulk.error.value = null
+    bulkSelectorCount.value = null
+    try {
+        const count = await fetchSelectorCount(graphqlClient as any, updatedRelease.value.orgDetails.uuid,
+            bulkSupplierSelector, updatedRelease.value.uuid)
+        if (gen !== bulkGen) return
+        bulkSelectorCount.value = count
+        bulkCollected.value = emptyBulkSelection()
+        bulkStage.value = 'confirm'
+    } catch (err: any) {
+        if (gen === bulkGen) bulk.error.value = commonFunctions.parseGraphQLError(err?.message || String(err))
+    }
+}
+
+/** One bulkSetSbomComponentSupplierBySelector: one call, no walk, no batching. */
+async function runBulkSupplier () {
+    if (bulkSupplierErrors.value.length) { bulkStage.value = 'compose'; return }
+    if (!canWriteOrg.value || bulkSelectorCount.value?.overCap || bulk.submitting.value) return
+    bulk.submitting.value = true
+    try {
+        bulkResult.value = await submitSupplierBySelector(graphqlClient as any, updatedRelease.value.orgDetails.uuid,
+            bulkSupplierSelector, updatedRelease.value.uuid, { ...bulkSupplierForm })
+        bulkResultHalf.value = 'supplier'
+    } finally {
+        bulk.submitting.value = false
+    }
+    bulkStage.value = 'done'
+}
+
 // Per-component attestation form (FDA-Readiness-1 PR5.3).
 //
 // The rules about when a save is allowed live in useAttestationForm, outside this file, so
@@ -5354,6 +5691,8 @@ async function runBulkAttest () {
 const attestForm = useAttestationForm()
 const attestModalOpen: Ref<boolean> = ref(false)
 const attestRow: Ref<any> = ref(null)
+/** What the open form writes to: a component row, or a described vendored node (FDAW-15 3.6). */
+const attestTarget: Ref<AttestTarget | null> = ref(null)
 const attestLoading: Ref<boolean> = ref(false)
 const attestSaving: Ref<boolean> = ref(false)
 const attestNothingPublishedText: Ref<string> = ref('')
@@ -5395,6 +5734,7 @@ async function openAttestForm (row: any) {
     // An attestation recorded against the wrong component is silent and near-undetectable.
     const gen = ++attestGen
     attestRow.value = row
+    attestTarget.value = { kind: 'component', uuid: row.component?.uuid || row.sbomComponentUuid }
     attestNothingPublishedText.value = ''
     attestModalOpen.value = true
     attestLoading.value = true
@@ -5413,7 +5753,35 @@ async function openAttestForm (row: any) {
     }
 }
 
-/** Closing invalidates any in-flight seed, so a late response cannot reopen or reseed. */
+/**
+ * The vendored target (FDAW-51 3.3.1): the same modal, seeded from the node's component as
+ * releaseUnidentifiedComponents serves it, never from getReleaseSbomComponentGraph, which
+ * answers null for a row with no artifact mapping. The same attestGen counter as
+ * openAttestForm, so a late seed of one target cannot land in a form opened for the other.
+ */
+async function openVendoredAttestForm (vrow: VendoredRow) {
+    const gen = ++attestGen
+    attestRow.value = null
+    attestTarget.value = { kind: 'vendored', releaseUuid: updatedRelease.value.uuid, name: vrow.name,
+        version: vrow.version }
+    attestNothingPublishedText.value = ''
+    attestModalOpen.value = true
+    attestLoading.value = true
+    try {
+        const res = await loadVendoredSupportDetail(
+            graphqlClient as any, updatedRelease.value.uuid, vrow.name, vrow.version)
+        if (gen !== attestGen) return
+        attestForm.open(res.attestation)
+    } catch (err: any) {
+        if (gen !== attestGen) return
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+        attestModalOpen.value = false
+    } finally {
+        if (gen === attestGen) attestLoading.value = false
+    }
+}
+
+/** Closing invalidates any in-flight seed of either target, so a late response cannot reopen or reseed. */
 function cancelAttest () {
     attestGen += 1
     attestLoading.value = false
@@ -5438,12 +5806,14 @@ async function saveAttestation () {
         // milestones in one call would land on both. One call per edited milestone, each
         // its own audit revision -- honest rather than clever. Sequential, not parallel:
         // they touch the same optimistic-locked row.
-        const componentUuid = attestRow.value.component?.uuid || attestRow.value.sbomComponentUuid
-        const sets = attestForm.variableSets(componentUuid)
+        const target: AttestTarget = attestTarget.value ?? { kind: 'component',
+            uuid: attestRow.value.component?.uuid || attestRow.value.sbomComponentUuid }
+        const sets = attestForm.variableSets(target)
         attestFailedTotal = sets.length
         try {
             for (const vars of sets) {
-                await setSbomComponentSupportVars(graphqlClient as any, vars)
+                if (target.kind === 'vendored') await setVendoredComponentSupportVars(graphqlClient as any, vars)
+                else await setSbomComponentSupportVars(graphqlClient as any, vars)
                 done.push(vars)
             }
             attestModalOpen.value = false
@@ -5483,6 +5853,7 @@ async function saveAttestation () {
     // unable to tell whether to redo it -- which is the exact ambiguity this screen exists to
     // remove. Say which half failed.
     try {
+        if (attestTarget.value?.kind === 'vendored') await loadVendoredPanel()
         await loadSbomComponents(true)
         notify('success', 'Saved', 'Support attestation recorded.')
     } catch (err: any) {
@@ -5490,6 +5861,200 @@ async function saveAttestation () {
             'The attestation was recorded. The component list could not be reloaded, so the'
             + ' coverage figure above may be out of date until you refresh.')
     }
+}
+
+// Component overlay editor (FDAW-15 3.6): a third-party supplier and licence on a component
+// row. Loaded when it opens, read-only with the sentence for a caller without organization
+// write; the server's ORGANIZATION WRITE gate stays the authority.
+const overlayModalOpen: Ref<boolean> = ref(false)
+const overlayRow: Ref<any> = ref(null)
+const overlayLoading: Ref<boolean> = ref(false)
+const overlaySaving: Ref<boolean> = ref(false)
+const overlayStored: Ref<StoredOverlay | null> = ref(null)
+const overlayForm: OverlayForm = reactive(overlayFormOf(null))
+const overlayAccess = computed(() => overlayEditorAccess(canWriteOrg.value))
+const overlayErrors: ComputedRef<string[]> = computed((): string[] => validateOverlay(overlayForm))
+let overlayGen = 0
+
+async function openOverlayEditor (row: any) {
+    const gen = ++overlayGen
+    overlayRow.value = row
+    overlayStored.value = null
+    Object.assign(overlayForm, overlayFormOf(null))
+    overlayModalOpen.value = true
+    overlayLoading.value = true
+    try {
+        const stored = await loadComponentOverlay(graphqlClient as any, updatedRelease.value.uuid,
+            row.component?.uuid || row.sbomComponentUuid)
+        if (gen !== overlayGen) return
+        overlayStored.value = stored
+        Object.assign(overlayForm, overlayFormOf(stored))
+    } catch (err: any) {
+        if (gen !== overlayGen) return
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+        overlayModalOpen.value = false
+    } finally {
+        if (gen === overlayGen) overlayLoading.value = false
+    }
+}
+
+function cancelOverlayEditor () {
+    overlayGen += 1
+    overlayLoading.value = false
+    overlayModalOpen.value = false
+}
+
+async function saveOverlay () {
+    if (overlaySaving.value || overlayAccess.value.readOnly || overlayErrors.value.length
+        || !overlaySendsAnything(overlayForm, overlayStored.value)) return
+    overlaySaving.value = true
+    let saved = false
+    try {
+        const uuid = overlayRow.value.component?.uuid || overlayRow.value.sbomComponentUuid
+        await saveComponentOverlay(graphqlClient as any, overlayVariables(uuid, overlayForm, overlayStored.value))
+        overlayModalOpen.value = false
+        saved = true
+    } catch (err: any) {
+        // The server's text as is: `licence invalid: ...`, the bounds, the supplier content rule.
+        notify('error', 'Not saved', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        overlaySaving.value = false
+    }
+    if (!saved) return
+    try {
+        await loadSbomComponents(true)
+        notify('success', 'Saved', 'Supplier and licence recorded.')
+    } catch (err: any) {
+        notify('warning', 'Saved, but not refreshed',
+            'The supplier and licence were recorded. The component list could not be reloaded.')
+    }
+}
+
+// "Components without an identifier" (FDAW-15 3.6, FDAW-51 3.3): the keyless nodes of the
+// release's merged SBOM. One releaseUnidentifiedComponents per SBOM tab open, refetched after
+// every save; the rules (state tag, actions, identifier, copy source) are vendoredComponents.ts.
+const vendoredRows: Ref<VendoredRow[]> = ref([])
+const vendoredLoaded: Ref<boolean> = ref(false)
+const vendoredLoading: Ref<boolean> = ref(false)
+const vendoredError: Ref<string | null> = ref(null)
+let vendoredGen = 0
+
+async function loadVendoredPanel () {
+    if (!updatedRelease.value?.uuid) return
+    const gen = ++vendoredGen
+    vendoredLoading.value = true
+    try {
+        const rows = await loadUnidentifiedComponents(graphqlClient as any, updatedRelease.value.uuid)
+        if (gen !== vendoredGen) return
+        vendoredRows.value = rows
+        vendoredError.value = null
+        vendoredLoaded.value = true
+    } catch (err: any) {
+        if (gen === vendoredGen) vendoredError.value = commonFunctions.parseGraphQLError(err?.message || String(err))
+    } finally {
+        if (gen === vendoredGen) vendoredLoading.value = false
+    }
+}
+
+function resetVendoredPanel () {
+    vendoredGen += 1
+    vendoredRows.value = []
+    vendoredLoaded.value = false
+    vendoredLoading.value = false
+    vendoredError.value = null
+}
+
+const vendoredEditorOpen: Ref<boolean> = ref(false)
+const vendoredEditorRow: Ref<VendoredRow | null> = ref(null)
+const vendoredEditorLoading: Ref<boolean> = ref(false)
+const vendoredEditorSaving: Ref<boolean> = ref(false)
+const vendoredEditorSeed: Ref<VendoredEditorSeed | null> = ref(null)
+const vendoredForm: VendoredDescribeForm = reactive(vendoredDescribeFormOf(null))
+const vendoredCopyChoice: Ref<string | null> = ref(null)
+const vendoredFormErrors: ComputedRef<string[]> = computed((): string[] => validateVendoredDescribe(vendoredForm))
+const vendoredCopyOptions = computed(() => (vendoredEditorSeed.value?.copySources ?? [])
+    .map(c => ({ label: vendoredLabel(c), value: c.uuid })))
+let vendoredEditorGen = 0
+
+/** Describe: the identifier first; the copy sources only for an enabled editor (F-17). */
+async function openVendoredDescribe (vrow: VendoredRow) {
+    const gen = ++vendoredEditorGen
+    vendoredEditorRow.value = vrow
+    vendoredEditorSeed.value = null
+    vendoredCopyChoice.value = null
+    Object.assign(vendoredForm, vendoredDescribeFormOf(vrow.overlay))
+    vendoredEditorOpen.value = true
+    vendoredEditorLoading.value = true
+    try {
+        const seed = await loadVendoredEditorSeed(graphqlClient as any, updatedRelease.value.uuid, vrow, canWriteOrg.value)
+        if (gen !== vendoredEditorGen) return
+        vendoredEditorSeed.value = seed
+    } catch (err: any) {
+        if (gen !== vendoredEditorGen) return
+        notify('error', 'Error', commonFunctions.parseGraphQLError(err.message))
+        vendoredEditorOpen.value = false
+    } finally {
+        if (gen === vendoredEditorGen) vendoredEditorLoading.value = false
+    }
+}
+
+function cancelVendoredDescribe () {
+    vendoredEditorGen += 1
+    vendoredEditorLoading.value = false
+    vendoredEditorOpen.value = false
+}
+
+function onVendoredCopyFrom (uuid: string | null) {
+    vendoredCopyChoice.value = uuid
+    const source = (vendoredEditorSeed.value?.copySources ?? []).find(c => c.uuid === uuid)
+    if (source) copyVendoredDescription(vendoredForm, source)
+}
+
+async function saveVendoredDescription () {
+    const vrow = vendoredEditorRow.value
+    if (!vrow || vendoredEditorSaving.value || !canWriteOrg.value || vendoredFormErrors.value.length) return
+    vendoredEditorSaving.value = true
+    let saved = false
+    try {
+        // The node's own name and version; the server mints the key, a copy is never an alias.
+        await describeVendored(graphqlClient as any,
+            describeVendoredVariables(updatedRelease.value.uuid, vrow, vendoredForm, vrow.overlay))
+        vendoredEditorOpen.value = false
+        saved = true
+    } catch (err: any) {
+        notify('error', 'Not saved', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        vendoredEditorSaving.value = false
+    }
+    if (saved) await loadVendoredPanel()
+}
+
+const vendoredRemoveOpen: Ref<boolean> = ref(false)
+const vendoredRemoveRow: Ref<VendoredRow | null> = ref(null)
+const vendoredRemoveReason: Ref<string> = ref('')
+const vendoredRemoving: Ref<boolean> = ref(false)
+
+function openVendoredRemove (vrow: VendoredRow) {
+    vendoredRemoveRow.value = vrow
+    vendoredRemoveReason.value = ''
+    vendoredRemoveOpen.value = true
+}
+
+async function confirmVendoredRemove () {
+    const vrow = vendoredRemoveRow.value
+    if (!vrow || vendoredRemoving.value || !canWriteOrg.value || !vendoredRemoveReason.value.trim()) return
+    vendoredRemoving.value = true
+    let removed = false
+    try {
+        await removeVendored(graphqlClient as any, updatedRelease.value.uuid, vrow, vendoredRemoveReason.value)
+        vendoredRemoveOpen.value = false
+        removed = true
+    } catch (err: any) {
+        notify('error', 'Not removed', commonFunctions.parseGraphQLError(err.message))
+    } finally {
+        vendoredRemoving.value = false
+    }
+    if (removed) await loadVendoredPanel()
 }
 
 // Release-scoped support-disclosure gauge (FDA-Readiness-1).
@@ -5729,6 +6294,13 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
             if (isWritable.value && !row.component?.isRoot) {
                 els.push(h(NButton, { size: 'small', type: 'primary', ghost: true,
                     onClick: () => openAttestForm(row) }, () => 'Attest'))
+            }
+            // Supplier and licence under the Attest condition (FDAW-51 3.3.2): a root's are declared
+            // on the component and a reader is offered neither; a product-scoped writer opens it
+            // read-only with the sentence.
+            if (isWritable.value && !row.component?.isRoot) {
+                els.push(h(NButton, { size: 'small', ghost: true, 'data-testid': 'overlay-edit',
+                    onClick: () => openOverlayEditor(row) }, () => 'Supplier and licence'))
             }
             return h('div', { style: 'display: flex; gap: 6px;' }, els)
         }

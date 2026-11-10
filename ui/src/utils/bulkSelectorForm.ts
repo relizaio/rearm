@@ -196,3 +196,107 @@ export async function submitBySelector (
     }
     return out
 }
+
+// The Supplier half of the bulk dialog (FDAW-15 3.6): a supplier sweep over the same two
+// selector forms, recorded as one SUPPLIER act. It writes an overlay's supplier on the matched
+// rows that hold none and never touches a support row.
+
+/** The supplier sweep offers the two selector forms only; Shown components has no act kind here. */
+export const SUPPLIER_SELECTOR_FORM_OPTIONS: Array<{ label: string, value: BulkSelectorForm }> =
+    SELECTOR_FORM_OPTIONS.filter(o => o.value !== 'EXPLICIT')
+
+/** By ecosystem, This release: the supplier half has no explicit form to default to. */
+export function emptySupplierSelectorChoice (): BulkSelectorChoice {
+    return { form: 'TYPE', type: '', namespace: '', scope: 'RELEASE' }
+}
+
+export interface BulkSupplierInput {
+    supplier: string
+    reason: string
+}
+
+export function emptySupplierForm (): BulkSupplierInput {
+    return { supplier: '', reason: '' }
+}
+
+/** The server's bounds (SupportTextBounds): one-line supplier, multi-line reason. */
+export const SUPPLIER_MAX_LENGTH = 512
+export const SUPPLIER_REASON_MAX_LENGTH = 2048
+
+/** Problems with the sweep, phrased as the server's own refusals; a blank supplier blocks confirm. */
+export function validateSupplierSweep (choice: BulkSelectorChoice, input: BulkSupplierInput): string[] {
+    const out: string[] = []
+    if (!isSelectorForm(choice)) out.push('A supplier sweep runs By ecosystem or By namespace.')
+    out.push(...validateSelector(choice))
+    const supplier = (input.supplier ?? '').trim()
+    if (!supplier) out.push('supplier is required')
+    else if (supplier.length > SUPPLIER_MAX_LENGTH) out.push(`supplier is longer than ${SUPPLIER_MAX_LENGTH} characters`)
+    // eslint-disable-next-line no-control-regex
+    else if (/[\u0000-\u001f\u007f]/.test(supplier)) out.push('supplier holds a control character')
+    if ((input.reason ?? '').trim().length > SUPPLIER_REASON_MAX_LENGTH) {
+        out.push(`reason is longer than ${SUPPLIER_REASON_MAX_LENGTH} characters`)
+    }
+    return out
+}
+
+export const BULK_SET_SUPPLIER_BY_SELECTOR = gql`
+    mutation bulkSetSbomComponentSupplierBySelector(
+        $orgUuid: ID!
+        $selector: SupportBulkSelectorInput!
+        $releaseUuid: ID
+        $supplier: String!
+        $reason: String
+    ) {
+        bulkSetSbomComponentSupplierBySelector(
+            orgUuid: $orgUuid
+            selector: $selector
+            releaseUuid: $releaseUuid
+            supplier: $supplier
+            reason: $reason
+        ) {
+            bulkAct
+            matchedCount
+            appliedCount
+            skippedCount
+            failedCount
+            results { sbomComponentUuid outcome message }
+        }
+    }`
+
+/**
+ * One supplier sweep: one call, no walk, no batching, the same tally as the support sweeps
+ * (SKIPPED_HAS_SUPPLIER for a row that already holds a supplier).
+ */
+export async function submitSupplierBySelector (
+    client: MutationClient,
+    orgUuid: string,
+    choice: BulkSelectorChoice,
+    pageReleaseUuid: string | null | undefined,
+    input: BulkSupplierInput
+): Promise<BulkOutcome> {
+    const out = newBulkOutcome()
+    const invalid = validateSupplierSweep(choice, input)
+    if (invalid.length) return { ...out, aborted: true, error: invalid.join(' ') }
+    try {
+        const resp = await client.mutate({
+            mutation: BULK_SET_SUPPLIER_BY_SELECTOR,
+            variables: {
+                orgUuid,
+                selector: selectorInput(choice),
+                releaseUuid: selectorRelease(choice, pageReleaseUuid),
+                supplier: input.supplier.trim(),
+                reason: (input.reason ?? '').trim() || null
+            }
+        })
+        const r = (resp.data as any)?.bulkSetSbomComponentSupplierBySelector
+        if (!r) throw new Error('the server returned no result for this sweep')
+        out.matched = r.matchedCount ?? 0
+        tallyBulkResponse(out, r)
+    } catch (err: any) {
+        out.aborted = true
+        out.error = err?.message || String(err)
+        // A re-run skips the rows this one wrote, as SKIPPED_HAS_SUPPLIER.
+        out.retryable = true
+    }
+    return out
+}

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { useAttestationForm } from './useAttestationForm'
+import { SET_VENDORED_COMPONENT_SUPPORT, setVendoredComponentSupportVars } from './setSbomComponentSupport'
 import { attestationVariables } from './supportAttestationInput'
 
 const existing = (over: Record<string, unknown> = {}) => ({
@@ -524,5 +525,49 @@ describe('the justified unknown', () => {
         expect(sets[0]).not.toHaveProperty('endOfSupportDate')
         f.markSaved(sets)
         expect(f.replacesDate()).toBe(false)
+    })
+})
+
+/** FDAW-15 row 15 (REQ-14): the vendored target sends the component target's field set. */
+describe('the vendored target', () => {
+    const VENDORED = { kind: 'vendored' as const, releaseUuid: 'rel-1', name: 'libdosecalc', version: '2.3' }
+
+    it('builds the same facts for both targets, with releaseUuid, name and version in place of the uuid', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.levelOfSupport = 'NO_LONGER_MAINTAINED'
+        f.form.endOfSupportDate = '2031-01-01'
+        f.form.milestoneNotes.END_OF_SUPPORT = 'new advisory'
+        f.form.reason = 'vendor notice'
+        const component = f.variableSets({ kind: 'component', uuid: 'sc-1' })
+        const vendored = f.variableSets(VENDORED)
+        expect(vendored).toHaveLength(component.length)
+        vendored.forEach((set, i) => {
+            const { sbomComponentUuid, ...facts } = component[i]
+            expect(sbomComponentUuid).toBe('sc-1')
+            expect(set).toEqual({ releaseUuid: 'rel-1', name: 'libdosecalc', version: '2.3', ...facts })
+        })
+    })
+
+    it('a bare string is still the component uuid', () => {
+        const f = useAttestationForm()
+        f.open(null)
+        f.form.levelOfSupport = 'ACTIVELY_MAINTAINED'
+        expect(f.variableSets('sc-1')).toEqual(f.variableSets({ kind: 'component', uuid: 'sc-1' }))
+        expect(f.variableSets('sc-1')[0]).toMatchObject({ sbomComponentUuid: 'sc-1', levelOfSupport: 'ACTIVELY_MAINTAINED' })
+    })
+
+    it('a reason alone writes nothing for the vendored target either', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.reason = 'nothing changed'
+        expect(f.variableSets(VENDORED)).toEqual([])
+    })
+
+    it('submits through setVendoredComponentSupport', async () => {
+        const mutate = vi.fn(async (_o: any) => ({ data: { setVendoredComponentSupport: { uuid: 'sc-v' } } }))
+        const vars = { releaseUuid: 'rel-1', name: 'libdosecalc', version: '2.3', levelOfSupport: 'ACTIVELY_MAINTAINED' }
+        expect(await setVendoredComponentSupportVars({ query: vi.fn(), mutate } as any, vars)).toEqual({ uuid: 'sc-v' })
+        expect((mutate.mock.calls[0] as any)[0]).toEqual({ mutation: SET_VENDORED_COMPONENT_SUPPORT, variables: vars })
     })
 })

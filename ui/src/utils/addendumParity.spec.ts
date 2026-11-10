@@ -42,7 +42,11 @@ const COMPONENTS: AddendumComponent[] = [
     comp({ sbomComponentUuid: 'e', name: 'quote"comma,newline',
         justification: 'said "yes", then\nleft', levelOfSupport: null }),
     comp({ sbomComponentUuid: 'f', name: 'formula', levelOfSupport: null,
-        justification: '=HYPERLINK("http://x","ok")' })
+        justification: '=HYPERLINK("http://x","ok")' }),
+    // FDAW-15 row 13: a vendored component described in ReARM, unassessed.
+    comp({ sbomComponentUuid: 'g', name: 'libdosecalc', group: null, version: '2.3',
+        purl: 'pkg:generic/org-1/libdosecalc@2.3', vendored: true, attestationState: null,
+        levelOfSupport: null, endOfSupportDate: null, assessedAt: null })
 ]
 
 const DATA: AddendumData = {
@@ -198,5 +202,21 @@ describe('CSV and PDF are the same document in two encodings', () => {
         const header = csv.findIndex(r => r[0] === ADDENDUM_COLUMNS[0] && r[1] === ADDENDUM_COLUMNS[1])
         expect(csv[header + 1][at]).toBe("'+SUM(1,2)")
         expect(JSON.stringify(buildAddendumDocDefinition(hostile))).toContain('"+SUM(1,2)"')
+    })
+})
+
+/** FDAW-15 row 13 (REQ-12): both documents print the vendored label as the Pro addendum does. */
+describe('the vendored row in both encodings', () => {
+    const LABELLED = 'pkg:generic/org-1/libdosecalc@2.3 (vendored, described in ReARM)'
+    const purlCol = ADDENDUM_COLUMNS.indexOf('PURL')
+
+    it('the CSV prints the label in the PURL cell', () => {
+        const row = csvDataRows.find(r => r[0] === 'libdosecalc')
+        expect(row?.[purlCol]).toBe(LABELLED)
+    })
+
+    it('the PDF prints the same text', () => {
+        const row = pdfDataRows.find((r: any) => (r[0]?.text ?? r[0]) === 'libdosecalc') as any
+        expect(row?.[purlCol]?.text ?? row?.[purlCol]).toBe(LABELLED)
     })
 })

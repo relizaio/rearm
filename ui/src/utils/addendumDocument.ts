@@ -54,6 +54,11 @@ export const SOURCE_JUSTIFICATION = '; justification'
 export const SOURCE_BULK_JUSTIFICATION = '; bulk justification'
 export const ASSERTED_BY_JUSTIFICATION = '; justification: '
 export const NOT_AVAILABLE_PREFIX = 'not available: '
+/**
+ * The PURL cell's label for a vendored component described in ReARM (FDAW-15 3.5, 3.10), the
+ * Pro addendum's FdaDocumentStrings.VENDORED_SUFFIX by text.
+ */
+export const VENDORED_SUFFIX = ' (vendored, described in ReARM)'
 
 /** The date, else `not available: <CODE>` for a justified unknown, else empty. */
 function endOfSupportCell (c: AddendumComponent): string | null {
@@ -132,7 +137,7 @@ export function addendumRow (c: AddendumComponent): unknown[] {
     return [
         displayName(c),
         c.version,
-        c.purl,
+        c.vendored && c.purl ? c.purl + VENDORED_SUFFIX : c.purl,
         live ? (c.levelOfSupport || LEVEL_NOT_STATED) : NOT_ASSESSED,
         live ? endOfSupportCell(c) : null,
         live && !c.levelOfSupport ? c.justification : null,
