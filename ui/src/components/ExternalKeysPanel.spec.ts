@@ -348,3 +348,29 @@ describe('ExternalKeysPanel customers (FDAW-40 row 22g)', () => {
         expect(groupCalls()).toHaveLength(2)
     })
 })
+
+// FDAW-40 mutation round: cells the surviving mutants showed missing.
+describe('ExternalKeysPanel customers column details (FDAW-40 mutation)', () => {
+    beforeEach(() => {
+        query.mockReset()
+        notify.mockReset()
+    })
+
+    it('joins two customers of one key with a comma and a space', async () => {
+        answer(API_BASE, KEYS, [
+            { uuid: 'c1', name: 'Acme customer', status: 'ACTIVE', kind: 'CUSTOMER', apiKeys: ['k1'] },
+            { uuid: 'c2', name: 'Beta customer', status: 'ACTIVE', kind: 'CUSTOMER', apiKeys: ['k1'] },
+        ])
+        const w = await mountPanel()
+        expect(w.findAll('[data-testid="external-key-customers"]')[0].text()).toBe('Acme customer, Beta customer')
+    })
+
+    it('shows no Customers column while the CUSTOMER list has not answered', async () => {
+        answer(API_BASE, KEYS, [])
+        const base = query.getMockImplementation()!
+        query.mockImplementation((opts: any) => opts.query === API_KEY_GROUPS_OF_ORG_QUERY ? new Promise(() => {}) : base(opts))
+        const w = await mountPanel()
+        expect(w.findAll('[data-testid="external-key-holder"]')).toHaveLength(3)
+        expect(w.findAll('thead th').map(x => x.text())).not.toContain('Customers')
+    })
+})

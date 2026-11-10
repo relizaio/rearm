@@ -134,3 +134,23 @@ describe('customerCreateSteps (row 22a)', () => {
         expect(customerCreateSteps(form, [], [], ORG).follow).toBe(false)
     })
 })
+
+// FDAW-40 mutation round: cells the surviving mutants showed missing.
+describe('customerKeyRows labels and status (FDAW-40 mutation)', () => {
+    it('labels a key with a blank holder by its uuid alone, and reads a missing status as null', () => {
+        expect(customerKeyRows([{ uuid: 'k3', holderName: '' }], null))
+            .toEqual([{ uuid: 'k3', holderName: '', status: null, member: false, label: 'k3' }])
+    })
+})
+
+describe('customerUpdateInput with a swapped member or grant (FDAW-40 mutation)', () => {
+    it('sends the keys when one member is swapped for another, the count unchanged', () => {
+        expect(customerUpdateInput(STORED, { ...FORM, apiKeys: ['k1', 'k9'] }, [ORG_READ_SCOPED]))
+            .toEqual({ groupId: 'c1', apiKeys: ['k1', 'k9'] })
+    })
+
+    it('sends the grants when one grant is swapped for another, the count unchanged', () => {
+        const comp = { scope: 'COMPONENT', objectId: 'c9', type: 'READ_ONLY', functions: [], approvals: [] }
+        expect(customerUpdateInput(STORED, FORM, [comp])).toEqual({ groupId: 'c1', permissions: [comp] })
+    })
+})

@@ -23,7 +23,7 @@ const { default: ScopedPermissions } = await import('./ScopedPermissions.vue')
 const { default: graphqlQueries } = await import('@/utils/graphqlQueries')
 const { API_KEY_GROUPS_OF_ORG_QUERY } = await import('@/utils/apiKeyGroupsQuery')
 const { CREATE_CUSTOMER_GROUP, UPDATE_CUSTOMER_GROUP, DEACTIVATE_CUSTOMER_GROUP } = await import('@/utils/teaCustomers')
-const { NInput, NSwitch } = await import('naive-ui')
+const { NInput, NModal, NSwitch, NTag } = await import('naive-ui')
 
 const ORG = 'o1'
 const ORG_READ = { org: ORG, scope: 'ORGANIZATION', object: ORG, type: 'READ_ONLY', functions: ['TEA_READ'] }
@@ -360,5 +360,198 @@ describe('TeaCustomersPanel deactivate and restore (row 22b)', () => {
         expect(mutate.mock.calls[0][0].mutation).toBe(UPDATE_CUSTOMER_GROUP)
         expect(mutate.mock.calls[0][0].variables).toEqual({ apiKeyGroup: { groupId: 'c3', status: 'ACTIVE' } })
         expect(notify).toHaveBeenCalledWith('success', 'Restored', 'Restored customer "Old"')
+    })
+})
+
+// FDAW-40 mutation round: cells the surviving mutants showed missing.
+describe('TeaCustomersPanel list details (FDAW-40 mutation)', () => {
+    it('gives a reader no create icon and no row actions', async () => {
+        answer()
+        const { w } = await open({ isOrgAdmin: false })
+        w.findComponent(NSwitch).vm.$emit('update:value', true)
+        await flushPromises()
+        expect(names(w)).toEqual(['Acme', 'Globex', 'Old'])
+        for (const id of ['customer-create', 'customer-edit', 'customer-deactivate', 'customer-restore']) {
+            expect(w.find(`[data-testid="${id}"]`).exists()).toBe(false)
+        }
+    })
+
+    it('sorts the customers by name, shows the description, and marks an inactive row', async () => {
+        answer([OLD, GLOBEX, ACME])
+        const { w } = await open()
+        w.findComponent(NSwitch).vm.$emit('update:value', true)
+        await flushPromises()
+        expect(names(w)).toEqual(['Acme', 'Globex', 'Old'])
+        const rows = w.findAll('[data-testid="customers-table"] tbody tr')
+        expect(rows[0].text()).toContain('Hospital')
+        expect(rows.map((r: any) => r.classes().includes('inactive-row'))).toEqual([false, false, true])
+        expect(w.findAllComponents(NTag).map((t: any) => t.props('type'))).toEqual(['success', 'success', 'default'])
+    })
+
+    it('loads nothing without an organization, and reads the external keys past the cache', async () => {
+        answer()
+        await open({ orgUuid: '' })
+        expect(query).not.toHaveBeenCalled()
+        await open()
+        expect(keyCalls()[0][0].fetchPolicy).toBe('no-cache')
+    })
+})
+
+describe('TeaCustomersPanel editor state (FDAW-40 mutation)', () => {
+    const scopedModel = (w: any) => w.findComponent(ScopedPermissions).props('modelValue')
+
+    it('names each grant from the list of its scope, the uuid when it is not listed', async () => {
+        const grant = (scope: string, object: string) => ({ org: ORG, scope, object, type: 'READ_ONLY', functions: ['TEA_READ'] })
+        answer([{ ...ACME, permissions: { permissions: [
+            grant('PERSPECTIVE', 'p1'), grant('COMPONENT', 'comp1'), grant('COMPONENT', 'prod1'), grant('COMPONENT', 'gone')
+        ] } }])
+        const { w } = await open({ perspectives: [{ uuid: 'p1', name: 'EU' }], components: [{ uuid: 'comp1', name: 'Engine' }] })
+        await click(w, 'customer-edit')
+        expect(scopedModel(w).scopedPermissions.map((p: any) => p.objectName)).toEqual(['EU', 'Engine', 'Shop', 'gone'])
+    })
+
+    it('opens a create after an edit with no stored customer, an empty form and no grants', async () => {
+        answer([ACME])
+        const { w } = await open()
+        await click(w, 'customer-edit')
+        expect(scopedModel(w).orgPermission.type).toBe('READ_ONLY')
+        await click(w, 'customer-cancel')
+        await click(w, 'customer-create')
+        expect(title(w)).toBe('Create customer')
+        expect((w.find('[data-testid="customer-name"] input').element as HTMLInputElement).value).toBe('')
+        expect(w.findAllComponents({ name: 'Checkbox' }).map((b: any) => b.props('checked'))).toEqual([false, false, false])
+        expect(scopedModel(w)).toEqual({ orgPermission: { type: 'NONE', functions: [], approvals: [] }, scopedPermissions: [] })
+    })
+
+    it('unchecking a member sends the rest and leaves the stored list as it was', async () => {
+        const acme = { ...ACME, apiKeys: ['k1', 'k2'] }
+        answer([acme])
+        mutate.mockResolvedValue({ data: { updateApiKeyGroup: acme } })
+        const { w } = await open()
+        await click(w, 'customer-edit')
+        await checkKey(w, 'k1', false)
+        expect(acme.apiKeys).toEqual(['k1', 'k2'])
+        expect(saveButton(w).attributes('disabled')).toBeUndefined()
+        await saveButton(w).trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls[0][0].variables).toEqual({ apiKeyGroup: { groupId: 'c1', apiKeys: ['k2'] } })
+    })
+})
+
+describe('TeaCustomersPanel save outcomes (FDAW-40 mutation)', () => {
+    it('a saved edit closes the editor, names the trimmed name and reloads', async () => {
+        answer([ACME])
+        mutate.mockResolvedValue({ data: { updateApiKeyGroup: ACME } })
+        const { w, notify } = await open()
+        await click(w, 'customer-edit')
+        await typeName(w, '  Acme Two  ')
+        await saveButton(w).trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls[0][0].variables).toEqual({ apiKeyGroup: { groupId: 'c1', name: 'Acme Two' } })
+        expect(notify).toHaveBeenCalledWith('success', 'Updated', 'Updated customer "Acme Two"')
+        expect(w.find('[data-testid="customer-editor"]').exists()).toBe(false)
+        expect(groupCalls()).toHaveLength(2)
+    })
+
+    it('a refused edit is shown and keeps the editor open with the form', async () => {
+        answer([ACME])
+        mutate.mockRejectedValue(refusal("A group with the name 'ci' already exists"))
+        const { w, notify } = await open()
+        await click(w, 'customer-edit')
+        await typeName(w, 'ci')
+        await saveButton(w).trigger('click')
+        await flushPromises()
+        expect(notify).toHaveBeenCalledWith('error', 'Error', "A group with the name 'ci' already exists")
+        expect(title(w)).toBe('Edit customer Acme')
+        expect((w.find('[data-testid="customer-name"] input').element as HTMLInputElement).value).toBe('ci')
+        expect(groupCalls()).toHaveLength(1)
+    })
+
+    it('a create reloads the list', async () => {
+        answer([])
+        mutate.mockResolvedValue({ data: { createApiKeyGroup: { uuid: 'c-new', name: 'Acme' } } })
+        const { w } = await open()
+        await click(w, 'customer-create')
+        await typeName(w, 'Acme')
+        await saveButton(w).trigger('click')
+        await flushPromises()
+        expect(groupCalls()).toHaveLength(2)
+    })
+
+    it('a deactivate and a restore each reload; a refused restore is shown', async () => {
+        answer([ACME, OLD])
+        mutate.mockResolvedValue({ data: {} })
+        const { w, notify } = await open()
+        await click(w, 'customer-deactivate')
+        await dialogWarning.mock.calls[0][0].onPositiveClick()
+        await flushPromises()
+        expect(groupCalls()).toHaveLength(2)
+        w.findComponent(NSwitch).vm.$emit('update:value', true)
+        await flushPromises()
+        await click(w, 'customer-restore')
+        expect(groupCalls()).toHaveLength(3)
+        mutate.mockRejectedValue(refusal('Not authorized'))
+        await click(w, 'customer-restore')
+        expect(notify).toHaveBeenLastCalledWith('error', 'Error', 'Not authorized')
+    })
+})
+
+describe('TeaCustomersPanel while a save is in flight (FDAW-40 mutation)', () => {
+    it('ignores create, edit, deactivate, a confirmed deactivate and a second restore, then takes actions again', async () => {
+        answer([ACME, OLD])
+        let release: (v: any) => void = () => {}
+        mutate.mockImplementation(() => new Promise(resolve => { release = resolve }))
+        const { w } = await open()
+        await click(w, 'customer-deactivate')
+        const confirm = dialogWarning.mock.calls[0][0]
+        w.findComponent(NSwitch).vm.$emit('update:value', true)
+        await flushPromises()
+        await click(w, 'customer-restore')
+        expect(mutate).toHaveBeenCalledTimes(1)
+        await click(w, 'customer-create')
+        await click(w, 'customer-edit')
+        expect(w.find('[data-testid="customer-editor"]').exists()).toBe(false)
+        await click(w, 'customer-deactivate')
+        expect(dialogWarning).toHaveBeenCalledTimes(1)
+        await confirm.onPositiveClick()
+        await click(w, 'customer-restore')
+        expect(mutate).toHaveBeenCalledTimes(1)
+        release({ data: {} })
+        await flushPromises()
+        await click(w, 'customer-create')
+        expect(title(w)).toBe('Create customer')
+    })
+
+    it('takes actions again after a deactivate', async () => {
+        answer([ACME])
+        mutate.mockResolvedValue({ data: {} })
+        const { w } = await open()
+        await click(w, 'customer-deactivate')
+        await dialogWarning.mock.calls[0][0].onPositiveClick()
+        await flushPromises()
+        await click(w, 'customer-create')
+        expect(title(w)).toBe('Create customer')
+    })
+
+    it('disables the keys and Cancel, ignores a key toggle and a close, and the follow-up sends the keys as saved', async () => {
+        answer([])
+        let release: (v: any) => void = () => {}
+        mutate.mockImplementation((opts: any) => opts.mutation === CREATE_CUSTOMER_GROUP
+            ? new Promise(resolve => { release = resolve }) : Promise.resolve({ data: { updateApiKeyGroup: {} } }))
+        const { w } = await open()
+        await click(w, 'customer-create')
+        await typeName(w, 'Acme')
+        await checkKey(w, 'k9')
+        await saveButton(w).trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="customer-cancel"]').attributes('disabled')).toBeDefined()
+        expect(w.findAllComponents({ name: 'Checkbox' }).every((b: any) => b.props('disabled'))).toBe(true)
+        await checkKey(w, 'k2')
+        w.findComponent(NModal).vm.$emit('update:show', false)
+        await flushPromises()
+        expect(w.find('[data-testid="customer-editor"]').exists()).toBe(true)
+        release({ data: { createApiKeyGroup: { uuid: 'c-new', name: 'Acme' } } })
+        await flushPromises()
+        expect(mutate.mock.calls[1][0].variables.apiKeyGroup.apiKeys).toEqual(['k9'])
     })
 })
