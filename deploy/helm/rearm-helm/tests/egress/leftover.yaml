@@ -1,0 +1,8 @@
+networkPolicy:
+  rebomBackend:
+    egress:
+      enabled: false
+      dns: { ports: [5353] }
+      public: { ipFamilies: [IPv4], extraExcept: [ 11.0.0.0/8 ] }
+      extraEgress:
+        - to: [ { ipBlock: { cidr: 10.30.4.0/24 } } ]

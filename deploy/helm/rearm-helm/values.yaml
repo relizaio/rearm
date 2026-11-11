@@ -260,9 +260,10 @@ rebom:
     rebomPropsSecretName: ""
 
 # Ingress NetworkPolicies (templates/networkpolicy.yaml): every chart pod is
-# reachable only from the pods that need it. Ingress only; outbound traffic
-# (DNS, GitHub, OSV, Dependency-Track, registries, SMTP, webhooks, external
-# postgres, S3) is not restricted. The policies are enforced only by a CNI
+# reachable only from the pods that need it. Outbound traffic (DNS, GitHub,
+# OSV, Dependency-Track, registries, SMTP, webhooks, external postgres, S3)
+# is not restricted, with one opt-in exception: the egress policy of the
+# rebom pod (rebomBackend.egress below). The policies are enforced only by a CNI
 # that implements NetworkPolicy (Calico, Cilium, Antrea, kube-router...);
 # a cluster without one accepts them and silently ignores them, so a green
 # `kubectl get networkpolicy` is not proof of isolation: run the negative
@@ -338,6 +339,148 @@ networkPolicy:
     enabled: true
     allowFromNamespace: false
     extraIngress: []
+    # Egress policy of the rebom backend pod: opt-in, default off (nothing is
+    # rendered and nothing changes). rebom is the pod that fetches from TEA
+    # servers; a server it is pointed at could otherwise steer it, through
+    # discovery answers, redirects and artifact links, at addresses inside
+    # your network. With enabled: true the pod may open connections only to:
+    #   - DNS: port 53, UDP and TCP, any destination (dns below);
+    #   - the chart's rebom postgres pod (5432) and artifact service pod
+    #     (8083), by pod label, when the chart deploys them;
+    #   - public IPv4 addresses, every port: everything except 0.0.0.0/8,
+    #     10.0.0.0/8, 100.64.0.0/10 (carrier-grade NAT), 168.63.129.16 (the
+    #     Azure platform address), 169.254.0.0/16 (link-local: the cloud
+    #     metadata address), 172.16.0.0/12, 192.0.0.0/24, 192.168.0.0/16,
+    #     198.18.0.0/15 and 240.0.0.0/4;
+    #   - no IPv6 address, unless you add IPv6 to public.ipFamilies below
+    #     (read the comment there first);
+    #   - what you add in extraEgress.
+    # Everything else is refused, every other pod of the cluster included.
+    # It needs networkPolicy.enabled (the chart refuses to render it without)
+    # and does not depend on rebomBackend.enabled above.
+    #
+    # WHAT IT DOES NOT DO. It covers the whole pod (database, enrichment and
+    # artifact calls and the init containers), not only TEA fetches. It knows
+    # address ranges, not host names. Like the ingress policies it is
+    # enforced only by a CNI that implements NetworkPolicy and is silently
+    # ignored by one that does not; Docker Compose has no equivalent.
+    # Loopback (127.0.0.0/8, ::1) never leaves the pod, and a pod can always
+    # reach its own address: both are outside any NetworkPolicy. For TEA
+    # fetches the rearm CLI that rebom runs refuses them itself, with
+    # link-local and unspecified addresses and the cloud metadata addresses
+    # it knows. The node the pod runs on may stay reachable (Kubernetes lets
+    # a CNI always allow it). A public address that forwards to an internal
+    # service (a reverse proxy, an egress proxy the pod is configured to
+    # use) is still a public address.
+    # A refused connection shows as a connect timeout on most CNIs and as an
+    # immediate "connection refused" or "host unreachable" on others
+    # (kube-router, as in k3s).
+    #
+    # BEFORE YOU ENABLE IT, add a rule to extraEgress for each of these that
+    # applies, or the pod loses that connection:
+    #   - use_external_postgres: the address of rebom_postgres_host, public
+    #     or private, ports 5432 and rebom_postgres_port (the chart refuses
+    #     to render the policy with use_external_postgres and no extraEgress
+    #     rule at all);
+    #   - rebom.backend.oci.serviceHost pointing outside this release;
+    #   - an enrichment (BEAR) endpoint on a private or in-cluster address
+    #     (the URIs are set per organization and stored in the rebom
+    #     database: select organization, config->>'uri' from
+    #     rebom.integrations where config->>'type' = 'BEAR';);
+    #   - a TEA server, artifact host or registry on a private address;
+    #   - an egress proxy the pod uses, or a network that gives public names
+    #     addresses from a private or carrier-grade NAT range.
+    # And check the cluster's own ranges. If pod, service or node addresses
+    # are NOT inside the refused ranges above (`kubectl get pods -A -o wide`,
+    # `kubectl get svc -A`, `kubectl get nodes -o wide`; the ranges
+    # themselves: `kubectl get nodes -o jsonpath='{.items[*].spec.podCIDRs}'`,
+    # `kubectl get servicecidrs` (Kubernetes 1.33+), or your provider's
+    # console), list those ranges in public.extraExcept: on many CNIs the
+    # public rule would otherwise let rebom reach every pod. `-o wide` shows
+    # one address per pod and node, the primary family; on a dual-stack
+    # cluster the two range commands show both families.
+    #
+    # CHECK IT after enabling: it is the only proof that your CNI enforces
+    # it. helm prints the commands, filled in, after every install and
+    # upgrade, and README.md of this chart ("Check that it is enforced") has
+    # them and how to read each result. A listener pod that a plain pod CAN
+    # reach (the control) must NOT be reachable from the rebom pod, while the
+    # rebom database and a public host must be. Without the control a
+    # refusal proves nothing: a listener that an ingress policy shuts off
+    # gives the same result on a cluster that enforces no egress at all.
+    # If names stop resolving after you enable it (rebom logs "getaddrinfo
+    # EAI_AGAIN ..."; `nslookup <r>-rebom-postgres` in the pod fails), the
+    # DNS pods of your cluster do not listen on port 53: set dns.ports
+    # (OpenShift: [5353]). To go back: egress.enabled: false.
+    egress:
+      enabled: false
+      dns:
+        # Peers of the DNS rule. Empty: every destination on the DNS ports,
+        # which covers CoreDNS/kube-dns under any label and NodeLocal
+        # DNSCache (169.254.20.10, a link-local address). To narrow it:
+        #   to:
+        #     - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+        #       podSelector: { matchLabels: { k8s-app: kube-dns } }
+        #     - ipBlock: { cidr: 169.254.20.10/32 }   # only with NodeLocal DNSCache
+        to: []
+        # Ports the DNS PODS listen on (a Service port is translated to the
+        # pod's port before the policy is applied), opened for UDP and TCP.
+        ports: [53]
+      public:
+        # Address families of the public rule. Default: IPv4 alone, so no
+        # IPv6 address is reachable (DNS, the chart's pods and extraEgress
+        # apart). An empty list renders no public rule at all: only DNS, the
+        # chart's pods and extraEgress stay reachable.
+        #
+        # BEFORE YOU ADD IPv6 ([IPv4, IPv6], or [IPv6] on an IPv6-only
+        # cluster): the rule then allows 2000::/3, all of global unicast,
+        # minus 6to4 (2002::/16), Teredo (2001::/32) and the documentation
+        # prefixes (2001:db8::/32, 3fff::/20). IPv6 has no private ranges
+        # the chart could refuse for you. The pod, service and node ranges
+        # of a dual-stack or IPv6 cluster, and the other hosts of your
+        # network or cloud VPC, usually have global unicast addresses,
+        # inside 2000::/3. You MUST list them in extraExcept, or rebom can
+        # reach them: every IPv6 range of the cluster (the two range
+        # commands above print both families) and every IPv6 range of your
+        # network that the internet must not reach through rebom.
+        # NAT64: if your network reaches IPv4 hosts through a translator, an
+        # IPv6 address under the translator's prefix IS an IPv4 address,
+        # private ones included, and the IPv4 exceptions above do not see
+        # it. For a prefix of your own inside 2000::/3, list the refused
+        # IPv4 ranges in their embedded form under it in extraExcept. The
+        # well-known prefix 64:ff9b::/96 is outside 2000::/3 and stays
+        # refused; if rebom needs it, open it in extraEgress as an ipBlock
+        # WITH those embedded forms as its "except", never bare. README.md
+        # of this chart ("IPv6") has both lists ready to copy.
+        ipFamilies: [IPv4]
+        # TCP ports of the public rule. Empty: every port and protocol.
+        # [443] or [443, 80] is stricter; a TEA server, artifact host,
+        # enrichment endpoint or public database on another port then needs
+        # an extraEgress rule.
+        ports: []
+        # CIDRs taken OUT of the public rule. IPv4: pod, service and node
+        # ranges of this cluster that are not inside the refused ranges
+        # listed above. IPv6 (used only with IPv6 in ipFamilies): every IPv6
+        # range of the cluster and of your network, see ipFamilies. IPv6
+        # entries must be inside 2000::/3.
+        extraExcept: []
+      # Raw NetworkPolicy egress rules appended; each needs a "to". Examples:
+      #   extraEgress:
+      #     # external rebom postgres on a private address
+      #     - to: [ { ipBlock: { cidr: 10.20.0.15/32 } } ]
+      #       ports: [ { port: 5432, protocol: TCP } ]
+      #     # an internal TEA server and its artifact host
+      #     - to: [ { ipBlock: { cidr: 10.30.4.0/24 } } ]
+      #       ports: [ { port: 443, protocol: TCP } ]
+      #     # an enrichment endpoint running in this cluster
+      #     - to:
+      #         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: bear } }
+      #           podSelector: { matchLabels: { app: bear } }
+      #       ports: [ { port: 8080, protocol: TCP } ]
+      # An ipBlock here is the widest thing in the policy: keep it as narrow
+      # as the service it is for. For pods prefer selectors: whether an
+      # ipBlock matches a pod address depends on the CNI.
+      extraEgress: []
   rebomPostgres:
     enabled: true
     allowFromNamespace: false
