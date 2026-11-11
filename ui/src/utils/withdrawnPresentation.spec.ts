@@ -30,28 +30,41 @@ describe('withdrawn attestations are presented as withdrawn', () => {
 
 const releaseView = readFileSync(
     fileURLToPath(new URL('../components/ReleaseView.vue', import.meta.url)), 'utf8')
-const query = readFileSync(
-    fileURLToPath(new URL('./sbomComponentsQuery.ts', import.meta.url)), 'utf8')
+const read = (name: string): string => readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8')
+/** Comments stripped, as componentViewLicenseWiring.spec.ts does, so a comment cannot satisfy or fail a grep. */
+const stripComments = (s: string): string => s
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
+const query = stripComments(read('./sbomComponentsQuery.ts'))
 
+/**
+ * FDAW-68 (architecture-2 row 4, REQ-2). The withdrawn rules themselves are behavioural cells
+ * now: the model's in supportCell.spec.ts (row 3) and the rendered column's in
+ * supportCellRender.spec.ts (row 10). What stays here is that the list is wired to them.
+ */
 describe('the list is wired to render that', () => {
-    // Without this field the UI cannot tell a withdrawal from an unassessed component at all.
-    it('asks the server for attestationState', () => {
-        expect(query).toMatch(/attestationState/)
+    // Without attestationState the UI cannot tell a withdrawal from an unassessed component at
+    // all, and without the level text an undated attested row reads only "Unknown".
+    it('selects attestationState and attestedLevelOfSupportText, and not supportSource', () => {
+        const core = query.slice(query.indexOf('COMPONENT_CORE_SELECTION = `'))
+        const selection = core.slice(0, core.indexOf('`', core.indexOf('`') + 1))
+        expect(selection).toMatch(/\battestationState\b/)
+        expect(selection).toMatch(/\battestedLevelOfSupportText\b/)
+        expect(selection).not.toMatch(/supportSource/)
     })
 
-    it('chooses the withdrawn tag over the derived status', () => {
-        expect(releaseView).toMatch(
-            /const withdrawn = isWithdrawnAttestation\(c\.attestationState\)/)
-        expect(releaseView).toMatch(/withdrawn \? WITHDRAWN_TAG : supportTag\(c\.supportStatus\)/)
-    })
-
-    /**
-     * The dates stay on the row, so the suffix has to be suppressed WITH the status. Printing
-     * "EOS 2025-12-31" beside "Withdrawn" would put the retracted date back on screen as
-     * though it still stood -- which is most of what the original defect looked like.
-     */
-    it('suppresses the EOS suffix on a withdrawn row', () => {
-        expect(releaseView).toMatch(/if \(c\.endOfSupportDate && !withdrawn\)/)
+    // supportSource is the END_OF_SUPPORT milestone's source, null on every undated record:
+    // gating the cell on it is the FDAW-65 defect.
+    it('renders the support column through renderSupportCell, and never reads supportSource', () => {
+        const code = stripComments(releaseView)
+        const start = code.indexOf("key: 'support'")
+        const column = code.slice(start, code.indexOf("key: 'artifacts'", start))
+        expect(start).toBeGreaterThan(-1)
+        expect(column).toMatch(/renderSupportCell\(\s*c\s*,\s*deviceRiskBadge\(\s*c\s*\)\s*\)/)
+        expect(column).not.toMatch(/supportSource/)
+        expect(stripComments(read('./supportCell.ts'))).not.toMatch(/supportSource/)
+        expect(stripComments(read('./supportCellRender.ts'))).not.toMatch(/supportSource/)
     })
 })
 

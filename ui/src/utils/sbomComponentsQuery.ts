@@ -31,7 +31,7 @@ const COMPONENT_CORE_SELECTION = `
                 version
                 isRoot
                 supportStatus
-                supportSource
+                attestedLevelOfSupportText
                 endOfSupportDate
                 endOfSupportUnknown { code bulkAct }
                 attestationState`

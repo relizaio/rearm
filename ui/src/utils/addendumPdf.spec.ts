@@ -270,3 +270,105 @@ describe('findUnrenderableText', () => {
         expect(msg).toMatch(/silently dropped|blank/)
     })
 })
+
+/**
+ * FDAW-68 (architecture-2 rows 5-7 and 9, REQ-3). The table was wider than landscape A4: two
+ * '*' widths took the largest unbreakable run of either column, and the built-in layout's
+ * padding was never counted, so Source was cut at the page edge and Asserted by was off the
+ * page (FDAW-65). Page width and margins are literals here, not the module's.
+ */
+describe('the table fits the page (FDAW-68)', () => {
+    const WIDTHS = [70, 50, 96, 58, 74, 94, 52, 84, 66, 66]
+    const dataLayout = (doc: any) => tables(doc)[1].layout
+
+    it('(row 5 a) fixes every column width, and no width is a star or auto', () => {
+        const widths = dataTable(buildAddendumDocDefinition(data())).widths
+        expect(widths).toEqual(WIDTHS)
+        for (const w of widths) {
+            expect(typeof w).toBe('number')
+            expect(Number.isFinite(w)).toBe(true)
+        }
+    })
+
+    it('(row 5 b) keeps landscape A4 and its margins', () => {
+        const doc: any = buildAddendumDocDefinition(data())
+        expect(doc.pageSize).toBe('A4')
+        expect(doc.pageOrientation).toBe('landscape')
+        expect(doc.pageMargins).toEqual([28, 34, 28, 46])
+    })
+
+    it('(row 5 c) uses its own layout object, so its padding can be measured', () => {
+        const layout = dataLayout(buildAddendumDocDefinition(data()))
+        expect(typeof layout).toBe('object')
+        expect(typeof layout.paddingLeft).toBe('function')
+        expect(typeof layout.paddingRight).toBe('function')
+        expect(typeof layout.vLineWidth).toBe('function')
+    })
+
+    it('(row 6) widths plus padding plus vertical lines fit the page body', () => {
+        const doc: any = buildAddendumDocDefinition(data())
+        const table = dataTable(doc)
+        const layout = dataLayout(doc)
+        const node = { table }
+        const n = table.widths.length
+        let total = table.widths.reduce((a: number, w: number) => a + w, 0)
+        for (let i = 0; i < n; i++) total += layout.paddingLeft(i, node) + layout.paddingRight(i, node)
+        for (let i = 0; i <= n; i++) total += layout.vLineWidth(i, node)
+        expect(total).toBeLessThanOrEqual(841.89 - 28 - 28)
+        expect(total).toBe(782)
+    })
+
+    const long = data({ components: [comp({
+        name: 'n'.repeat(120), group: 'g'.repeat(40), version: '1.0.0-' + 'r'.repeat(60),
+        purl: 'pkg:deb/debian/' + 'p'.repeat(200) + '@1', levelOfSupport: 'actively maintained',
+        endOfSupportDate: null, endOfSupportUnknownCode: 'NO_COMMITTED_END_OF_SUPPORT', endOfSupportUnknownBulk: true,
+        source: 'MANUAL', bulk: true, assertedByName: 'Fdaw65 Tester 7a6c3160 ' + 'a'.repeat(80),
+        justifiedByName: 'Second Person ' + 'b'.repeat(80), assessedAt: '2026-11-10T21:12:53Z'
+    })] })
+
+    it('(row 7 a) the header carries every column, ending with Source and Asserted by', () => {
+        const header = dataTable(buildAddendumDocDefinition(long)).body[0].map((c: any) => c.text)
+        expect(header).toEqual(ADDENDUM_COLUMNS)
+        expect(header.slice(-2)).toEqual(['Source', 'Asserted by'])
+    })
+
+    it('(row 7 b) long values in every column are carried whole', () => {
+        const r = dataTable(buildAddendumDocDefinition(long)).body[1]
+        expect(r).toHaveLength(10)
+        expect(r[8]).toBe('manual (bulk); bulk justification')
+        expect(r[9]).toBe('Fdaw65 Tester 7a6c3160 ' + 'a'.repeat(80) + '; justification: Second Person ' + 'b'.repeat(80))
+        expect(r[2]).toBe('pkg:deb/debian/' + 'p'.repeat(200) + '@1')
+        expect(r[4]).toBe('not available: NO_COMMITTED_END_OF_SUPPORT')
+    })
+
+    it('(row 7 c) the widths do not depend on the data', () => {
+        expect(dataTable(buildAddendumDocDefinition(long)).widths)
+            .toEqual(dataTable(buildAddendumDocDefinition(data())).widths)
+    })
+
+    // A row taller than a page must continue on the next one. dontBreakRows or unbreakable
+    // makes pdfmake drop such a row's text and the rows after it.
+    describe('(row 9) rows break across pages', () => {
+        const tall = data({ components: [comp({ levelOfSupport: null, justification: 'w '.repeat(4000) }),
+            comp({ sbomComponentUuid: 'sc-2', name: 'zz-after-tall' })] })
+        const doc: any = buildAddendumDocDefinition(tall)
+
+        it('sets dontBreakRows on neither table', () => {
+            expect('dontBreakRows' in dataTable(doc)).toBe(false)
+            expect('dontBreakRows' in factsTable(doc)).toBe(false)
+        })
+
+        it('names neither dontBreakRows nor unbreakable anywhere in the definition', () => {
+            const json = JSON.stringify(doc)
+            expect(json).not.toContain('dontBreakRows')
+            expect(json).not.toContain('unbreakable')
+        })
+
+        it('carries the tall row whole and the row after it', () => {
+            const body = dataTable(doc).body
+            expect(body).toHaveLength(3)
+            expect(body[1][5]).toBe('w '.repeat(4000))
+            expect(body[2][0]).toContain('zz-after-tall')
+        })
+    })
+})
