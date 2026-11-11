@@ -14,10 +14,9 @@ ARG TARGETOS
 # engine-check fixtures (test/fixtures/merge/engine-check-a.cdx.json and engine-check-b.cdx.json)
 # must print `folds into root` on stderr (SCORE-67; pinned by SCORE-68 ADR-2).
 # The TEA operations run the CLI's machine mode (TPF-180 design 3.9): `rearm tea machine` without a
-# verb must exit 2 with a TEA_ERROR object of format version 1 on stderr, or the build fails. No
-# release carries the machine mode yet: this pin moves (with both zip lines) to the first release
-# that does, and until then this image does not build.
-ARG REARM_CLI_VERSION=26.10.15
+# verb must exit 2 with a TEA_ERROR object of format version 1 on stderr, or the build fails.
+# 26.11.6 is the first release with the machine mode.
+ARG REARM_CLI_VERSION=26.11.6
 
 # October 2026 eMudhra CA compromise: the fixed Alpine bundle, and Node on it (--use-openssl-ca)
 # until FIXED_NODE is set in ci/trust-gate/trust-gate.mjs.
