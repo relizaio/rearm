@@ -224,9 +224,11 @@ describe('T-90 an SPDX namespace that is already held, with or without a named l
                 expect(result, String(continueLineage)).toMatchObject({ outcome: 'OK', stored: 'STORE_FAILED', format: 'SPDX', bom: null, conflict: null });
                 expect(result.storeMessage).toMatch(/^Internal error \(ref [0-9a-f]{8}\)$/);
                 expect(errors).toHaveBeenCalledTimes(1);
-                const [fields] = errors.mock.calls[0] as any;
+                const [fields, message] = errors.mock.calls[0] as any;
                 expect(result.storeMessage).toBe(`Internal error (ref ${fields.ref})`);
                 expect(fields.spdxUuid).toBe('spdx-row-1');
+                expect(Object.keys(fields).sort()).toEqual(['ref', 'spdxUuid']);
+                expect(message).toBe('TEA: the SPDX namespace holds this file without a converted document');
             }
         }
         expect(mAdd).not.toHaveBeenCalled();
