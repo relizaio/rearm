@@ -1,0 +1,13 @@
+use_external_postgres: true
+rebom_postgres_host: db.example
+rearm_postgres_host: db.example
+keycloak_postgres_host: db.example
+postgresql:
+  enabled: false
+networkPolicy:
+  rebomBackend:
+    egress:
+      enabled: true
+      extraEgress:
+        - to: [ { ipBlock: { cidr: 10.20.0.15/32 } } ]
+          ports: [ { port: 5432, protocol: TCP } ]
