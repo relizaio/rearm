@@ -96,7 +96,7 @@ Creators of ReARM are part of [active contributors](https://github.com/CycloneDX
 
 A lot of core ReARM ideas are shared as a part of the TEA workgroup with permissive Open Source licensing.
 
-ReARM currently supports most of TEA v 0.4.0 functionality and we are working to expand and improve support. Refer to usage and status documentation on ReARM Documentation Website [here](https://docs.rearmhq.com/tea/index.html).
+ReARM serves TEA 1.0.0, on ReARM Pro and ReARM Community Edition. Refer to usage and status documentation on ReARM Documentation Website [here](https://docs.rearmhq.com/tea/index.html).
 
 ## Related Projects
 - ReARM CLI: https://github.com/relizaio/rearm-cli - CLI tool to interact with ReARM for humans and automation bots
