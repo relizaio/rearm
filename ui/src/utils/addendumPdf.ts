@@ -19,15 +19,45 @@ import { ADDENDUM_COLUMNS, ADDENDUM_TITLE, addendumRow, addendumHeaderRows, disp
 pdfMake.vfs = pdfFonts.vfs
 
 /**
- * Column widths, in pdfmake units, one per ADDENDUM_COLUMNS entry.
+ * Column widths, in pdfmake units, one per ADDENDUM_COLUMNS entry: Component, Version, PURL,
+ * Level of support, End of support, Justification, Attestation state, Last assessed, Source,
+ * Asserted by.
  *
- * '*' means "share the remaining space". Justification and PURL get the stars because they
- * are the two unbounded fields -- a justification is up to 8,000 characters of operator
- * prose. Everything else is a date, a short token or a name, and giving those fixed widths
- * is what stops the two wide columns from being squeezed into a ribbon. The ten columns of
- * FDAW-14 (Source, Asserted by) leave about 200 units of the landscape A4 body to the stars.
+ * EVERY WIDTH IS FIXED, so the table fits the page whatever the data. An earlier revision gave
+ * PURL and Justification '*'; pdfmake gives every star column at least the largest unbreakable
+ * run among them, so one long PURL pushed the table past the page edge: Source was cut at the
+ * margin and Asserted by was not on the page at all (FDAW-65, FDAW-68). With fixed widths, text
+ * wraps and a run longer than its column is split inside it, so long values grow the row, never
+ * the table.
+ *
+ * The budget: landscape A4 is 841.89 wide, minus the 28 + 28 margins = 785.89 of body. The
+ * widths sum to 710 and ADDENDUM_TABLE_LAYOUT's padding adds 9 x 8 = 72: 782. Last assessed
+ * gets 84 so a YYYY-MM-DDTHH:MM:SSZ instant fits one line at 8 pt. Change a width and the
+ * fit cell of addendumPdf.spec.ts recomputes the sum from this definition.
  */
-const COLUMN_WIDTHS = [95, 50, '*', 80, 75, '*', 55, 80, 70, 80]
+const COLUMN_WIDTHS = [70, 50, 96, 58, 74, 94, 52, 84, 66, 66]
+
+/**
+ * The data table's layout: the lines of pdfmake's 'lightHorizontalLines', with this module's
+ * own padding of 4 (that built-in pads 8 on each inner side, which alone is 144 units of the
+ * page). Restated rather than imported, so a pdfmake upgrade that changes its built-in layout
+ * changes nothing here, and an object rather than the string so the spec can evaluate the
+ * padding the renderer actually uses.
+ *
+ * ROWS BREAK ACROSS PAGES. Narrow columns make tall rows, and a row can be taller than a page
+ * (an 8,000-character justification). pdfmake's default continues such a row on the next page
+ * under the repeated header, which keeps every word on paper. dontBreakRows or unbreakable does
+ * the opposite for a row taller than a page: pdfmake drops the row's text and the rows after
+ * it. So no table, row or cell in this document names either, at any value. A PURL tail alone
+ * at the top of a page is the accepted cost.
+ */
+export const ADDENDUM_TABLE_LAYOUT = {
+    hLineWidth: (i: number, node: any) => i === 0 ? 0 : (i === node.table.headerRows ? 2 : 1),
+    vLineWidth: () => 0,
+    hLineColor: (i: number) => i === 1 ? 'black' : '#aaa',
+    paddingLeft: (i: number) => i === 0 ? 0 : 4,
+    paddingRight: (i: number, node: any) => i === node.table.widths.length - 1 ? 0 : 4
+}
 
 /**
  * Coerce a value for a table cell.
@@ -103,7 +133,7 @@ export function buildAddendumDocDefinition (d: AddendumData): Record<string, unk
                         colSpan: ADDENDUM_COLUMNS.length, alignment: 'center', italics: true
                     }, ...Array(ADDENDUM_COLUMNS.length - 1).fill({})]]
                 },
-                layout: 'lightHorizontalLines'
+                layout: ADDENDUM_TABLE_LAYOUT
             }
         ],
         /**

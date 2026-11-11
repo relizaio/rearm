@@ -2837,8 +2837,8 @@ import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
-import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, isWithdrawnAttestation, supportTag,
-    WITHDRAWN_TAG } from '@/utils/supportStatusTag'
+import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged } from '@/utils/supportStatusTag'
+import { renderSupportCell } from '@/utils/supportCellRender'
 import { NAlert, NBadge, NProgress, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadio, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput, NDescriptions, NDescriptionsItem, NCollapse, NCollapseItem } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -6217,46 +6217,12 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
         key: 'support',
         title: 'Support',
         sorter: (a: any, b: any) => (a.component?.supportStatus || '').localeCompare(b.component?.supportStatus || ''),
+        // The cell's rules are supportCellOf's (utils/supportCell.ts) and its rendering is
+        // renderSupportCell's (utils/supportCellRender.ts), so both are tested; the device-risk
+        // badge stays here with its tooltip and is passed in.
         render: (row: any) => {
             const c = row.component || {}
-            // Un-attested components have no supportSource -> a neutral dash, not UNKNOWN.
-            // The distinction is the point of this column: "nobody has recorded anything" and
-            // "somebody recorded that it is unknown" are different disclosures.
-            if (!c.supportSource) {
-                // A component can carry dates (hence a device verdict) without a source once a
-                // non-MANUAL writer exists, so the marker rides along here too -- see
-                // deviceRiskBadge. Today this is unreachable and costs one null check.
-                const unattestedRisk = deviceRiskBadge(c)
-                // Escaped, not a literal em-dash: the source stays plain ASCII per
-                // coding_principles, and the rendered output is identical.
-                return h('div', [h('span', { style: 'color: #999;' }, '\u2014'),
-                    unattestedRisk ? h('div', { style: 'margin-top: 3px;' }, [unattestedRisk]) : null])
-            }
-            // A withdrawn attestation is neither a live status nor an unassessed component.
-            // Its dates stay on the row -- withdrawal supersedes, it does not erase -- so the
-            // EOS suffix is suppressed with the status: printing "EOS 2025-12-31" beside
-            // "Withdrawn" would put the retracted date back on screen as if it still stood.
-            const withdrawn = isWithdrawnAttestation(c.attestationState)
-            const tag = withdrawn ? WITHDRAWN_TAG : supportTag(c.supportStatus)
-            const els: any[] = [h(NTag, { size: 'small', type: tag.type, round: true }, () => tag.label)]
-            if (c.endOfSupportDate && !withdrawn) {
-                els.push(h('span', { style: 'margin-left: 6px; font-size: 11px; color: #999;' }, `EOS ${c.endOfSupportDate}`))
-            } else if (c.endOfSupportUnknown && !withdrawn) {
-                // The justified unknown of FDAW-14 3.9: the label, and a bulk tag when a sweep wrote it.
-                els.push(h('span', { style: 'margin-left: 6px; font-size: 11px; color: #999;',
-                    'data-testid': 'eos-unknown' }, `not available (${justifiedUnknownLabel(c.endOfSupportUnknown.code)})`))
-                if (c.endOfSupportUnknown.bulkAct) {
-                    els.push(h(NTag, { size: 'tiny', style: 'margin-left: 4px;' }, () => 'bulk'))
-                }
-            }
-            // The device check is a second, independent verdict -- see DEVICE_RISK_LABEL. The
-            // backend only ever returns a flagged value on a PRODUCT (device) release, so this
-            // needs no release-type gate of its own.
-            const risk = deviceRiskBadge(c)
-            if (risk) {
-                els.push(h('div', { style: 'margin-top: 3px;' }, [risk]))
-            }
-            return h('div', els)
+            return renderSupportCell(c, deviceRiskBadge(c))
         }
     },
     {
