@@ -341,7 +341,7 @@ JSON answers, artifact metadata included, carry `Cache-Control: no-cache` for an
 
 The visibility of the TEA publishing settings a component resolves to decides who reads what it published: PUBLIC settings publish to anyone, PRIVATE settings only to holders of an [external key](../configure/programmatic-access#external-keys-tea) whose grants cover the object. An external key is a key the organization hands to a party outside it; it reaches nothing but TEA. The holder exchanges it for a one-hour Bearer token at the token endpoint on the organization's API base, `POST <API base>/v1.0.0/token` with `grant_type=client_credentials`, where the API base is the one the organization is served at: `<your ReARM URL>/tea/<organization TEA id>`, or `https://<domain>/tea` on a [custom domain](#custom-domains-rearm-pro).
 
-An external key is the only key TEA accepts, and reading TEA is the only thing an external key can do: it has no write authority anywhere, reaches no GraphQL field, no download and no CLI, and reads no regulatory submission (see [Regulatory Packages and Submissions](../workflows/regulatory-packages)).
+An external key is the only key TEA accepts, and reading TEA is the only thing an external key can do: it has no write authority anywhere, reaches no GraphQL field and no download, signs in no CLI command that talks to the ReARM API, and reads no regulatory submission (see [Regulatory Packages and Submissions](../workflows/regulatory-packages)). The CLI's `tea` commands are a TEA client like any other and take an external key through variables of their own (see [Reading with the ReARM CLI](#reading-with-the-rearm-cli)).
 
 The full exchange, with an example and every answer of the token endpoint, is under [Exchanging an external key for a token](../configure/programmatic-access#exchanging-an-external-key-for-a-token). The rules a consumer needs:
 
@@ -383,6 +383,66 @@ A shared cache may go on serving a copy of a PUBLIC revision for at most one day
 
 Downloads need no ReARM login: the visibility of the TEA publishing settings and the external key decide, as for every other TEA object.
 
+## Reading with the ReARM CLI
+
+The [ReARM CLI](../integrations/rearmcli) is a client of this API. `rearm tea discovery` resolves a TEI to the TEA id of a product release; `rearm tea full_tea_flow` resolves it the same way, then reads the product release and its components. Both need ReARM CLI **26.11.6** or later: an earlier CLI speaks the retired 0.4.0 beta and cannot read this API. This section covers what is specific to a ReARM server; the flags, the output, the exit codes and every rule for credentials are in the CLI's own [TEA commands documentation](https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md).
+
+```bash
+rearm tea discovery --tei tei://demo.rearmhq.com/uuid/b9f115fb-6688-4a3f-a262-3acc04e1fc9e
+```
+
+```
+b9f115fb-6688-4a3f-a262-3acc04e1fc9e
+```
+
+```bash
+rearm tea full_tea_flow --tei tei://demo.rearmhq.com/uuid/b9f115fb-6688-4a3f-a262-3acc04e1fc9e
+```
+
+Each command fetches `https://<TEI domain>/.well-known/tea`, asks the discovery endpoint of the API base that document names, and reads from the server the discovery answer names (see [Discovery and the API base](#discovery-and-the-api-base)). `tea full_tea_flow` prints the name, version, lifecycle events and artifacts of the product release and of each of its component releases. It prints artifact URLs and downloads nothing.
+
+- **The TEI** has the form `tei://<TEI domain>/<type>/<id>`, with `<type>` one of `uuid`, `purl`, `hash`, `eanupc`, `gtin`, `asin` and `udi`; the TEIs ReARM stamps are of the type `uuid` (see [TEI](#tei)). No other form is accepted: the earlier `urn:tei:<type>:<domain>:<id>` is refused before any request is sent, with exit code 2 and the line `Error: the urn:tei: form is no longer accepted; write the TEI as tei://<domain>/<type>/<id>`.
+- **Plain http is for a local server only.** `--usehttp --useport <port>` allows plain http on the one origin `http://<TEI domain>:<port>`, and `--usehttp` alone means port 80 (`--useport` without `--usehttp` only moves the https port of the well-known document). The `/.well-known/tea` of that origin must name an API base on the same origin: a plain-http URL on any other host or port is refused. Against a ReARM on your own machine with one organization that has a TEA id (with several, the instance's own `/.well-known/tea` lists them all and the CLI asks only one of them), for example the Docker Compose installation at `http://localhost:8092` (host name `localhost`, port `8092`):
+
+  ```bash
+  rearm tea discovery --tei tei://<host name>/uuid/<TEA release id> --usehttp --useport <port>
+  ```
+
+  `localhost` cannot be the TEI domain of TEA publishing settings, which needs a dot. Such a TEI resolves all the same while the TEI setting is DISABLED, the default: ReARM compares the domain of a `uuid` TEI only when the TEI setting is UUID.
+- **An unpinned component.** A product release names each of its components, and pins the component release only when that release is published and the caller may read it. For an unpinned component `tea full_tea_flow` prints the line `Note: Component '<name>' does not have a pinned release. Selecting latest available release.` and then the newest release of the component it may read, which is not necessarily the one the product release contains. A component it cannot read at all is reported in a `Warning:` line on stderr, and the command exits with code 7.
+
+### Reading private content with an external key
+
+Without a credential the commands read what is PUBLIC and nothing else (see [Authentication](#authentication)):
+
+- a TEI that names only PRIVATE product releases is answered `401`: the command stops with exit code 6 and a line that starts with `Error: the TEA server requires a credential (HTTP 401)`;
+- a TEI that names a PUBLIC and a PRIVATE product release resolves to the PUBLIC one alone;
+- a PRIVATE component of a PUBLIC product release is not printed: it is one of the `Warning:` lines above, and the exit code is 7.
+
+With an [external key](../configure/programmatic-access#external-keys-tea) of the publishing organization whose grants cover them, the same commands print the PRIVATE releases and components as well. A key that does not cover the product release is answered as an unknown TEI is: `Error: TEI not resolved: ...`, exit code 3. The exit codes are listed in the CLI's [Exit codes](https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md#114-exit-codes).
+
+The CLI takes the key from the environment or from standard input, never from a flag value:
+
+| Variable | Value |
+|---|---|
+| `REARM_TEA_AUTH_ROOT` | The organization's API base as [The organization's API base](#the-organization-s-api-base) gives it: `<your ReARM URL>/tea/<organization TEA id>`, or `https://<domain>/tea` on a custom domain. It is the token URL of the External Keys tab without its `/v1.0.0/token` ending: no `/v1.0.0`, no trailing slash, no query, no user name or password. Required with any credential. Not a secret. |
+| `REARM_TEA_APIKEYID`, `REARM_TEA_APIKEY` | The key id and the secret of the external key. The CLI exchanges them for a token once, at `<root>/v1.0.0/token`, before its first request. |
+| `REARM_TEA_TOKEN` | In place of the two key variables: a Bearer token already obtained from the [token endpoint](../configure/programmatic-access#exchanging-an-external-key-for-a-token). A token together with a key is refused. |
+
+`--credential-stdin` reads the secret from standard input in place of its variable: the key secret when `REARM_TEA_APIKEYID` is set, else the token. On a terminal the CLI asks with the prompt `TEA credential: ` and does not echo what is typed, which keeps the secret out of the shell history and out of the environment:
+
+```bash
+export REARM_TEA_AUTH_ROOT=https://rearm.example.com/tea/55555555-5555-4555-8555-555555555555
+export REARM_TEA_APIKEYID='<key id>'
+rearm tea full_tea_flow --credential-stdin --tei tei://<TEI domain>/uuid/<TEA release id>
+```
+
+In a pipeline, set `REARM_TEA_APIKEY` from the secret store of the CI system, or pipe the secret to `--credential-stdin`. Never write a secret on a command line.
+
+- **Check the root before you run.** The key goes to `<root>/v1.0.0/token` and the token to requests under the root (same scheme, host and port, a path at or below it), and to no other URL, redirects included. The CLI takes the root from you and never from what a server sends, so a root that names another server hands that server the key.
+- **The ReARM API credentials are not used.** `-i`, `-k`, `REARM_APIKEYID`, `REARM_APIKEY`, `REARM_API_ID`, `REARM_API_KEY` and a `rearm login` session belong to the ReARM API: the `tea` commands do not read them and never send them to a TEA server. Mind the names: `REARM_APIKEYID` is the ReARM API key id, `REARM_TEA_APIKEYID` the external key id. An external key given in `-i` and `-k` is ignored by the `tea` commands.
+- **Plain http.** With `--usehttp` an `http` root is accepted on the local origin the flags allow and nowhere else, and the credential then travels in clear text: for a server on your own machine only.
+
 ## Deploying TEA
 
 The TEA endpoints are always mounted on ReARM Pro, but an organization is served only once its administrator chooses a [serving mode](#serving-modes): every organization starts as **Not served**, existing organizations included after the upgrade that brings serving modes, and answers `404` with `OBJECT_UNKNOWN` on every TEA path until then. On ReARM Community Edition there are no serving modes: an organization is served at `<your ReARM URL>/tea/<organization TEA id>` once it has a TEA id. Custom domains take the steps of [Upgrading and the order of steps](#upgrading-and-the-order-of-steps). What a consumer meets on the base the organization is served at depends on the organization:
@@ -409,4 +469,3 @@ On ReARM Community Edition the TEA surface, SBOM profiles, TEA publishing settin
 - **Signing.** ReARM signs nothing it publishes; signatures are published as the publisher stored them.
 - **`preRelease`.** Releases do not set it.
 - **Component discovery.** Discovery answers product releases only; an installation that publishes components only lists them through `/componentReleases?idType=PURL` or `idType=TEI` with `idValue`.
-- **The rearm-cli `tea` verbs.** `tea discovery` and `tea full_tea_flow` speak the retired 0.4.0 beta and do not work against this API until a CLI task updates them.

@@ -20,6 +20,9 @@ the operator-facing setup and the agent-side contract URL.
 - **`rearm bomutils score`** scores an SBOM file locally against the CISA 2026, NTIA 2021 and
   FDA minimum elements and writes the same report the ReARM UI shows; see
   [Scoring an SBOM for CISA 2026 and FDA Readiness](../workflows/sbom-scoring#from-the-command-line).
+- **`rearm tea discovery`** and **`rearm tea full_tea_flow`** read a Transparency Exchange API
+  1.0.0 server, a ReARM organization's TEA API included; see
+  [Reading with the ReARM CLI](../tea/#reading-with-the-rearm-cli).
 
 ### Rebuilds and SBOM serial numbers
 
