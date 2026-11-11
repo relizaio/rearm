@@ -49,8 +49,8 @@ import {
     submissionsNotSetUpCell, submissionsNotSetUpLead
 } from '@/utils/medicalDeviceSetup'
 import {
-    CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, SUBMISSION_STATE_LABELS, canCreateSubmission, labelOf,
-    submissionOtherRows, submissionReleaseRows, submissionStateTagType, submissionStateText,
+    CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, SUBMISSION_FILTERED_OUT_TEXT, SUBMISSION_STATE_LABELS, canCreateSubmission,
+    labelOf, submissionInStateFilter, submissionOtherRows, submissionReleaseRows, submissionStateTagType, submissionStateText,
 } from '@/utils/submissions'
 import { useSubmissionActs } from '@/utils/submissionActs'
 
@@ -106,7 +106,10 @@ const stateFilterOptions = [{ label: 'All', value: '' },
     ...Object.entries(SUBMISSION_STATE_LABELS).map(([value, label]) => ({ label, value }))]
 const shownKinds = computed((): string[] => kindFilter.value ? [kindFilter.value] : kinds.value.map((k: any) => k.kind))
 const rows = computed(() => submissionReleaseRows(releases.value, heads.value, shownKinds.value))
-const otherRows = computed(() => submissionOtherRows(releases.value, heads.value))
+// The heads are read unfiltered by state (FDAW-63): the state filter applies here, so a release whose head the
+// filter hides is told apart from a release without a head.
+const otherRows = computed(() => submissionOtherRows(releases.value,
+    heads.value.filter((s: any) => submissionInStateFilter(s, stateFilter.value))))
 const rowKey = (r: any) => r.release
 const otherRowKey = (r: any) => r.uuid
 
@@ -130,6 +133,9 @@ function kindCell (row: any, kind: string) {
     const head = row.byKind[kind]
     const names = { componentName: props.componentName, releaseVersion: row.version, componentType: 'PRODUCT' }
     const busy = acts.busy.value
+    if (head && !submissionInStateFilter(head, stateFilter.value)) {
+        return h('span', { class: 'text-muted', 'data-testid': 'submission-filtered-' + kind }, SUBMISSION_FILTERED_OUT_TEXT)
+    }
     if (!head) {
         if (!props.isWritable) return h('span', { class: 'text-muted' }, 'No submission')
         if (enabledKinds.value !== null && !enabledKinds.value.includes(kind)) return notSetUpCell(kind)
@@ -187,7 +193,7 @@ async function read () {
         const [k, s, r, e]: any[] = await Promise.all([
             graphqlClient.query({ query: profilesQueries.PackageKindsGql, fetchPolicy: 'no-cache' }),
             graphqlClient.query({ query: submissionQueries.SubmissionsOfComponentGql, fetchPolicy: 'no-cache',
-                variables: { component: props.componentUuid, kind: kindFilter.value || null, state: stateFilter.value || null } }),
+                variables: { component: props.componentUuid, kind: kindFilter.value || null, state: null } }),
             graphqlClient.query({ query: submissionQueries.SubmissionReleasesOfBranchGql, fetchPolicy: 'no-cache',
                 variables: { branch: branch.value, numRecords: RELEASES_PER_FEATURE_SET } }),
             readEnabledKinds(),
