@@ -138,6 +138,14 @@ export function submissionReleaseRows (releases: any[] | null | undefined, heads
     })
 }
 
+/** The product panel's marker for a head its state filter hides (FDAW-63); fixed text, never the hidden state. */
+export const SUBMISSION_FILTERED_OUT_TEXT = 'Not in filter'
+
+/** Whether a head passes the product panel's state filter (FDAW-63): no filter passes every head, as the server's rule. */
+export function submissionInStateFilter (head: any, state: string | null | undefined): boolean {
+    return !state || head?.state === state
+}
+
 /** The heads whose release is not in the list: submissions on releases of other feature sets. */
 export function submissionOtherRows (releases: any[] | null | undefined, heads: any[] | null | undefined): any[] {
     const listed = new Set((releases ?? []).map(r => r?.uuid))

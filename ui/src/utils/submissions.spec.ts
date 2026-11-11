@@ -10,7 +10,8 @@ const {
     submissionHistoryText, submissionOtherRows, submissionPartRows, submissionReasonError, submissionReleaseRows,
     submissionResubmitConfirm, submissionVersionRows, submissionWithdrawConfirm, submissionStateText,
     submissionStateTagType, submissionCancelNote, submissionDateText, SUBMISSION_STATE_LABELS, SUBMISSION_ACT_LABELS,
-    submissionActorText, submissionKindDisabledText, submissionProfileLabel,
+    submissionActorText, submissionKindDisabledText, submissionProfileLabel, submissionInStateFilter,
+    SUBMISSION_FILTERED_OUT_TEXT,
 } = await import('./submissions')
 const { TEA_ACT_GATEWAY_TEXT } = await import('./teaPublication')
 
@@ -45,6 +46,23 @@ describe('the product page rows (row 30)', () => {
     it('allows a create at ASSEMBLED and above only', () => {
         for (const l of ['ASSEMBLED', 'READY_TO_SHIP', 'GENERAL_AVAILABILITY', 'END_OF_SUPPORT']) expect(canCreateSubmission(l), l).toBe(true)
         for (const l of ['DRAFT', 'PENDING', 'REJECTED', 'CANCELLED', null]) expect(canCreateSubmission(l as any), String(l)).toBe(false)
+    })
+})
+
+// FDAW-63 row 1 (REQ-1): the product panel's client-side state filter and its marker text.
+describe('the product panel state filter (FDAW-63)', () => {
+    it('passes every head with no filter, and a head in the filtered state only', () => {
+        const s1 = heads[0]
+        expect(submissionInStateFilter(s1, null)).toBe(true)
+        expect(submissionInStateFilter(s1, '')).toBe(true)
+        expect(submissionInStateFilter(s1, undefined)).toBe(true)
+        expect(submissionInStateFilter(s1, 'FINAL')).toBe(true)
+        expect(submissionInStateFilter(s1, 'CANCELLED')).toBe(false)
+        expect(submissionInStateFilter(null, 'FINAL')).toBe(false)
+    })
+
+    it('names the marker Not in filter', () => {
+        expect(SUBMISSION_FILTERED_OUT_TEXT).toBe('Not in filter')
     })
 })
 
