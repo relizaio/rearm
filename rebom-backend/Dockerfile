@@ -13,7 +13,10 @@ ARG TARGETOS
 # and "selfComponentsSkipped" (SCORE-59; pinned by SCORE-60 ADR-2). The merge of the two
 # engine-check fixtures (test/fixtures/merge/engine-check-a.cdx.json and engine-check-b.cdx.json)
 # must print `folds into root` on stderr (SCORE-67; pinned by SCORE-68 ADR-2).
-ARG REARM_CLI_VERSION=26.10.15
+# The TEA operations run the CLI's machine mode (TPF-180 design 3.9): `rearm tea machine` without a
+# verb must exit 2 with a TEA_ERROR object of format version 1 on stderr, or the build fails.
+# 26.11.6 is the first release with the machine mode.
+ARG REARM_CLI_VERSION=26.11.6
 
 # October 2026 eMudhra CA compromise: the fixed Alpine bundle, and Node on it (--use-openssl-ca)
 # until FIXED_NODE is set in ci/trust-gate/trust-gate.mjs.
@@ -63,7 +66,9 @@ RUN wget https://d7ge14utcyki8.cloudfront.net/rearm-download/${REARM_CLI_VERSION
     rearm bomutils merge-boms --name engine-check --version 1.0.0 --input-files /tmp/engine-check-a.cdx.json --input-files /tmp/engine-check-b.cdx.json --outfile /tmp/engine-check-merged.json 2> /tmp/engine-check-merge.err && \
     test -s /tmp/engine-check-merged.json && \
     grep -q 'folds into root' /tmp/engine-check-merge.err && \
-    rm -f /tmp/engine-check.cdx.json /tmp/engine-check.json /tmp/engine-check-a.cdx.json /tmp/engine-check-b.cdx.json /tmp/engine-check-merged.json /tmp/engine-check-merge.err
+    (rearm tea machine > /dev/null 2> /tmp/tea-machine.err; test $? -eq 2) && \
+    grep -q '"formatVersion":1,"kind":"TEA_ERROR"' /tmp/tea-machine.err && \
+    rm -f /tmp/engine-check.cdx.json /tmp/engine-check.json /tmp/engine-check-a.cdx.json /tmp/engine-check-b.cdx.json /tmp/engine-check-merged.json /tmp/engine-check-merge.err /tmp/tea-machine.err
 
 # cyclonedx-cli has no musl build for arm64 (v0.32.0 publishes cyclonedx-linux-musl-x64 and
 # cyclonedx-linux-musl-arm only); the arm64 pin is the glibc build and needs gcompat on alpine

@@ -3,6 +3,7 @@ import { logger } from './logger';
 import { initEncryption } from './services/encryptionService';
 import { startEnrichmentScheduler, stopEnrichmentScheduler } from './services/enrichmentScheduler';
 import { logRawRepositoryCensus } from './services/oci';
+import { configureTea, shutdownTea } from './services/tea/teaService';
 
 // Global error handlers to prevent process crashes (like Spring Boot)
 // These ensure the service stays running even when unexpected errors occur
@@ -26,18 +27,24 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
 process.on('SIGTERM', () => {
   logger.info('SIGTERM signal received - shutting down gracefully');
   stopEnrichmentScheduler();
+  // kill running TEA runs and remove their files before exit
+  shutdownTea();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
   logger.info('SIGINT signal received - shutting down gracefully');
   stopEnrichmentScheduler();
+  shutdownTea();
   process.exit(0);
 });
 
 async function startApolloServer() {
   // Initialize encryption service (uses defaults if env vars not set)
   initEncryption();
+
+  // TEA operations: settings, the scratch root and its sweep (read once)
+  configureTea(process.env);
 
   // Start GraphQL server separately
   const server = createGraphqlServer();
