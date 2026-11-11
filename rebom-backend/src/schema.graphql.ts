@@ -26,6 +26,13 @@ const typeDefs = gql`
     getEnrichedBomProbe(bomContent: BomContentInput!): EnrichedBomProbeResult!
     scoreBomProbe(bom: String!, profiles: [String!]!): String!
     isEnrichmentConfigured(org: ID!): Boolean!
+    # TEA operations (teaApiVersion 1): every one needs the X-Rebom-Caller-Token header. Outcomes
+    # are data in the result, never GraphQL errors.
+    # Whether the TEA operations are usable on this rebom: configured, caller accepted, CLI present.
+    teaStatus: TeaStatus!
+    # length bytes from offset of one held file of a fetch, as base64; length is clamped to the
+    # chunk ceiling and to the rest of the file.
+    teaFetchedFileChunk(fetchId: String!, number: Int!, offset: Int!, length: Int!): TeaFileChunk!
   }
 
   type Mutation {
@@ -46,6 +53,261 @@ const typeDefs = gql`
     the signature blob; the trust store is authoritative.
     """
     verifySignature(input: VerifySignatureInput!): VerifySignatureResult!
+    # TEA operations (teaApiVersion 1). Each one that carries a source credential is a mutation, so
+    # it never executes over GET. The credential is always a GraphQL variable.
+    # Resolves a TEI to its product release(s): the CLI's TEA_RESOLUTION document.
+    teaResolve(input: TeaResolveInput!): TeaDocumentResult!
+    # One product: TEA_PRODUCT.
+    teaProduct(input: TeaObjectInput!): TeaDocumentResult!
+    # One component: TEA_COMPONENT.
+    teaComponent(input: TeaObjectInput!): TeaDocumentResult!
+    # The releases of a product or component, paged: TEA_RELEASE_LIST.
+    teaReleases(input: TeaReleasesInput!): TeaDocumentResult!
+    # One release with its latest collection and lifecycle: TEA_RELEASE.
+    teaRelease(input: TeaReleaseInput!): TeaDocumentResult!
+    # Downloads and verifies the documents of one collection version and holds them under a fetchId.
+    teaFetchCollection(input: TeaFetchInput!): TeaFetchResult!
+    # Stores one held file as an SBOM through the existing add path.
+    teaStoreFetchedSbom(input: TeaSbomStoreInput!): TeaSbomStoreResult!
+    # Removes a held fetch at once; OK also when it is already gone.
+    teaReleaseFetch(fetchId: String!): TeaReleaseFetchResult!
+  }
+
+  # The outcome of a TEA operation. An open set: a caller treats a value it does not know as FAILED.
+  enum TeaOutcome {
+    OK
+    PARTIAL
+    NOT_CONFIGURED
+    CALLER_REFUSED
+    NOT_AVAILABLE
+    INVALID_REQUEST
+    BUSY
+    FETCH_NOT_HELD
+    NOT_FOUND
+    URL_REFUSED
+    AUTH
+    ADDRESS_REFUSED
+    LIMIT
+    CONNECT_FAILED
+    TIMEOUT
+    CONTRACT_MISMATCH
+    FAILED
+  }
+  enum TeaCredentialKind { NONE BEARER_TOKEN API_KEY }
+  enum TeaParentKind { PRODUCT COMPONENT }
+  enum TeaReleaseKind { PRODUCT_RELEASE COMPONENT_RELEASE }
+  # SBOM: TEA artifact type BOM; VEX: VULNERABILITIES; OTHER: every other type, unknown ones included.
+  enum TeaDocumentClass { SBOM VEX OTHER }
+  enum TeaFileStatus { VERIFIED FAILED NOT_ATTEMPTED NOT_SELECTED }
+  enum TeaLocalTesting { OFF ON }
+  enum TeaSbomStoreOutcome {
+    CREATED
+    EXISTING
+    LINEAGE_EXISTS
+    VERSION_CONFLICT
+    NOT_PARSEABLE
+    NOT_AN_SBOM
+    INVALID
+    TOO_LARGE
+    STORE_FAILED
+  }
+
+  # The credential of a TEA source, for one call. Never logged, never in an argument of the CLI.
+  input TeaCredentialInput {
+    kind: TeaCredentialKind!
+    # Required unless kind is NONE: the API root the credential is for.
+    authRoot: String
+    # BEARER_TOKEN only.
+    token: String
+    # API_KEY only, with keySecret.
+    keyId: String
+    keySecret: String
+  }
+  # Each value may lower a ceiling of this rebom, never raise it.
+  input TeaLimitsInput {
+    deadlineSeconds: Int
+    connectTimeoutSeconds: Int
+    maxDocumentBytes: Int
+    maxOutputBytes: Int
+  }
+  input TeaFetchLimitsInput {
+    maxArtifactBytes: Int
+    maxTotalBytes: Int
+    maxFiles: Int
+    holdSeconds: Int
+  }
+  input TeaResolveInput {
+    # tei://<domain>/<type>/<id>
+    tei: String!
+    credential: TeaCredentialInput!
+    limits: TeaLimitsInput
+    # Refused unless local testing is ON: the plain http port of the well-known resource.
+    localPlainHttpPort: Int
+    # 1 to 64 of [A-Za-z0-9_-]; only echoed in log lines.
+    correlationId: String
+  }
+  input TeaObjectInput {
+    apiRoot: String!
+    uuid: ID!
+    credential: TeaCredentialInput!
+    limits: TeaLimitsInput
+    correlationId: String
+  }
+  input TeaReleasesInput {
+    apiRoot: String!
+    parentKind: TeaParentKind!
+    parentUuid: ID!
+    # The nextPageToken of the previous call.
+    pageToken: String
+    # 1 to 100, default 100.
+    pageSize: Int
+    # 1 to 1000, at most the page ceiling of this rebom.
+    maxPages: Int
+    credential: TeaCredentialInput!
+    limits: TeaLimitsInput
+    correlationId: String
+  }
+  input TeaReleaseInput {
+    apiRoot: String!
+    releaseKind: TeaReleaseKind!
+    releaseUuid: ID!
+    credential: TeaCredentialInput!
+    limits: TeaLimitsInput
+    correlationId: String
+  }
+  input TeaFetchInput {
+    apiRoot: String!
+    releaseKind: TeaReleaseKind!
+    releaseUuid: ID!
+    collectionVersion: Int!
+    # Which of SBOMs, VEX and everything else to fetch: 1 to 3 distinct values.
+    documentClasses: [TeaDocumentClass!]!
+    # Only formats of these media types (type/subtype), at most 16.
+    mediaTypes: [String!]
+    credential: TeaCredentialInput!
+    limits: TeaLimitsInput
+    fetchLimits: TeaFetchLimitsInput
+    correlationId: String
+  }
+  input TeaSbomStoreInput {
+    fetchId: String!
+    # The row number of a held file of the fetch.
+    number: Int!
+    org: ID!
+    tags: Object
+    rebomOptions: RebomOptions!
+    # The serialNumber of a stored lineage this document may continue; without it a document whose
+    # serialNumber is already stored is answered LINEAGE_EXISTS.
+    continueLineage: String
+  }
+
+  type TeaError {
+    # The CLI's reason, or one of rebom's own; an open set.
+    reason: String!
+    # The real exit code, when a process ran and exited.
+    cliExitCode: Int
+    # A fixed sentence per outcome, safe to show to a tenant.
+    message: String!
+    # The CLI's message, printable ASCII, at most 2048 bytes; for administrators.
+    detail: String
+    url: String
+    httpStatus: Int
+    address: String
+    addressClass: String
+    phase: String
+    hint: String
+    ignoredProxyVariables: [String!]
+  }
+  # The limits that ran, after clamping to the ceilings.
+  type TeaEffectiveLimits {
+    deadlineSeconds: Int!
+    connectTimeoutSeconds: Int!
+    maxDocumentBytes: Int!
+    maxOutputBytes: Int!
+    maxPages: Int
+    pageSize: Int
+    maxArtifactBytes: Int
+    maxTotalBytes: Int
+    maxFiles: Int
+    holdSeconds: Int
+  }
+  type TeaDocumentResult {
+    teaApiVersion: Int!
+    outcome: TeaOutcome!
+    error: TeaError
+    limits: TeaEffectiveLimits
+    # The CLI's JSON line, as it wrote it, when outcome is OK.
+    document: String
+  }
+  type TeaFetchedFile {
+    number: Int!
+    status: TeaFileStatus!
+    # Why a file was not kept; an open set.
+    reason: String
+    documentClass: TeaDocumentClass!
+    # VERIFIED rows.
+    sizeBytes: Int
+    # VERIFIED rows: SHA-256 of the held file, computed by rebom, lower-case hex.
+    sha256: String
+  }
+  type TeaFetchResult {
+    teaApiVersion: Int!
+    # OK or PARTIAL when a manifest exists.
+    outcome: TeaOutcome!
+    error: TeaError
+    limits: TeaEffectiveLimits
+    # The TEA_DOWNLOAD_MANIFEST line, verbatim.
+    manifest: String
+    # One per manifest row, in manifest order.
+    files: [TeaFetchedFile!]
+    # 32 lower-case hex; present when at least one file is held.
+    fetchId: String
+    # UTC instant after which the held files are gone.
+    expiresAt: DateTime
+  }
+  type TeaLineageConflict {
+    serialNumber: String!
+    storedVersion: String
+    documentVersion: String
+    existingUuid: ID
+  }
+  type TeaSbomStoreResult {
+    teaApiVersion: Int!
+    # OK when the store was attempted; then stored says how it ended.
+    outcome: TeaOutcome!
+    error: TeaError
+    stored: TeaSbomStoreOutcome
+    format: BomFormat
+    # CREATED and EXISTING: the stored row.
+    bom: Bom
+    # LINEAGE_EXISTS and VERSION_CONFLICT.
+    conflict: TeaLineageConflict
+    # INVALID and STORE_FAILED: bounded text.
+    storeMessage: String
+  }
+  type TeaFileChunk {
+    teaApiVersion: Int!
+    outcome: TeaOutcome!
+    error: TeaError
+    dataBase64: String
+    offset: Int
+    # Null at the end of the file.
+    nextOffset: Int
+    fileSizeBytes: Int
+  }
+  type TeaReleaseFetchResult {
+    teaApiVersion: Int!
+    # OK also when the fetch was already gone.
+    outcome: TeaOutcome!
+    error: TeaError
+  }
+  type TeaStatus {
+    teaApiVersion: Int!
+    # OK, NOT_CONFIGURED, CALLER_REFUSED or NOT_AVAILABLE.
+    outcome: TeaOutcome!
+    error: TeaError
+    localTesting: TeaLocalTesting
+    ceilings: TeaEffectiveLimits
   }
 
   input VerifySignatureInput {
