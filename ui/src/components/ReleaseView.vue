@@ -2797,6 +2797,7 @@ import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
 import { useBulkAttest, validateBulkInput, emptyBulkForm, groupNotWritten } from '@/utils/useBulkAttest'
 import { hasOrgWrite, orgWriteSentence } from '@/utils/orgWrite'
+import { componentPageWritable } from '@/utils/componentWrite'
 import { SELECTOR_FORM_OPTIONS, SELECTOR_SCOPE_OPTIONS, SELECTOR_OVER_CAP_TEXT, emptySelectorChoice, fetchSelectorCount,
     isSelectorForm, selectorCountText, selectorLabel, submitBySelector, validateSelector,
     SUPPLIER_SELECTOR_FORM_OPTIONS, SUPPLIER_SELECTOR_OVER_CAP_TEXT, SUPPLIER_MAX_LENGTH, SUPPLIER_REASON_MAX_LENGTH, emptySupplierSelectorChoice,
@@ -5191,30 +5192,7 @@ const userPermission: ComputedRef<any> = computed((): any => {
 
 const myPerspective: ComputedRef<string> = computed((): string => store.getters.myperspective)
 
-const isWritable : ComputedRef<boolean> = computed((): boolean => {
-    const orguuid = updatedRelease.value.orgDetails.uuid
-    if (commonFunctions.isWritable(orguuid, myUser, 'COMPONENT')) return true
-
-    const userPermissions = myUser?.permissions?.permissions || []
-
-    // Fallback 1: perspective-scoped write for current perspective
-    if (myPerspective.value && myPerspective.value !== 'default') {
-        const perspectivePermission = userPermissions.find((p: any) =>
-            p.scope === 'PERSPECTIVE' &&
-            p.org === orguuid &&
-            p.object === myPerspective.value
-        )
-        if (perspectivePermission?.type === 'READ_WRITE') return true
-    }
-
-    // Fallback 2: component-scoped write for current component
-    const componentPermission = userPermissions.find((p: any) =>
-        p.scope === 'COMPONENT' &&
-        p.org === orguuid &&
-        p.object === updatedRelease.value.componentDetails.uuid
-    )
-    return componentPermission?.type === 'READ_WRITE'
-})
+const isWritable : ComputedRef<boolean> = computed((): boolean => componentPageWritable(myUser?.permissions?.permissions, updatedRelease.value?.orgDetails?.uuid, myPerspective.value, updatedRelease.value?.componentDetails?.uuid))
 
 // Organization write (FDAW-14 3.9): the right a bulk support sweep needs. A product-scoped
 // writer is isWritable but not this; the controls are rendered disabled with the sentence and
@@ -5230,7 +5208,7 @@ const canUpdateLifecycle: ComputedRef<boolean> = computed((): boolean => {
     if (!orguuid) return false
     const userPermissions: any[] = store.getters.myuser?.permissions?.permissions || []
     if (userPermissions.some((p: any) => p.scope === 'ORGANIZATION' && p.org === orguuid && p.type === 'ADMIN')) return true
-    return userPermissions.some((p: any) => p.org === orguuid && p.type === 'READ_WRITE' && (p.functions || []).includes('LIFECYCLE_UPDATE'))
+    return userPermissions.some((p: any) => p.org === orguuid && (p.type === 'READ_WRITE' || p.type === 'ADMIN') && (p.functions || []).includes('LIFECYCLE_UPDATE'))
 })
 
 const isUpdatable: ComputedRef<boolean> = computed(

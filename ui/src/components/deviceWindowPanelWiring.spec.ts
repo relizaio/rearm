@@ -507,3 +507,54 @@ describe('the Medical device tab is wired into the component page (FDAW-18)', ()
         }
     })
 })
+
+/**
+ * FDAW-66, architecture 4 row 6: a product administrator (organization READ_ONLY plus a COMPONENT
+ * ADMIN grant on the product) can save the Medical device tab. `isWritable` is the pure predicate
+ * `componentPageWritable` (utils/componentWrite.spec.ts runs its cells); this pins the wiring.
+ */
+describe('the component page counts a scoped ADMIN grant as write (FDAW-66)', () => {
+    const code = source
+        .replace(/<!--[\s\S]*?-->/g, '')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    const paneAt = code.indexOf('<n-tab-pane name="device"')
+    const pane = code.slice(paneAt, code.indexOf('<n-tab-pane', paneAt + 1))
+    /** Every opening tag of the slice, attributes included (quoted values may hold `>`-free text). */
+    const tags = (s: string): string[] => s.match(/<[\w-]+(?:\s+[^\s"'>=/]+(?:="[^"]*")?)*\s*\/?>/g) || []
+
+    it('computes isWritable from componentPageWritable and imports it', () => {
+        expect(code).toMatch(/const\s+isWritable\s*:\s*ComputedRef<boolean>\s*=\s*computed\(\s*\(\)\s*:\s*boolean\s*=>\s*componentPageWritable\(\s*myUser\?\.permissions\?\.permissions\s*,\s*orguuid\.value\s*,\s*myPerspective\.value\s*,\s*componentUuid\s*\)\s*\)/)
+        expect(code).toMatch(/import\s*\{\s*componentPageWritable\s*\}\s*from\s*'\.\.\/utils\/componentWrite'/)
+    })
+
+    it('keeps no READ_WRITE-only fallback and leaves isAdmin the organization ADMIN grant', () => {
+        expect(code).not.toContain("type === 'READ_WRITE'")
+        expect(code).toContain('const isAdmin : boolean = commonFunctions.isAdmin(orguuid.value, myUser)')
+    })
+
+    it('gates every Medical device control on isWritable', () => {
+        expect(paneAt).toBeGreaterThan(-1)
+        const controls = tags(pane).filter(t => /^<n-(radio-group|checkbox|select|switch|input|date-picker)\b/.test(t)
+            && /\s:disabled="/.test(t))
+        expect(controls.length).toBeGreaterThanOrEqual(9)
+        for (const t of controls) {
+            expect(t.match(/\s:disabled="([^"]*)"/)![1], t).toContain('!isWritable')
+        }
+        expect(code).toMatch(/v-if="\(hasDeviceChanges \|\| hasFdaChanges \|\| canCompleteSetup\) && isWritable"/)
+    })
+
+    it('offers no control for an organization step: those stay server-side', () => {
+        const bound = tags(pane).filter(t => /\s(v-model(:[\w-]+)?|@update:[\w-]+|@click)="/.test(t))
+        expect(bound.length).toBeGreaterThan(0)
+        for (const t of bound) {
+            for (const org of ['supportExport', 'fdaProfile', 'orgPackageProfile', 'ORG_']) {
+                expect(t, org).not.toContain(org)
+            }
+        }
+        const lineAt = pane.indexOf("'device-setup-line-'")
+        expect(lineAt).toBeGreaterThan(-1)
+        const line = pane.slice(lineAt, pane.indexOf('</div>', lineAt))
+        expect(line).not.toMatch(/<(n-[\w-]+|input|select|textarea|button)\b/)
+    })
+})

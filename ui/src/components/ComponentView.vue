@@ -1541,6 +1541,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NDatePicker, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTag, NText, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
 import commonFunctions from '../utils/commonFunctions'
+import { componentPageWritable } from '../utils/componentWrite'
 import ChangelogView from './ChangelogView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
@@ -2137,29 +2138,7 @@ const myPerspective: ComputedRef<string> = computed((): string => store.getters.
 const supportsComponentKind : boolean = myUser?.installationType !== 'OSS'
 
 const isAdmin : boolean = commonFunctions.isAdmin(orguuid.value, myUser)
-const isWritable : ComputedRef<boolean> = computed((): boolean => {
-    if (commonFunctions.isWritable(orguuid.value, myUser, 'COMPONENT')) return true
-
-    const userPermissions = myUser?.permissions?.permissions || []
-
-    // Fallback 1: perspective-scoped write for current perspective
-    if (myPerspective.value && myPerspective.value !== 'default') {
-        const perspectivePermission = userPermissions.find((p: any) =>
-            p.scope === 'PERSPECTIVE' &&
-            p.org === orguuid.value &&
-            p.object === myPerspective.value
-        )
-        if (perspectivePermission?.type === 'READ_WRITE') return true
-    }
-
-    // Fallback 2: component-scoped write for current component
-    const componentPermission = userPermissions.find((p: any) =>
-        p.scope === 'COMPONENT' &&
-        p.org === orguuid.value &&
-        p.object === componentUuid
-    )
-    return componentPermission?.type === 'READ_WRITE'
-})
+const isWritable : ComputedRef<boolean> = computed((): boolean => componentPageWritable(myUser?.permissions?.permissions, orguuid.value, myPerspective.value, componentUuid))
 
 // Org-wide READ_ONLY or above gates the "Effective policy:" deep-link
 // to Org Settings. Users without org-scoped read access wouldn't be

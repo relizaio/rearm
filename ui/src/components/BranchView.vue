@@ -459,6 +459,7 @@ import LinkVcs from './LinkVcs.vue'
 import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import AutoIntegratePreviewPanel from './AutoIntegratePreviewPanel.vue'
 import commonFunctions from '../utils/commonFunctions'
+import { componentPageWritable } from '@/utils/componentWrite'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
@@ -592,29 +593,7 @@ const releaseBranchLock = async () => {
     }
 }
 
-const isWritable : ComputedRef<boolean> = computed((): boolean => {
-    if (commonFunctions.isWritable(orguuid, myUser, 'COMPONENT')) return true
-
-    const userPermissions = myUser?.permissions?.permissions || []
-
-    // Fallback 1: perspective-scoped write for current perspective
-    if (myPerspective.value && myPerspective.value !== 'default') {
-        const perspectivePermission = userPermissions.find((p: any) =>
-            p.scope === 'PERSPECTIVE' &&
-            p.org === orguuid &&
-            p.object === myPerspective.value
-        )
-        if (perspectivePermission?.type === 'READ_WRITE') return true
-    }
-
-    // Fallback 2: component-scoped write for current component
-    const componentPermission = userPermissions.find((p: any) =>
-        p.scope === 'COMPONENT' &&
-        p.org === orguuid &&
-        p.object === branchData.value.component
-    )
-    return componentPermission?.type === 'READ_WRITE'
-})
+const isWritable : ComputedRef<boolean> = computed((): boolean => componentPageWritable(myUser?.permissions?.permissions, orguuid, myPerspective.value, branchData.value?.component))
 
 const showReleaseModal: Ref<boolean> = ref(false)
 const showReleaseUuid: Ref<string> = ref('')
