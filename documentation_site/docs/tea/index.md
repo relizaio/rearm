@@ -385,7 +385,7 @@ Downloads need no ReARM login: the visibility of the TEA publishing settings and
 
 ## Reading with the ReARM CLI
 
-The [ReARM CLI](../integrations/rearmcli) is a client of this API. `rearm tea discovery` resolves a TEI to the TEA id of a product release; `rearm tea full_tea_flow` resolves it the same way, then reads the product release and its components. Both need ReARM CLI **CLI_RELEASE_TBD** or later: an earlier CLI speaks the retired 0.4.0 beta and cannot read this API. This section covers what is specific to a ReARM server; the flags, the output, the exit codes and every rule for credentials are in the CLI's own [TEA commands documentation](https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md).
+The [ReARM CLI](../integrations/rearmcli) is a client of this API. `rearm tea discovery` resolves a TEI to the TEA id of a product release; `rearm tea full_tea_flow` resolves it the same way, then reads the product release and its components. Both need ReARM CLI **26.11.6** or later: an earlier CLI speaks the retired 0.4.0 beta and cannot read this API. This section covers what is specific to a ReARM server; the flags, the output, the exit codes and every rule for credentials are in the CLI's own [TEA commands documentation](https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md).
 
 ```bash
 rearm tea discovery --tei tei://demo.rearmhq.com/uuid/b9f115fb-6688-4a3f-a262-3acc04e1fc9e
