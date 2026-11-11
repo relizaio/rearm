@@ -32,6 +32,64 @@ one accepts them and ignores them silently. Verify enforcement:
   expected: exit=1 (no connection); exit=0 means the policies are not enforced.
 If the UI is unreachable after an upgrade, check the ingress controller labels against
 networkPolicy.ingressController, or roll back with --set networkPolicy.enabled=false.
+{{- $eg := (.Values.networkPolicy.rebomBackend | default dict).egress | default dict }}
+{{- if $eg.enabled }}
+{{- $pub := $eg.public | default dict }}
+{{- $fam := ternary $pub.ipFamilies (list "IPv4") (hasKey $pub "ipFamilies") | default list }}
+
+The egress policy of the rebom pod is ON (networkPolicy.rebomBackend.egress.enabled): the pod may
+connect only to DNS, the chart's rebom postgres and artifact service pods, public addresses
+(networkPolicy.rebomBackend.egress.public.ipFamilies: {{ join ", " $fam | default "none" }}) and the rules of
+networkPolicy.rebomBackend.egress.extraEgress. Private, carrier-grade NAT and link-local ranges,
+every other pod and{{ if has "IPv6" $fam }} IPv6 outside global unicast{{ else }} every IPv6 address{{ end }} are refused. It needs the same CNI
+enforcement.
+{{- if has "IPv6" $fam }}
+IPv6 is in public.ipFamilies: every IPv6 range of the cluster and of your network must be listed
+in networkPolicy.rebomBackend.egress.public.extraExcept, or rebom can reach it (README.md, "IPv6").
+{{- end }}
+Verify:
+{{- /* The command lines below are those of README.md, "Check that it is enforced", with the
+       namespace, the release name and the image filled in. README.md is the source: a change
+       to one is a change to both. */}}
+  echo '{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"np-egress-target"},"spec":{"podSelector":{"matchLabels":{"run":"np-egress-target"}},"policyTypes":["Ingress"],"ingress":[{"ports":[{"port":8080,"protocol":"TCP"}]}]}}' | kubectl -n {{ .Release.Namespace }} apply -f -
+  kubectl -n {{ .Release.Namespace }} run np-egress-target --restart=Never --image=docker.io/library/busybox:1.37 -- httpd -f -p 8080 -h /tmp
+  kubectl -n {{ .Release.Namespace }} wait --for=condition=Ready pod/np-egress-target
+  n=0; for T in $(kubectl -n {{ .Release.Namespace }} get pod np-egress-target -o jsonpath='{.status.podIPs[*].ip}'); do n=$((n+1)); kubectl -n {{ .Release.Namespace }} run np-egress-probe-$n --rm -i --restart=Never --image=docker.io/library/busybox:1.37 -- nc -z -w 5 "$T" 8080; echo "control $T exit=$?"; done
+  for T in $(kubectl -n {{ .Release.Namespace }} get pod np-egress-target -o jsonpath='{.status.podIPs[*].ip}'); do kubectl -n {{ .Release.Namespace }} exec deploy/{{ .Release.Name }}-rebom-backend -- nc -z -w 5 "$T" 8080; echo "private $T exit=$?"; done
+{{- if not .Values.use_external_postgres }}
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ .Release.Name }}-rebom-backend -- nc -z -w 5 {{ .Release.Name }}-rebom-postgres 5432; echo database exit=$?
+{{- end }}
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ .Release.Name }}-rebom-backend -- nc -z -w 5 registry.relizahub.com 443; echo public exit=$?
+  kubectl -n {{ .Release.Namespace }} delete pod/np-egress-target networkpolicy/np-egress-target
+The first line admits every pod to port 8080 of the listener, so that a default-deny of the
+namespace (networkPolicy.namespaceDefaultDeny, or one of your own) does not refuse it. "control"
+dials the listener from a pod the egress policy does not select, "private" from the rebom pod.
+Each is printed once per address of the listener: one on a single-stack cluster, an IPv4 and an
+IPv6 one on a dual-stack cluster. Read the pair of each address:
+  control exit=0, private exit=1 for EVERY address: ENFORCED. The listener answers a plain pod
+    and rebom is refused, in each address family the cluster has.
+  private exit=0 for any address: NOT enforced for that family, whatever the control prints; or
+    the pod range of that family is missing from
+    networkPolicy.rebomBackend.egress.public.extraExcept (IPv4: a public-looking range; IPv6:
+    any range, see README.md); or a rule of extraEgress or another policy of yours allows it.
+  control exit=1, private exit=1 for an address: proves NOTHING for that family. The listener
+    is unreachable for another reason, so the refusal says nothing about egress. Repeat the
+    control line after a few seconds; if it stays exit=1, see "Check that it is enforced" in
+    the chart's README.md (helm show readme).
+{{- if not .Values.use_external_postgres }}
+  database exit=0, public exit=0: DNS, the database and a public address work.
+{{- else }}
+  public exit=0: DNS and a public address work.
+{{- end }}
+    public exit=1 is expected without a public IPv4 rule on port 443 (public.ipFamilies without
+    IPv4, public.ports) and on a cluster with no direct route to the internet. If no line
+    prints exit=0, nc may not work in the rebom container, and private exit=1 proves nothing
+    either.
+If rebom cannot resolve names or reach its database, an internal TEA server or its enrichment
+endpoint after this, see the comment on networkPolicy.rebomBackend.egress in values.yaml, or roll
+back with --set networkPolicy.rebomBackend.egress.enabled=false. To switch every policy off, set
+that and networkPolicy.enabled=false together.
+{{- end }}
 {{- else }}
 
 NetworkPolicies are OFF (networkPolicy.enabled=false): every chart pod accepts connections from
