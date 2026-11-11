@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import { logger } from '../../logger';
 import * as BomRepository from '../../bomRepository';
 import * as SpdxRepository from '../../spdxRepository';
-import { BomFormat, BomRecord } from '../../types';
+import { BomFormat, BomRecord, SpdxBomRecord } from '../../types';
 import { BomLineageNotPermittedError, BomValidationError, BomVersionConflictError } from '../../types/errors';
 import { addBomDetailed, AddDisposition, LineagePolicyKind } from '../bom/bomAddService';
 import { printableAscii } from './teaDocument';
@@ -85,22 +85,57 @@ async function rowWithDigest(serialNumber: string, org: string, digest: string):
     return rows.find((row) => row.meta?.originalFileDigest === digest) ?? null;
 }
 
-/** The stored side of an SPDX namespace refusal: the converted row's lineage, newest version. */
-async function spdxConflict(doc: Record<string, unknown>, org: string): Promise<TeaLineageConflict | null> {
-    const namespace = typeof doc.documentNamespace === 'string' ? doc.documentNamespace : '';
-    const spdxRow = await SpdxRepository.findSpdxBomByNamespace(namespace, org);
-    if (!spdxRow || !spdxRow.converted_bom_uuid) return null;
-    const converted = await BomRepository.bomById(spdxRow.converted_bom_uuid);
-    const serialNumber = converted[0]?.meta?.serialNumber;
-    if (!serialNumber) return null;
-    const lineage = await BomRepository.allBomsBySerialNumber(serialNumber, org);
-    const newest = lineage[0] ?? converted[0];
+/** The row of rebom.spdx_boms that holds an SPDX document's namespace in the organization, with its converted row. */
+interface SpdxNamespaceHolder {
+    spdxRow: SpdxBomRecord;
+    converted: BomRecord | null;
+}
+
+function namespaceOf(doc: Record<string, unknown>): string {
+    return typeof doc.documentNamespace === 'string' ? doc.documentNamespace : '';
+}
+
+async function spdxNamespaceHolder(doc: Record<string, unknown>, org: string): Promise<SpdxNamespaceHolder | null> {
+    const spdxRow = await SpdxRepository.findSpdxBomByNamespace(namespaceOf(doc), org);
+    if (!spdxRow) return null;
+    const rows = spdxRow.converted_bom_uuid ? await BomRepository.bomById(spdxRow.converted_bom_uuid) : [];
+    return { spdxRow, converted: rows[0] ?? null };
+}
+
+/**
+ * The stored document that holds an SPDX namespace (design 3.6.4 step 2): its converted row, not the
+ * newest row of that row's lineage. Null when the holder has no converted row with a serialNumber.
+ */
+function holderConflict(holder: SpdxNamespaceHolder | null): TeaLineageConflict | null {
+    const converted = holder?.converted;
+    const serialNumber = converted?.meta?.serialNumber;
+    if (!converted || !serialNumber) return null;
     return {
         serialNumber,
-        storedVersion: versionText(newest.meta?.bomVersion),
+        storedVersion: versionText(converted.meta?.bomVersion),
         documentVersion: null,
-        existingUuid: newest.uuid
+        existingUuid: converted.uuid
     };
+}
+
+/** A namespace held by another document: final, so INVALID with rebom's fixed sentence, never LINEAGE_EXISTS. */
+function namespaceTaken(holder: SpdxNamespaceHolder | null): TeaSbomStoreResult {
+    return stored(TeaSbomStoreOutcome.INVALID, { format: 'SPDX', storeMessage: SPDX_NAMESPACE_TAKEN, conflict: holderConflict(holder) });
+}
+
+/**
+ * The SPDX rule of design 3.6.4, step 2, for every SPDX store, with or without a named lineage:
+ * the same file with a converted row is EXISTING; the same file without one is an earlier store
+ * that did not finish, STORE_FAILED; another document is INVALID. Null when the namespace is free.
+ */
+async function spdxNamespaceDecision(doc: Record<string, unknown>, digest: string, org: string): Promise<TeaSbomStoreResult | null> {
+    const holder = await spdxNamespaceHolder(doc, org);
+    if (!holder) return null;
+    if (holder.spdxRow.file_sha256 !== digest) return namespaceTaken(holder);
+    if (holder.converted) return stored(TeaSbomStoreOutcome.EXISTING, { format: 'SPDX', bom: holder.converted });
+    const ref = randomBytes(4).toString('hex');
+    logger.error({ ref, spdxUuid: holder.spdxRow.uuid }, 'TEA: the SPDX namespace holds this file without a converted document');
+    return stored(TeaSbomStoreOutcome.STORE_FAILED, { format: 'SPDX', storeMessage: internalMessage(ref) });
 }
 
 async function readJson(file: TeaHeldFile): Promise<{ ok: true, doc: unknown } | { ok: false }> {
@@ -122,22 +157,17 @@ export async function storeHeldSbom(file: TeaHeldFile, request: TeaStoreRequest,
     if (!format) return stored(TeaSbomStoreOutcome.NOT_AN_SBOM);
     const doc = read.doc as Record<string, unknown>;
     const digest = documentDigest(doc);
-    if (format === 'SPDX' && request.continueLineage) {
-        // the SPDX update route always writes a new version: a document the named lineage already
-        // holds is answered from the stored row, so a second store of it stays idempotent
-        const same = await rowWithDigest(request.continueLineage, request.org, digest);
-        if (same) return stored(TeaSbomStoreOutcome.EXISTING, { format, bom: same });
-        // a namespace holds one SPDX document per organization (rebom.spdx_boms is unique on it):
-        // decided here, before the update route pushes anything
-        const namespace = typeof doc.documentNamespace === 'string' ? doc.documentNamespace : '';
-        const byNamespace = await SpdxRepository.findSpdxBomByNamespace(namespace, request.org);
-        if (byNamespace) {
-            if (byNamespace.file_sha256 === digest && byNamespace.converted_bom_uuid) {
-                const rows = await BomRepository.bomById(byNamespace.converted_bom_uuid);
-                if (rows[0]) return stored(TeaSbomStoreOutcome.EXISTING, { format, bom: rows[0] });
-            }
-            return stored(TeaSbomStoreOutcome.INVALID, { format, storeMessage: SPDX_NAMESPACE_TAKEN });
+    if (format === 'SPDX') {
+        if (request.continueLineage) {
+            // the SPDX update route always writes a new version: a document the named lineage already
+            // holds is answered from the stored row, so a second store of it stays idempotent
+            const same = await rowWithDigest(request.continueLineage, request.org, digest);
+            if (same) return stored(TeaSbomStoreOutcome.EXISTING, { format, bom: same });
         }
+        // a namespace holds one SPDX document per organization (rebom.spdx_boms is unique on it):
+        // decided here, named lineage or not, before the add path pushes anything
+        const decided = await spdxNamespaceDecision(doc, digest, request.org);
+        if (decided) return decided;
     }
     try {
         const added = await addBomDetailed({
@@ -173,8 +203,8 @@ async function storeFailure(error: unknown, doc: Record<string, unknown>, digest
     }
     if (error instanceof BomValidationError) {
         if (format === 'SPDX' && error.details?.field === SPDX_NAMESPACE_FIELD) {
-            const conflict = await spdxConflict(doc, request.org);
-            if (conflict) return stored(TeaSbomStoreOutcome.LINEAGE_EXISTS, { format, conflict });
+            // only the loser of a race for the namespace meets the add path's refusal: the same answer as step 2
+            return namespaceTaken(await spdxNamespaceHolder(doc, request.org));
         }
         return stored(TeaSbomStoreOutcome.INVALID, { format, storeMessage: printableAscii(error.message, STORE_MESSAGE_MAX) });
     }

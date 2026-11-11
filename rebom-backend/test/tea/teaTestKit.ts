@@ -158,6 +158,16 @@ export class Stub {
     }
 }
 
+/**
+ * The process group of a running process: field 5 of /proc/<pid>/stat, read as the third field
+ * after the last ')' because the command name may hold spaces and parentheses. The rows run in the
+ * builder image (alpine, busybox), whose ps has no -p.
+ */
+export function processGroupOf(pid: number): number {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[2]);
+}
+
 export function isAlive(pid: number): boolean {
     try {
         process.kill(pid, 0);

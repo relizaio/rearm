@@ -151,7 +151,9 @@ describe('starting, the environment and the process group', () => {
     });
 
     it('starts the child as the leader of its own group only when asked to', async () => {
-        const groupOf = "process.stdout.write(require('child_process').execSync('ps -o pgid= -p ' + process.pid).toString().trim() + ' ' + process.pid)";
+        // the group is field 5 of /proc/self/stat, the third after the last ')': the builder image is
+        // alpine with busybox, whose ps has no -p (design section 4, where the rows run)
+        const groupOf = "const s = require('fs').readFileSync('/proc/self/stat', 'utf8'); process.stdout.write(s.slice(s.lastIndexOf(')') + 2).split(' ')[2] + ' ' + process.pid)";
         const own = await shellExecDetailed(NODE, ['-e', groupOf], { timeoutMs: 10000, maxStdoutBytes: 100, killProcessGroup: true });
         const [ownGroup, ownPid] = own.stdout.split(' ').map(Number);
         expect(ownGroup).toBe(ownPid);

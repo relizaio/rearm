@@ -196,8 +196,9 @@ const typeDefs = gql`
     org: ID!
     tags: Object
     rebomOptions: RebomOptions!
-    # The serialNumber of a stored lineage this document may continue; without it a document whose
-    # serialNumber is already stored is answered LINEAGE_EXISTS.
+    # The serialNumber of a stored lineage this document may continue; without it a CycloneDX document
+    # whose serialNumber is already stored is answered LINEAGE_EXISTS. For SPDX: this document, under a
+    # namespace of its own, is the next version of that lineage.
     continueLineage: String
   }
 
@@ -280,7 +281,7 @@ const typeDefs = gql`
     format: BomFormat
     # CREATED and EXISTING: the stored row.
     bom: Bom
-    # LINEAGE_EXISTS and VERSION_CONFLICT.
+    # LINEAGE_EXISTS and VERSION_CONFLICT; INVALID for an SPDX namespace that holds another document.
     conflict: TeaLineageConflict
     # INVALID and STORE_FAILED: bounded text.
     storeMessage: String

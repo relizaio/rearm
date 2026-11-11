@@ -18,7 +18,7 @@ import { shellExecDetailed } from '../../src/utils';
 import { configureTea, shutdownTea } from '../../src/services/tea/teaService';
 import { runningTeaGroups } from '../../src/services/tea/teaCliRunner';
 import {
-    API_ROOT, cleanupDirs, configure, field, gql, Http, isAlive, NONE, Q, sleep, startHttp, Stub, tempDir, TOKEN, UUID_A, UUID_B,
+    API_ROOT, cleanupDirs, configure, field, gql, Http, isAlive, NONE, processGroupOf, Q, sleep, startHttp, Stub, tempDir, TOKEN, UUID_A, UUID_B,
     workDirOf
 } from './teaTestKit';
 
@@ -58,7 +58,17 @@ describe('TEA runner', () => {
         stub.behave({ sleep: 60, child: true });
         const root = configure({}, { killMarginMs: 300 });
         const started = Date.now();
-        const result = await product({ deadlineSeconds: 1 });
+        const pending = product({ deadlineSeconds: 1 });
+        // while it runs: the stub and its child are one process group of their own, the stub its
+        // leader, read from /proc (the builder image's busybox ps has no -p)
+        const childPidFile = path.join(stub.dir, 'child.pid');
+        await waitFor(() => fs.existsSync(childPidFile) && fs.readFileSync(childPidFile, 'utf8').trim() !== '');
+        const stubPid = stub.readPid('pid');
+        const childPid = stub.readPid('child.pid');
+        expect(processGroupOf(stubPid)).toBe(stubPid);
+        expect(processGroupOf(childPid)).toBe(stubPid);
+        expect(processGroupOf(process.pid)).not.toBe(stubPid);
+        const result = await pending;
         expect(Date.now() - started).toBeLessThan(10000);
         expect(result.outcome).toBe('TIMEOUT');
         expect(result.error.reason).toBe('KILLED_AT_DEADLINE');

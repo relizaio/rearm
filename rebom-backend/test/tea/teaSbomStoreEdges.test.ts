@@ -145,14 +145,16 @@ describe('what is asked of the add path', () => {
         expect(await storeHeldSbom(held(CDX), request(), 1000)).toMatchObject({ stored: 'EXISTING', bom: { uuid: 'old' } });
     });
 
-    it('an SPDX document with no lineage named goes straight to the add path, with no serial number of its own', async () => {
+    it('an SPDX document with no lineage named passes the namespace look-up, then goes to the add path with no serial number of its own', async () => {
         mAdd.mockResolvedValue({ record: row('s1'), disposition: 'CREATED' } as any);
         const result = await storeHeldSbom(held(SPDX), request(), 1000);
         expect(result).toMatchObject({ stored: 'CREATED', format: 'SPDX' });
         expect(mAdd.mock.calls[0][0].bomInput).toEqual({ bom: SPDX, format: 'SPDX', org: ORG, tags: { t: 1 }, rebomOptions: { name: 'n' } });
         expect(mAdd.mock.calls[0][2]).toEqual({ kind: 'NEW_OR_NAMED', named: null });
         expect(mAll).not.toHaveBeenCalled();
-        expect(mNamespace).not.toHaveBeenCalled();
+        expect(mNamespace).toHaveBeenCalledTimes(1);
+        expect(mNamespace).toHaveBeenCalledWith('https://example.com/ns/1', ORG);
+        expect(mNamespace.mock.invocationCallOrder[0]).toBeLessThan(mAdd.mock.invocationCallOrder[0]);
     });
 
     it('an SPDX document that names a lineage is asked as an update of it', async () => {
@@ -171,6 +173,9 @@ describe('what is asked of the add path', () => {
         mAdd.mockResolvedValue({ record: row('s3'), disposition: 'CREATED' } as any);
         await storeHeldSbom(held({ spdxVersion: 'SPDX-2.3', documentNamespace: 5 }), request({ continueLineage: 'urn:uuid:l' }), 1000);
         expect(mNamespace).toHaveBeenCalledWith('', ORG);
+        mNamespace.mockClear();
+        await storeHeldSbom(held({ spdxVersion: 'SPDX-2.3' }), request(), 1000);
+        expect(mNamespace).toHaveBeenCalledWith('', ORG);
     });
 });
 
@@ -185,22 +190,94 @@ describe('an SPDX document under a named lineage that is already held', () => {
         expect(mAdd).not.toHaveBeenCalled();
     });
 
-    it('is EXISTING with the converted row when the namespace holds this very file, INVALID when it holds another or no row', async () => {
-        mNamespace.mockResolvedValue({ file_sha256: digestOf(SPDX), converted_bom_uuid: 'conv-1' } as any);
-        mById.mockResolvedValue([row('conv-row')]);
-        expect(await storeHeldSbom(held(SPDX), request(named), 1000)).toMatchObject({ stored: 'EXISTING', bom: { uuid: 'conv-row' } });
-        expect(mById).toHaveBeenCalledWith('conv-1');
-        const message = 'The documentNamespace of this SPDX document already holds another document; a new version of an SPDX document needs a namespace of its own.';
-        mById.mockResolvedValue([]);
-        expect(await storeHeldSbom(held(SPDX), request(named), 1000)).toMatchObject({ stored: 'INVALID', storeMessage: message, bom: null });
-        mById.mockResolvedValue([row('conv-row')]);
-        mNamespace.mockResolvedValue({ file_sha256: 'another', converted_bom_uuid: 'conv-1' } as any);
-        expect(await storeHeldSbom(held(SPDX), request(named), 1000)).toMatchObject({ stored: 'INVALID', storeMessage: message });
-        mNamespace.mockResolvedValue({ file_sha256: digestOf(SPDX), converted_bom_uuid: null } as any);
-        expect(await storeHeldSbom(held(SPDX), request(named), 1000)).toMatchObject({ stored: 'INVALID', storeMessage: message });
-        mNamespace.mockResolvedValue({ file_sha256: 'another', converted_bom_uuid: null } as any);
-        expect(await storeHeldSbom(held(SPDX), request(named), 1000)).toMatchObject({ stored: 'INVALID' });
+});
+
+const NAMESPACE_TAKEN = 'The documentNamespace of this SPDX document already holds another document; a new version of an SPDX document needs a namespace of its own.';
+
+describe('T-90 an SPDX namespace that is already held, with or without a named lineage', () => {
+    const lineages = [null, 'urn:uuid:lineage'];
+    const holder = (fileSha256: string, convertedUuid: string | null): any => ({ uuid: 'spdx-row-1', file_sha256: fileSha256, converted_bom_uuid: convertedUuid });
+
+    it('(1) the same file with a converted row is EXISTING with the converted row', async () => {
+        for (const continueLineage of lineages) {
+            mNamespace.mockResolvedValue(holder(digestOf(SPDX), 'conv-1'));
+            mById.mockResolvedValue([row('conv-row', { serialNumber: 'urn:uuid:holder', bomVersion: 1 })]);
+            const result = await storeHeldSbom(held(SPDX), request({ continueLineage }), 1000);
+            expect(result, String(continueLineage)).toEqual({
+                teaApiVersion: 1, outcome: 'OK', error: null, stored: 'EXISTING', format: 'SPDX', bom: row('conv-row', { serialNumber: 'urn:uuid:holder', bomVersion: 1 }), conflict: null, storeMessage: null
+            });
+            expect(mById).toHaveBeenLastCalledWith('conv-1');
+        }
         expect(mAdd).not.toHaveBeenCalled();
+    });
+
+    it('(2) the same file without a converted row, or whose converted row is gone, is STORE_FAILED with a reference logged with the SPDX row', async () => {
+        const errors = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+        for (const continueLineage of lineages) {
+            for (const arrange of [
+                () => mNamespace.mockResolvedValue(holder(digestOf(SPDX), null)),
+                () => { mNamespace.mockResolvedValue(holder(digestOf(SPDX), 'conv-gone')); mById.mockResolvedValue([]); }
+            ]) {
+                arrange();
+                errors.mockClear();
+                const result = await storeHeldSbom(held(SPDX), request({ continueLineage }), 1000);
+                expect(result, String(continueLineage)).toMatchObject({ outcome: 'OK', stored: 'STORE_FAILED', format: 'SPDX', bom: null, conflict: null });
+                expect(result.storeMessage).toMatch(/^Internal error \(ref [0-9a-f]{8}\)$/);
+                expect(errors).toHaveBeenCalledTimes(1);
+                const [fields] = errors.mock.calls[0] as any;
+                expect(result.storeMessage).toBe(`Internal error (ref ${fields.ref})`);
+                expect(fields.spdxUuid).toBe('spdx-row-1');
+            }
+        }
+        expect(mAdd).not.toHaveBeenCalled();
+    });
+
+    it('(3) another document with a converted row is INVALID with the fixed sentence and the holder as conflict, not the newest row of its lineage', async () => {
+        for (const continueLineage of lineages) {
+            mNamespace.mockResolvedValue(holder('another', 'conv-1'));
+            mById.mockResolvedValue([row('holder-row', { serialNumber: 'urn:uuid:holder', bomVersion: 3 })]);
+            mAll.mockImplementation(async (serialNumber: string) => serialNumber === 'urn:uuid:holder'
+                ? [row('newest', { serialNumber, bomVersion: 5 }), row('holder-row', { serialNumber, bomVersion: 3 })]
+                : []);
+            const result = await storeHeldSbom(held(SPDX), request({ continueLineage }), 1000);
+            expect(result, String(continueLineage)).toEqual({
+                teaApiVersion: 1, outcome: 'OK', error: null, stored: 'INVALID', format: 'SPDX', bom: null, storeMessage: NAMESPACE_TAKEN,
+                conflict: { serialNumber: 'urn:uuid:holder', storedVersion: '3', documentVersion: null, existingUuid: 'holder-row' }
+            });
+        }
+        expect(mAdd).not.toHaveBeenCalled();
+    });
+
+    it('(4) another document without a converted row, or with one that has no serialNumber, is INVALID with the fixed sentence and no conflict', async () => {
+        for (const continueLineage of lineages) {
+            for (const arrange of [
+                () => mNamespace.mockResolvedValue(holder('another', null)),
+                () => { mNamespace.mockResolvedValue(holder('another', 'conv-gone')); mById.mockResolvedValue([]); },
+                () => { mNamespace.mockResolvedValue(holder('another', 'conv-1')); mById.mockResolvedValue([row('c', {})]); },
+                () => { mNamespace.mockResolvedValue(holder('another', 'conv-1')); mById.mockResolvedValue([row('c', { serialNumber: '' })]); }
+            ]) {
+                arrange();
+                const result = await storeHeldSbom(held(SPDX), request({ continueLineage }), 1000);
+                expect(result, String(continueLineage)).toMatchObject({ stored: 'INVALID', format: 'SPDX', bom: null, storeMessage: NAMESPACE_TAKEN, conflict: null });
+            }
+        }
+        expect(mAdd).not.toHaveBeenCalled();
+    });
+
+    it('(5) the add path\'s namespace refusal after a lost race is INVALID with the fixed sentence and the holder, not LINEAGE_EXISTS and not its message', async () => {
+        for (const continueLineage of lineages) {
+            mAdd.mockReset().mockRejectedValueOnce(new BomValidationError('namespace taken, use the update flow', { field: 'documentNamespace' }));
+            mNamespace.mockReset().mockResolvedValueOnce(null as any).mockResolvedValue(holder('winner', 'conv-1'));
+            mById.mockResolvedValue([row('holder-row', { serialNumber: 'urn:uuid:holder', bomVersion: 3 })]);
+            mAll.mockResolvedValue([row('newest', { bomVersion: 5 })]);
+            const result = await storeHeldSbom(held(SPDX), request({ continueLineage }), 1000);
+            expect(mAdd).toHaveBeenCalledTimes(1);
+            expect(result, String(continueLineage)).toEqual({
+                teaApiVersion: 1, outcome: 'OK', error: null, stored: 'INVALID', format: 'SPDX', bom: null, storeMessage: NAMESPACE_TAKEN,
+                conflict: { serialNumber: 'urn:uuid:holder', storedVersion: '3', documentVersion: null, existingUuid: 'holder-row' }
+            });
+            expect(mNamespace).toHaveBeenCalledTimes(2);
+        }
     });
 });
 
@@ -245,40 +322,24 @@ describe('every way the add path can refuse', () => {
         expect((await storeHeldSbom(held(CDX), request(), 1000)).storeMessage).toBe('r'.repeat(1024));
     });
 
-    it('an SPDX namespace refusal is LINEAGE_EXISTS with the stored lineage, the newest version first, when there is one', async () => {
-        const refusal = () => new BomValidationError('namespace taken', { field: 'documentNamespace' });
-        mAdd.mockRejectedValueOnce(refusal());
-        mNamespace.mockResolvedValue({ converted_bom_uuid: 'conv-1', file_sha256: 'x' } as any);
-        mById.mockResolvedValue([row('conv-row', { serialNumber: 'urn:uuid:lineage', bomVersion: 1 })]);
-        mAll.mockResolvedValue([row('newest', { bomVersion: 4 }), row('older', { bomVersion: 3 })]);
-        const result = await storeHeldSbom(held(SPDX), request(), 1000);
-        expect(result).toMatchObject({
-            stored: 'LINEAGE_EXISTS', format: 'SPDX', conflict: { serialNumber: 'urn:uuid:lineage', storedVersion: '4', documentVersion: null, existingUuid: 'newest' }
-        });
-        expect(mNamespace).toHaveBeenCalledWith('https://example.com/ns/1', ORG);
-        expect(mAll).toHaveBeenCalledWith('urn:uuid:lineage', ORG);
-        // with no row in the lineage the converted row stands for it
-        mAdd.mockRejectedValueOnce(refusal());
-        mAll.mockResolvedValue([]);
-        expect(await storeHeldSbom(held(SPDX), request(), 1000)).toMatchObject({ conflict: { storedVersion: '1', existingUuid: 'conv-row' } });
-    });
-
-    it('an SPDX namespace refusal with nothing to name, or on a CycloneDX document, is INVALID with its message', async () => {
+    it('an SPDX namespace refusal with no converted holder is INVALID with the fixed sentence and no conflict; on a CycloneDX document or another field, INVALID with its message', async () => {
         const refusal = () => new BomValidationError('namespace taken', { field: 'documentNamespace' });
         for (const arrange of [
             () => mNamespace.mockResolvedValue(null as any),
-            () => mNamespace.mockResolvedValue({ converted_bom_uuid: null } as any),
-            () => { mNamespace.mockResolvedValue({ converted_bom_uuid: 'c' } as any); mById.mockResolvedValue([row('c', {})]); },
-            () => { mNamespace.mockResolvedValue({ converted_bom_uuid: 'c' } as any); mById.mockResolvedValue([row('c', { serialNumber: '' })]); }
+            () => mNamespace.mockResolvedValueOnce(null as any).mockResolvedValue({ converted_bom_uuid: null } as any),
+            () => { mNamespace.mockResolvedValueOnce(null as any).mockResolvedValue({ converted_bom_uuid: 'c' } as any); mById.mockResolvedValue([row('c', {})]); },
+            () => { mNamespace.mockResolvedValueOnce(null as any).mockResolvedValue({ converted_bom_uuid: 'c' } as any); mById.mockResolvedValue([row('c', { serialNumber: '' })]); }
         ]) {
+            mNamespace.mockReset();
             arrange();
             mAdd.mockRejectedValueOnce(refusal());
-            expect(await storeHeldSbom(held(SPDX), request(), 1000)).toMatchObject({ stored: 'INVALID', storeMessage: 'namespace taken', conflict: null });
+            expect(await storeHeldSbom(held(SPDX), request(), 1000)).toMatchObject({ stored: 'INVALID', format: 'SPDX', storeMessage: NAMESPACE_TAKEN, conflict: null });
         }
-        mNamespace.mockResolvedValue({ converted_bom_uuid: 'c' } as any);
+        mNamespace.mockReset().mockResolvedValue({ converted_bom_uuid: 'c' } as any);
         mById.mockResolvedValue([row('c', { serialNumber: 'urn:uuid:x' })]);
         mAdd.mockRejectedValueOnce(refusal());
         expect(await storeHeldSbom(held(CDX), request(), 1000)).toMatchObject({ stored: 'INVALID', storeMessage: 'namespace taken', conflict: null });
+        mNamespace.mockReset().mockResolvedValue(null as any);
         mAdd.mockRejectedValueOnce(new BomValidationError('other field', { field: 'org' }));
         expect(await storeHeldSbom(held(SPDX), request(), 1000)).toMatchObject({ stored: 'INVALID', storeMessage: 'other field' });
         mAdd.mockRejectedValueOnce(new BomValidationError('no details'));

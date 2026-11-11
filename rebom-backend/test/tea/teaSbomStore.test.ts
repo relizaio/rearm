@@ -174,43 +174,71 @@ describe('TEA SBOM store', () => {
         expect(await rowsOf(sn)).toHaveLength(1);
     });
 
-    it('T-66 SPDX: CREATED, EXISTING, LINEAGE_EXISTS for the namespace with other content; named, the next version needs a namespace of its own', async () => {
+    it('T-66 SPDX: CREATED, EXISTING; another document under a held namespace is INVALID with the holder, named or not; the next version needs a namespace of its own', async () => {
         const convert = vi.spyOn(SpdxService, 'convertSpdxToCycloneDx');
         try {
             const sn = serial();
+            const own = serial();
             const ns = `https://spdx.example.test/tea/${uuidv4()}`;
             const spdx = (name: string, namespace = ns) => ({ SPDXID: 'SPDXRef-DOCUMENT', spdxVersion: 'SPDX-2.3', dataLicense: 'CC0-1.0', name, documentNamespace: namespace, packages: [] });
-            const convertsTo = () => convert.mockResolvedValueOnce({ success: true, convertedBom: cdx(sn, 1) } as any);
+            const convertsTo = (serialNumber = sn) => convert.mockResolvedValueOnce({ success: true, convertedBom: cdx(serialNumber, 1) } as any);
+            const spdxRowsUnder = async (namespace: string) => Number((await pool.query(
+                "SELECT count(*) AS n FROM rebom.spdx_boms WHERE spdx_metadata->>'documentNamespace' = $1 AND organization = $2",
+                [namespace, TEST_ORG_UUID])).rows[0].n);
             const held = await fetchHeld([
                 artifact(1, bytes(spdx('first')), 'BOM', 'application/spdx+json'),
                 artifact(2, bytes(spdx('second')), 'BOM', 'application/spdx+json'),
-                artifact(3, bytes(spdx('third', `${ns}/v2`)), 'BOM', 'application/spdx+json')
+                artifact(3, bytes(spdx('third', `${ns}/v2`)), 'BOM', 'application/spdx+json'),
+                artifact(4, bytes(spdx('fourth', `${ns}/own`)), 'BOM', 'application/spdx+json')
             ]);
+            // (a) D1
             convertsTo();
             const first = await store(held.fetchId, 1);
             expect(first.stored, JSON.stringify(first)).toBe('CREATED');
             expect(first.format).toBe('SPDX');
+            expect(String(first.bom.meta.bomVersion)).toBe('1');
+            const unchanged = async (since: number) => {
+                expect(pushes()).toBe(since);
+                expect(await rowsOf(sn)).toHaveLength(1);
+                expect(await spdxRowsUnder(ns)).toBe(1);
+            };
+            // (b) D1 again
+            let before = pushes();
             const again = await store(held.fetchId, 1);
             expect(again.stored).toBe('EXISTING');
             expect(again.bom.uuid).toBe(first.bom.uuid);
-            const other = await store(held.fetchId, 2);
-            expect(other.stored).toBe('LINEAGE_EXISTS');
-            expect(other.conflict.serialNumber).toBe(sn);
-            expect(other.conflict.storedVersion).toBe('1');
-            expect(other.conflict.existingUuid).toBe(first.bom.uuid);
-            // departure from the design's last step (implementation notes): one namespace holds one
-            // SPDX document per organization, so the same namespace cannot become version 2
-            const sameNamespace = await store(held.fetchId, 2, other.conflict.serialNumber);
-            expect(sameNamespace.stored).toBe('INVALID');
-            expect(sameNamespace.storeMessage).toContain('documentNamespace');
-            expect(await rowsOf(sn)).toHaveLength(1);
+            await unchanged(before);
+            // (c) D2 under N, no lineage named; (d) the same with the lineage of (a) named
+            for (const continueLineage of [undefined, first.bom.meta.serialNumber]) {
+                before = pushes();
+                const taken = await store(held.fetchId, 2, continueLineage);
+                expect(taken.stored, JSON.stringify(taken)).toBe('INVALID');
+                expect(taken.storeMessage).toBe('The documentNamespace of this SPDX document already holds another document; a new version of an SPDX document needs a namespace of its own.');
+                expect(taken.conflict).toEqual({ serialNumber: sn, storedVersion: '1', documentVersion: null, existingUuid: first.bom.uuid });
+                expect(taken.bom).toBeNull();
+                await unchanged(before);
+            }
+            // (e) D3 under a new namespace, the lineage of (a) named: its next version
             convertsTo();
-            const named = await store(held.fetchId, 3, other.conflict.serialNumber);
+            const named = await store(held.fetchId, 3, sn);
             expect(named.stored, JSON.stringify(named)).toBe('CREATED');
+            expect(named.bom.meta.serialNumber).toBe(sn);
             expect(String(named.bom.meta.bomVersion)).toBe('2');
-            const idempotent = await store(held.fetchId, 3, other.conflict.serialNumber);
+            // (f) the same again
+            before = pushes();
+            const idempotent = await store(held.fetchId, 3, sn);
             expect(idempotent.stored).toBe('EXISTING');
             expect(idempotent.bom.uuid).toBe(named.bom.uuid);
+            expect(pushes()).toBe(before);
+            expect(await rowsOf(sn)).toHaveLength(2);
+            expect(await spdxRowsUnder(ns)).toBe(1);
+            // (g) D4 under a third namespace, no lineage named: a lineage of its own
+            convertsTo(own);
+            const alone = await store(held.fetchId, 4);
+            expect(alone.stored, JSON.stringify(alone)).toBe('CREATED');
+            expect(alone.bom.meta.serialNumber).toBe(own);
+            expect(String(alone.bom.meta.bomVersion)).toBe('1');
+            expect(await rowsOf(own)).toHaveLength(1);
             expect(await rowsOf(sn)).toHaveLength(2);
         } finally {
             convert.mockRestore();
