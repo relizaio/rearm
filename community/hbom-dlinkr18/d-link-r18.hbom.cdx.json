@@ -1,0 +1,1185 @@
+{
+  "$schema": "http://cyclonedx.org/schema/2.0/",
+  "specFormat": "CycloneDX",
+  "specVersion": "2.0",
+  "serialNumber": "urn:uuid:46c3e053-2a89-48dc-98a3-d160ebe58ac3",
+  "version": 2,
+  "metadata": {
+    "timestamp": "2026-11-11T12:00:00Z",
+    "lifecycles": [
+      {
+        "phase": "operations"
+      },
+      {
+        "phase": "discovery"
+      }
+    ],
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "Claude Code",
+          "group": "Anthropic"
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "r18:method",
+        "value": "visual inspection of board photos + stock serial boot log + stock firmware analysis + OpenWrt RAM-boot hardware tests; Wi-Fi section under shield not inspected and not planned to be (Wi-Fi baseband kept as component choice)"
+      }
+    ]
+  },
+  "inventories": [
+    {
+      "refId": "inv-dlink-r18",
+      "subject": {
+        "type": "device",
+        "refId": "dlink-r18",
+        "name": "EAGLE PRO AI AX1800 Smart Router",
+        "group": "D-Link",
+        "version": "R18 HW A1",
+        "description": "Dual-band Wi-Fi 6 (AX1800) router: EcoNet EN7528HU SoC, 256 MiB DDR3, 128 MiB SPI-NAND, MediaTek MT79x5 DBDC Wi-Fi over PCIe, 1x WAN + 3x LAN gigabit. Being ported to OpenWrt (econet/en7528).",
+        "parties": [
+          {
+            "refId": "party-dlink",
+            "roles": [
+              {
+                "role": "manufacturer"
+              },
+              {
+                "role": "supplier"
+              }
+            ],
+            "organization": {
+              "name": "D-Link Corporation",
+              "addresses": [
+                {
+                  "isoCode": "TW",
+                  "country": "TW",
+                  "locality": "Taipei"
+                }
+              ],
+              "url": [
+                {
+                  "url": "https://www.dlink.com"
+                }
+              ]
+            }
+          },
+          {
+            "refId": "party-econet",
+            "roles": [
+              {
+                "role": "manufacturer"
+              }
+            ],
+            "organization": {
+              "name": "EcoNet Technology (Airoha / MediaTek group)",
+              "addresses": [
+                {
+                  "isoCode": "TW",
+                  "country": "TW"
+                }
+              ],
+              "url": [
+                {
+                  "url": "https://www.econet-inc.com"
+                }
+              ]
+            }
+          },
+          {
+            "refId": "party-mediatek",
+            "roles": [
+              {
+                "role": "manufacturer"
+              }
+            ],
+            "organization": {
+              "name": "MediaTek Inc.",
+              "addresses": [
+                {
+                  "isoCode": "TW",
+                  "country": "TW",
+                  "locality": "Hsinchu"
+                }
+              ],
+              "url": [
+                {
+                  "url": "https://www.mediatek.com"
+                }
+              ]
+            }
+          },
+          {
+            "refId": "party-macronix",
+            "roles": [
+              {
+                "role": "manufacturer"
+              }
+            ],
+            "organization": {
+              "name": "Macronix International Co., Ltd.",
+              "addresses": [
+                {
+                  "isoCode": "TW",
+                  "country": "TW",
+                  "locality": "Hsinchu"
+                }
+              ],
+              "url": [
+                {
+                  "url": "https://www.mxic.com.tw"
+                }
+              ]
+            }
+          },
+          {
+            "refId": "party-nanya",
+            "roles": [
+              {
+                "role": "manufacturer"
+              }
+            ],
+            "organization": {
+              "name": "Nanya Technology Corporation",
+              "addresses": [
+                {
+                  "isoCode": "TW",
+                  "country": "TW",
+                  "locality": "New Taipei"
+                }
+              ],
+              "url": [
+                {
+                  "url": "https://www.nanya.com"
+                }
+              ]
+            }
+          },
+          {
+            "refId": "party-fpe",
+            "roles": [
+              {
+                "role": "manufacturer"
+              }
+            ],
+            "organization": {
+              "name": "FPE (magnetics vendor, marking 'FPE')"
+            }
+          }
+        ],
+        "identifiers": [
+          {
+            "party": "party-dlink",
+            "identities": [
+              {
+                "scheme": "model-number",
+                "value": "R18"
+              },
+              {
+                "scheme": "fcc-id",
+                "value": "KA2R18A1"
+              },
+              {
+                "scheme": {
+                  "name": "ised-ic",
+                  "description": "Innovation, Science and Economic Development Canada certification number"
+                },
+                "value": "4216A-R18A1"
+              },
+              {
+                "scheme": {
+                  "name": "dlink-model-number",
+                  "description": "M/N on the rating label"
+                },
+                "value": "R18A1"
+              },
+              {
+                "scheme": {
+                  "name": "dlink-part-number",
+                  "description": "P/N on the rating label (middle characters printed as dots)"
+                },
+                "value": "CR18LCA.......A1"
+              },
+              {
+                "scheme": "mac-address",
+                "value": "C8:78:7D:65:BF:80"
+              },
+              {
+                "scheme": {
+                  "name": "label-mac",
+                  "description": "MAC printed on the rating label (= base+1, likely WAN)"
+                },
+                "value": "C8:78:7D:65:BF:81"
+              },
+              {
+                "scheme": {
+                  "name": "dlink-romid",
+                  "description": "D-Link ROM id from ODM/CSID P-section"
+                },
+                "value": "DLK6E8112001"
+              }
+            ]
+          }
+        ],
+        "classification": {
+          "category": "networking-equipment",
+          "subcategory": "wireless-router",
+          "codes": [
+            {
+              "standard": "HS",
+              "value": "8517.62",
+              "url": "https://www.trade.gov/harmonized-system-hs-codes"
+            }
+          ]
+        },
+        "quantity": {
+          "value": 1
+        },
+        "certifications": [
+          {
+            "standard": "FCC Part 15",
+            "identifier": "KA2R18A1",
+            "jurisdiction": "US",
+            "url": "https://fccid.io/KA2R18A1"
+          },
+          {
+            "standard": "ISED RSS / CAN ICES-003(B)/NMB-003(B)",
+            "identifier": "4216A-R18A1",
+            "jurisdiction": "CA"
+          },
+          {
+            "standard": "CE",
+            "jurisdiction": "EU"
+          }
+        ],
+        "tags": [
+          "hbom",
+          "router",
+          "wifi6",
+          "econet",
+          "en7528",
+          "openwrt-port"
+        ],
+        "externalReferences": [
+          {
+            "type": "website",
+            "url": "https://www.dlink.com/en/products/r18-eagle-pro-ai-ax1800-smart-router"
+          },
+          {
+            "type": "certification-report",
+            "url": "https://fccid.io/KA2R18A1"
+          },
+          {
+            "type": "vcs",
+            "url": "https://github.com/openwrt/openwrt/tree/main/target/linux/econet",
+            "comment": "OpenWrt econet target (en7528 subtarget)"
+          }
+        ],
+        "properties": [
+          {
+            "name": "r18:ram",
+            "value": "256 MiB DDR3"
+          },
+          {
+            "name": "r18:flash",
+            "value": "128 MiB SPI-NAND"
+          },
+          {
+            "name": "r18:console",
+            "value": "115200 8N1 3.3V"
+          },
+          {
+            "name": "r18:mac-allocation",
+            "value": "base = ODM+0x82 = ...BF:80 (stock eth0/LAN); label MAC = base+1 = ...BF:81 (default SSID R18-BF81; likely WAN); 2.4 GHz Wi-Fi = base+9 (stock MainSsid); 5 GHz not observed"
+          },
+          {
+            "name": "r18:power-input",
+            "value": "12 V DC, 1 A, centre positive (rating label)"
+          },
+          {
+            "name": "r18:country-of-origin",
+            "value": "TW (rating label: Made in Taiwan)"
+          },
+          {
+            "name": "r18:openwrt-status",
+            "value": "RAM-boot only (2026-11-09): Ethernet, switch, NAND (ro), LEDs, buttons, Wi-Fi both bands verified"
+          }
+        ]
+      },
+      "components": [
+        {
+          "type": "device",
+          "refId": "pcb-main",
+          "name": "R18 main PCB",
+          "description": "Single main board; silkscreen 'EPMBDIRR18E3OXXX' and '100B18'.",
+          "classification": {
+            "category": "pcb",
+            "subcategory": "rigid-pcb",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8534.00",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "quantity": {
+            "value": 1
+          },
+          "properties": [
+            {
+              "name": "r18:silkscreen",
+              "value": "EPMBDIRR18E3OXXX; 100B18"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "photo"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "soc-en7528hu",
+          "name": "EN7528HU",
+          "group": "EcoNet",
+          "description": "Network SoC, MIPS32 1004Kc (2 cores x 2 VPE = 4 threads) @ 900 MHz, 32K I$/D$, 256K L2. Integrated 4-port GbE switch + PHYs (MT7530-compatible, mmio), 2x PCIe RC: RC0 (0x1fb81000) Gen1-only PHY, RC1 (0x1fb83000) Gen2 x1, HW NAT/QDMA, SPI-NAND controller, UART, GPIO (42 pins, IRQ-capable).",
+          "parties": [
+            {
+              "ref": "party-econet"
+            }
+          ],
+          "identifiers": [
+            {
+              "party": "party-econet",
+              "identities": [
+                {
+                  "scheme": "mpn",
+                  "value": "EN7528HU"
+                }
+              ]
+            }
+          ],
+          "classification": {
+            "category": "semiconductor",
+            "subcategory": "system-on-chip",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8542.31",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "deviceType": "qfp",
+          "quantity": {
+            "value": 1
+          },
+          "properties": [
+            {
+              "name": "r18:marking",
+              "value": "ECONET / EN7528HU / 2144-AFAL / ACMSLF8H"
+            },
+            {
+              "name": "r18:date-code",
+              "value": "2144 (2021 wk44)"
+            },
+            {
+              "name": "r18:cpu-prid",
+              "value": "0x0001992f"
+            },
+            {
+              "name": "r18:linux:compatible",
+              "value": "econet,en751221 (stock); OpenWrt target econet/en7528, board dlink,r18"
+            },
+            {
+              "name": "r18:pcie:rc0",
+              "value": "Gen1-only PHY; must not be retrained (Gen2 retrain breaks MMIO to Gen2-capable endpoint)"
+            },
+            {
+              "name": "r18:pcie:rc1",
+              "value": "Gen2 x1, link 5.0 GT/s after retrain"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "photo; serial boot log"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "dram-nanya-ddr3",
+          "name": "NT5CC128M16JR-EK",
+          "group": "Nanya",
+          "description": "2 Gbit (128M x16) DDR3L SDRAM, single device next to SoC, initialised by bootbase as 'DDR3 ... DRAM size=256MB, ddr-900' (run at DDR-900). 256 MiB confirmed usable under Linux 6.18 (OpenWrt RAM boot).",
+          "parties": [
+            {
+              "ref": "party-nanya"
+            }
+          ],
+          "identifiers": [
+            {
+              "party": "party-nanya",
+              "identities": [
+                {
+                  "scheme": "mpn",
+                  "value": "NT5CC128M16JR-EK"
+                }
+              ]
+            }
+          ],
+          "boardLocation": {
+            "designators": [
+              "U1001"
+            ],
+            "layer": "top"
+          },
+          "classification": {
+            "category": "semiconductor",
+            "subcategory": "dram",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8542.32",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "deviceType": {
+            "name": "FBGA-96"
+          },
+          "quantity": {
+            "value": 1
+          },
+          "properties": [
+            {
+              "name": "r18:capacity",
+              "value": "256 MiB"
+            },
+            {
+              "name": "r18:marking",
+              "value": "NANYA 2205 / NT5CC128M16JR-EK"
+            },
+            {
+              "name": "r18:date-code",
+              "value": "2205 (2022 wk05)"
+            },
+            {
+              "name": "r18:package-evidence",
+              "value": "silkscreen ball grid 1-9 x A-T (96 balls)"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "photo 2026-11-09; serial boot log"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "u15-spinand",
+          "name": "MX35LF1GE4AB",
+          "group": "Macronix",
+          "version": "-Z4I",
+          "description": "1 Gbit (128 MiB) 3.3 V SLC SPI-NAND, 2048+64 B pages, 128 KiB blocks, on-die ECC. JEDEC ID c2 12. Vendor BMT/BBT pool of 81 blocks at end of device. Full raw dump verified twice (sha256 0f136bde...0fd367); 0 bad-block markers, only 1-bit ECC corrections.",
+          "parties": [
+            {
+              "ref": "party-macronix"
+            }
+          ],
+          "identifiers": [
+            {
+              "party": "party-macronix",
+              "identities": [
+                {
+                  "scheme": "mpn",
+                  "value": "MX35LF1GE4AB-Z4I"
+                }
+              ]
+            }
+          ],
+          "classification": {
+            "category": "semiconductor",
+            "subcategory": "nand-flash",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8542.32",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "boardLocation": {
+            "designators": [
+              "U15"
+            ],
+            "layer": "top"
+          },
+          "deviceType": {
+            "name": "WSON-8 8x6mm"
+          },
+          "quantity": {
+            "value": 1
+          },
+          "components": [
+            {
+              "type": "firmware",
+              "refId": "fw-bootbase",
+              "name": "EcoNet EN7528 free bootbase",
+              "version": "1.1",
+              "description": "Stage-1/2 bootloader in NAND 0x0-0x40000 (mtd 'bootloader'). Built 'Sat 26 Nov 2022 12:46:20 AM CST'. Offers 1 s window: \"Press 'x' or 'b' key ... to enter or skip bootloader upgrade\". Default IP 192.168.0.1. Handles dual-image (tclinux/tclinux_slave) selection via benv and writes flash on each boot.",
+              "parties": [
+                {
+                  "ref": "party-econet"
+                }
+              ],
+              "properties": [
+                {
+                  "name": "r18:nand:offset",
+                  "value": "0x00000000"
+                },
+                {
+                  "name": "r18:nand:size",
+                  "value": "0x00040000"
+                },
+                {
+                  "name": "r18:evidence",
+                  "value": "serial boot log"
+                }
+              ]
+            },
+            {
+              "type": "firmware",
+              "refId": "fw-stock-tclinux",
+              "name": "D-Link R18 stock firmware (TCLinux)",
+              "description": "EcoNet SDK based firmware: Linux 3.18.21 SMP (gcc 4.6.3, Buildroot 2015.08.1, built Fri Apr 19 21:09:56 CST 2024), BusyBox v1.00, squashfs root. Dual copies: tclinux (0x80000, 45 MiB) and tclinux_slave (0x2d80000, 45 MiB); currently booting slave (sw_curboot_id=1). Serial console RX disabled in this firmware.",
+              "parties": [
+                {
+                  "ref": "party-dlink"
+                }
+              ],
+              "components": [
+                {
+                  "type": "operating-system",
+                  "refId": "sw-linux-3.18.21",
+                  "name": "linux",
+                  "version": "3.18.21"
+                },
+                {
+                  "type": "application",
+                  "refId": "sw-busybox-1.00",
+                  "name": "busybox",
+                  "version": "1.00"
+                }
+              ],
+              "properties": [
+                {
+                  "name": "r18:nand:partitions",
+                  "value": "tclinux@0x80000+0x2d00000, tclinux_slave@0x2d80000+0x2d00000"
+                },
+                {
+                  "name": "r18:evidence",
+                  "value": "serial boot log"
+                }
+              ]
+            },
+            {
+              "type": "data",
+              "refId": "data-nand-config",
+              "name": "Device configuration and identity partitions",
+              "description": "romfile 0x40000 (256K); Config0 0x5a80000, Config1 0x5b80000, ODM 0x5c80000 (CSID 'P section': model R18, romid DLK6E8112001, default IP; base MAC as TLV record value at ODM+0x82), benv 0x5d80000 (boot flags sw_curboot_id/sw_commit/sw_active/sw_tryactive), mydlink 0x5e80000 (2M), storage 0x6080000 (9M), unnamed gap 0x6980000-0x6dc0000, reservearea 0x6dc0000-0x7000000 (BMT/BBT pool + backups; Wi-Fi EEPROM probed at offset 0 but all zeros). Contains per-unit secrets (ODM) - not for publication.",
+              "properties": [
+                {
+                  "name": "r18:evidence",
+                  "value": "serial boot log (MTD table)"
+                }
+              ]
+            }
+          ],
+          "properties": [
+            {
+              "name": "r18:marking",
+              "value": "MXIC X221410 / MX35LF1GE4AB-Z4I / 2S609279"
+            },
+            {
+              "name": "r18:marking-note",
+              "value": "line 1 is X221410, confirmed by owner on the part 2026-11-11 (earlier misread as X22J410)"
+            },
+            {
+              "name": "r18:package-evidence",
+              "value": "close-up 2026-11-11: no lead shoulders/bends, flat solder-wetted PCB pads extending past the body (no-lead WSON, not gull-wing SOP); 4 pads per side at 1.27 mm pitch; body ~8 x 6 mm by pitch ratio; consistent with -Z4I = 8-WSON 8x6mm"
+            },
+            {
+              "name": "r18:pin1-mark",
+              "value": "white ink dot in the pin-1 corner (next to the MXIC logo); dot likely a factory/programming QC mark (inference)"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "photo; photo 2026-11-11 close-up; serial boot log"
+            }
+          ]
+        },
+        {
+          "type": "component-choice",
+          "refId": "choice-wifi-bb",
+          "name": "Wi-Fi 6 baseband (under RF shield)",
+          "description": "One MT7915-family chip: main host interface 14c3:7915 on PCIe RC1 (Gen2), second host interface (hif2) 14c3:7916 on RC0 (Gen1). HW_REV 0x94, HW/SW version 0x8a108a10. 4 RF chains, DBDC split 2+2 (2.4 GHz chains 0x3, 5 GHz chains 0xc). AX1800 class suggests MT7905DAN; MT7915DAN shares the PCI ID and chain count. Recorded as a component choice by design: the RF shield will not be removed (owner decision 2026-11-11), so the exact part stays unresolved.",
+          "operator": "XOR",
+          "properties": [
+            {
+              "name": "r18:resolution",
+              "value": "final: component choice, not to be resolved (shield stays on, owner decision 2026-11-11)"
+            },
+            {
+              "name": "r18:distinguishing",
+              "value": "software identity is identical (PCI 14c3:7915/7916, HW_REV 0x94, 4 chains); only the package marking under the shield would tell them apart"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "serial boot log; OpenWrt RAM-boot tests"
+            }
+          ],
+          "components": [
+            {
+              "type": "device",
+              "refId": "wifi-mt7905dan",
+              "name": "MT7905DAN",
+              "group": "MediaTek",
+              "parties": [
+                {
+                  "ref": "party-mediatek"
+                }
+              ],
+              "identifiers": [
+                {
+                  "party": "party-mediatek",
+                  "identities": [
+                    {
+                      "scheme": "mpn",
+                      "value": "MT7905DAN"
+                    }
+                  ]
+                }
+              ],
+              "classification": {
+                "category": "semiconductor",
+                "subcategory": "wifi-soc",
+                "codes": [
+                  {
+                    "standard": "HS",
+                    "value": "8542.31",
+                    "url": "https://www.trade.gov/harmonized-system-hs-codes"
+                  }
+                ]
+              },
+              "deviceType": "qfn",
+              "components": [
+                {
+                  "type": "firmware",
+                  "refId": "fw-mt7915-wm",
+                  "name": "MediaTek MT7915 WM/WA firmware (stock, vendor driver)",
+                  "version": "MT7915_MP_7_4_2045-20220915163802",
+                  "description": "Loaded from rootfs by the proprietary RT2860AP/mt_wifi driver. Calibration falls back to /etc/Wireless/RT2860AP_AC/RT30xxEEPROM.bin in rootfs (3584 B, chip id 0x7915, generic MAC 00:0c:43:26:46:44 = MediaTek default image, not per-unit). No per-unit cal in flash; efuse also empty (mt76: 'eeprom load fail'). OpenWrt mt76 works with this image + linux-firmware MT7915 WM/WA (build 20240429).",
+                  "parties": [
+                    {
+                      "ref": "party-mediatek"
+                    }
+                  ],
+                  "properties": [
+                    {
+                      "name": "r18:evidence",
+                      "value": "serial boot log ('t-neptune-mp-mt7915-2045')"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "device",
+              "refId": "wifi-mt7915dan",
+              "name": "MT7915DAN",
+              "group": "MediaTek",
+              "parties": [
+                {
+                  "ref": "party-mediatek"
+                }
+              ],
+              "identifiers": [
+                {
+                  "party": "party-mediatek",
+                  "identities": [
+                    {
+                      "scheme": "mpn",
+                      "value": "MT7915DAN"
+                    }
+                  ]
+                }
+              ],
+              "classification": {
+                "category": "semiconductor",
+                "subcategory": "wifi-soc",
+                "codes": [
+                  {
+                    "standard": "HS",
+                    "value": "8542.31",
+                    "url": "https://www.trade.gov/harmonized-system-hs-codes"
+                  }
+                ]
+              },
+              "deviceType": "qfn",
+              "components": [
+                {
+                  "ref": "fw-mt7915-wm"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "wifi-mt7975",
+          "name": "MT7975 (A-die RF transceiver)",
+          "group": "MediaTek",
+          "description": "Companion RF die for MT7915/MT7905 ('a-die version:2' in log). Under the shield; exact part number not visually confirmed and will not be (shield stays on, owner decision 2026-11-11).",
+          "parties": [
+            {
+              "ref": "party-mediatek"
+            }
+          ],
+          "classification": {
+            "category": "semiconductor",
+            "subcategory": "rf-transceiver",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8542.39",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "deviceType": "qfn",
+          "quantity": {
+            "value": 1
+          },
+          "properties": [
+            {
+              "name": "r18:resolution",
+              "value": "final: MT7975 family per log, exact marking not inspected (shield stays on)"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "serial boot log"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "rf-shield",
+          "name": "RF shield can (Wi-Fi section)",
+          "description": "Soldered tin-plated shield covering Wi-Fi baseband, A-die and FEMs.",
+          "classification": {
+            "category": "mechanical",
+            "subcategory": "emi-shield"
+          },
+          "deviceType": "smd",
+          "quantity": {
+            "value": 1
+          },
+          "properties": [
+            {
+              "name": "r18:evidence",
+              "value": "photo"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "eth-magnetics",
+          "name": "LG48207SN",
+          "group": "FPE",
+          "description": "Gigabit Ethernet LAN transformer (dual-port, 48-pin), date code 2229J.",
+          "parties": [
+            {
+              "ref": "party-fpe"
+            }
+          ],
+          "identifiers": [
+            {
+              "party": "party-fpe",
+              "identities": [
+                {
+                  "scheme": "mpn",
+                  "value": "LG48207SN"
+                }
+              ]
+            }
+          ],
+          "classification": {
+            "category": "passive",
+            "subcategory": "lan-transformer",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8504.31",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "deviceType": "smd",
+          "quantity": {
+            "value": 2
+          },
+          "properties": [
+            {
+              "name": "r18:evidence",
+              "value": "photo"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "rj45-wan",
+          "name": "RJ45 jack, WAN (yellow)",
+          "classification": {
+            "category": "connector",
+            "subcategory": "rj45",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8536.69",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "deviceType": "pth",
+          "quantity": {
+            "value": 1
+          },
+          "properties": [
+            {
+              "name": "r18:switch-port",
+              "value": "4 (WAN)"
+            },
+            {
+              "name": "r18:linux:ifname",
+              "value": "wan"
+            },
+            {
+              "name": "r18:link",
+              "value": "1000 Mbps verified"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "photo; serial boot log; cable test 2026-11-09"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "rj45-lan",
+          "name": "RJ45 jack 1x3 ganged, LAN1-3",
+          "classification": {
+            "category": "connector",
+            "subcategory": "rj45",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8536.69",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "deviceType": "pth",
+          "quantity": {
+            "value": 1
+          },
+          "properties": [
+            {
+              "name": "r18:switch-port",
+              "value": "LAN1=port 3, LAN2=port 2, LAN3=port 1"
+            },
+            {
+              "name": "r18:link",
+              "value": "1000 Mbps verified on all"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "photo; cable test 2026-11-09"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "dc-jack",
+          "name": "DC barrel power jack",
+          "description": "12 V DC input, 1 A, centre positive (rating label).",
+          "classification": {
+            "category": "connector",
+            "subcategory": "dc-power-jack",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8536.69",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "deviceType": "pth",
+          "quantity": {
+            "value": 1
+          },
+          "properties": [
+            {
+              "name": "r18:rating",
+              "value": "12V 1A, centre positive"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "photo; rating label photo 2026-11-10"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "sw-rear",
+          "name": "Rear buttons: WPS push button + RESET pinhole",
+          "description": "Rear panel between the yellow INTERNET (WAN) jack and the DC jack (top-left corner of the rear when the router stands facing the user). WPS = protruding round black button (label 'WPS') -> GPIO7; RESET = recessed pinhole below it (label 'RESET') -> GPIO0. Both active-low with IRQ; two separate board-edge switches behind the panel (one actuated via a white plastic plunger).",
+          "classification": {
+            "category": "electromechanical",
+            "subcategory": "switch",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8536.50",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "deviceType": "smd",
+          "quantity": {
+            "value": 2
+          },
+          "properties": [
+            {
+              "name": "r18:gpio",
+              "value": "reset=GPIO0 (KEY_RESTART), wps=GPIO7 (KEY_WPS_BUTTON), active-low"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "photo; stock module; press test; rear panel photo 2026-11-09"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "leds-front",
+          "name": "Front status LEDs (4 lenses)",
+          "description": "Left to right: 1 power (bicolor white GPIO1 active-low / orange GPIO2 active-low), 2 internet (bicolor white GPIO6 active-low / orange GPIO4 active-high), 3 2.4 GHz Wi-Fi (white, MT7915 LED pin band 0), 4 5 GHz Wi-Fi (white, MT7915 LED pin band 1).",
+          "classification": {
+            "category": "optoelectronic",
+            "subcategory": "led",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8541.41",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "deviceType": "smd",
+          "quantity": {
+            "value": 4
+          },
+          "properties": [
+            {
+              "name": "r18:evidence",
+              "value": "stock module; LED test with photos 2026-11-09"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "antennas",
+          "name": "External dipole antennas with coax pigtails",
+          "description": "4 non-detachable external antennas; pigtails to IPEX/U.FL-style pads labelled 2.4G (x2) and 5G (x2).",
+          "classification": {
+            "category": "rf",
+            "subcategory": "antenna",
+            "codes": [
+              {
+                "standard": "HS",
+                "value": "8529.10",
+                "url": "https://www.trade.gov/harmonized-system-hs-codes"
+              }
+            ]
+          },
+          "deviceType": {
+            "name": "cable-assembly"
+          },
+          "quantity": {
+            "value": 4
+          },
+          "properties": [
+            {
+              "name": "r18:evidence",
+              "value": "photo"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "hdr-uart-console",
+          "name": "Serial console header (unpopulated, 4-hole 2.54 mm)",
+          "description": "SoC UART0 console, 115200 8N1, 3.3 V TTL. Pin 1 (square pad) = VCC (never connect). GND, TX and RX all confirmed working (bootloader shell, XMODEM upload, Linux console).",
+          "classification": {
+            "category": "connector",
+            "subcategory": "debug-header"
+          },
+          "deviceType": "pth",
+          "quantity": {
+            "value": 1
+          },
+          "properties": [
+            {
+              "name": "r18:pinout",
+              "value": "1=VCC (square, do not connect), 2=TX (router out), 3=RX (router in), 4=GND"
+            },
+            {
+              "name": "r18:wiring",
+              "value": "adapter GND->pin4, adapter RXD->pin2 (TX), adapter TXD->pin3 (RX), 3.3 V logic"
+            },
+            {
+              "name": "r18:evidence",
+              "value": "photo; serial capture; header photo + owner wiring 2026-11-09"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "tp-uart2",
+          "name": "UART2 test points",
+          "description": "UART2_TXD/RXD/RTS/CTS test pads; not the console.",
+          "classification": {
+            "category": "connector",
+            "subcategory": "test-point"
+          },
+          "deviceType": "smd",
+          "quantity": {
+            "value": 8
+          },
+          "boardLocation": {
+            "designators": [
+              "TP416",
+              "TP417",
+              "TP418",
+              "TP419",
+              "TP420",
+              "TP421",
+              "TP422",
+              "TP423"
+            ],
+            "layer": "top"
+          },
+          "properties": [
+            {
+              "name": "r18:evidence",
+              "value": "photo"
+            }
+          ]
+        },
+        {
+          "type": "device",
+          "refId": "hdr-unpopulated",
+          "name": "Unpopulated pin headers (2x5 J1001 next to flash U15, 2x3)",
+          "description": "J1001: 2x5, 2.54 mm, pins numbered 1-10 (pin 1 square), directly beside the SPI-NAND U15 and SoC; likely EJTAG or SPI programming. 2x3 footprint also present. Functions unverified.",
+          "classification": {
+            "category": "connector",
+            "subcategory": "debug-header"
+          },
+          "deviceType": "pth",
+          "quantity": {
+            "value": 2
+          },
+          "boardLocation": {
+            "designators": [
+              "J1001"
+            ],
+            "layer": "top"
+          },
+          "properties": [
+            {
+              "name": "r18:evidence",
+              "value": "photo; photo 2026-11-09"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "dlink-r18",
+      "dependsOn": [
+        "pcb-main",
+        "soc-en7528hu",
+        "dram-nanya-ddr3",
+        "u15-spinand",
+        "choice-wifi-bb",
+        "wifi-mt7975",
+        "rf-shield",
+        "eth-magnetics",
+        "rj45-wan",
+        "rj45-lan",
+        "dc-jack",
+        "sw-rear",
+        "leds-front",
+        "antennas",
+        "hdr-uart-console",
+        "tp-uart2",
+        "hdr-unpopulated"
+      ]
+    },
+    {
+      "ref": "soc-en7528hu",
+      "dependsOn": [
+        "dram-nanya-ddr3",
+        "u15-spinand",
+        "eth-magnetics"
+      ]
+    },
+    {
+      "ref": "u15-spinand",
+      "dependsOn": [
+        "fw-bootbase",
+        "fw-stock-tclinux",
+        "data-nand-config"
+      ]
+    },
+    {
+      "ref": "choice-wifi-bb",
+      "dependsOn": [
+        "wifi-mt7975",
+        "fw-mt7915-wm",
+        "antennas"
+      ]
+    },
+    {
+      "ref": "fw-stock-tclinux",
+      "dependsOn": [
+        "sw-linux-3.18.21",
+        "sw-busybox-1.00",
+        "fw-mt7915-wm"
+      ]
+    }
+  ],
+  "compositions": [
+    {
+      "kind": "components",
+      "aggregate": "incomplete",
+      "targets": [
+        "inv-dlink-r18"
+      ]
+    }
+  ]
+}

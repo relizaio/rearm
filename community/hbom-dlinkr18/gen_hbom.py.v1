@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""Generate the D-Link R18 HBOM (CycloneDX 2.0-dev) from what has been observed so far.
+Evidence sources: board photos (2026-11-08) and stock serial boot log (../r18-boot-clean.txt).
+Run: python3 gen_hbom.py > d-link-r18.hbom.cdx.json
+"""
+import json
+
+SERIAL = "urn:uuid:46c3e053-2a89-48dc-98a3-d160ebe58ac3"
+TS = "2026-11-08T23:00:00Z"
+
+
+def prop(name, value):
+    return {"name": name, "value": value}
+
+
+def org(ref, name, roles, iso=None, locality=None, url=None):
+    o = {"name": name}
+    if iso:
+        a = {"isoCode": iso, "country": iso[:2]}
+        if locality:
+            a["locality"] = locality
+        o["addresses"] = [a]
+    if url:
+        o["url"] = [{"url": url}]
+    return {"refId": ref, "roles": [{"role": r} for r in roles], "organization": o}
+
+
+def mfr(ref):
+    return [{"ref": ref}]
+
+
+def mpn(party, *values):
+    return [{"party": party, "identities": [{"scheme": "mpn", "value": v} for v in values]}]
+
+
+def cls(category, sub=None, hs=None):
+    c = {"category": category}
+    if sub:
+        c["subcategory"] = sub
+    if hs:
+        c["codes"] = [{"standard": "HS", "value": hs[0], "url": "https://www.trade.gov/harmonized-system-hs-codes"}]
+    return c
+
+
+def evidence(*src):
+    return prop("r18:evidence", "; ".join(src))
+
+
+# --- parties (declared once on the device, referenced elsewhere by refId) ---
+parties = [
+    org("party-dlink", "D-Link Corporation", ["manufacturer", "supplier"], "TW", "Taipei", "https://www.dlink.com"),
+    org("party-econet", "EcoNet Technology (Airoha / MediaTek group)", ["manufacturer"], "TW", url="https://www.econet-inc.com"),
+    org("party-mediatek", "MediaTek Inc.", ["manufacturer"], "TW", "Hsinchu", "https://www.mediatek.com"),
+    org("party-macronix", "Macronix International Co., Ltd.", ["manufacturer"], "TW", "Hsinchu", "https://www.mxic.com.tw"),
+    org("party-nanya", "Nanya Technology Corporation", ["manufacturer"], "TW", "New Taipei", "https://www.nanya.com"),
+    org("party-fpe", "FPE (magnetics vendor, marking 'FPE')", ["manufacturer"]),
+]
+
+# ---------------- firmware / data held in SPI-NAND ----------------
+fw_bootloader = {
+    "type": "firmware", "refId": "fw-bootbase",
+    "name": "EcoNet EN7528 free bootbase", "version": "1.1",
+    "description": "Stage-1/2 bootloader in NAND 0x0-0x40000 (mtd 'bootloader'). Built 'Sat 26 Nov 2022 12:46:20 AM CST'. "
+                   "Offers 1 s window: \"Press 'x' or 'b' key ... to enter or skip bootloader upgrade\". Default IP 192.168.0.1. "
+                   "Handles dual-image (tclinux/tclinux_slave) selection via benv and writes flash on each boot.",
+    "parties": mfr("party-econet"),
+    "properties": [prop("r18:nand:offset", "0x00000000"), prop("r18:nand:size", "0x00040000"),
+                   evidence("serial boot log")],
+}
+fw_stock = {
+    "type": "firmware", "refId": "fw-stock-tclinux",
+    "name": "D-Link R18 stock firmware (TCLinux)",
+    "description": "EcoNet SDK based firmware: Linux 3.18.21 SMP (gcc 4.6.3, Buildroot 2015.08.1, built Fri Apr 19 21:09:56 CST 2024), "
+                   "BusyBox v1.00, squashfs root. Dual copies: tclinux (0x80000, 45 MiB) and tclinux_slave (0x2d80000, 45 MiB); "
+                   "currently booting slave (sw_curboot_id=1). Serial console RX disabled in this firmware.",
+    "parties": mfr("party-dlink"),
+    "components": [
+        {"type": "operating-system", "refId": "sw-linux-3.18.21", "name": "linux", "version": "3.18.21"},
+        {"type": "application", "refId": "sw-busybox-1.00", "name": "busybox", "version": "1.00"},
+    ],
+    "properties": [prop("r18:nand:partitions", "tclinux@0x80000+0x2d00000, tclinux_slave@0x2d80000+0x2d00000"),
+                   evidence("serial boot log")],
+}
+
+data_parts = {
+    "type": "data", "refId": "data-nand-config",
+    "name": "Device configuration and identity partitions",
+    "description": "romfile 0x40000 (256K); Config0 0x5a80000, Config1 0x5b80000, ODM 0x5c80000 (CSID 'P section': model R18, "
+                   "romid DLK6E8112001, base MAC, default IP), benv 0x5d80000 (boot flags), mydlink 0x5e80000 (2M), "
+                   "storage 0x6080000 (9M), reservearea 0x6dc0000-0x7000000 (BMT/BBT pool + backups; Wi-Fi EEPROM probed at offset 0).",
+    "properties": [evidence("serial boot log (MTD table)")],
+}
+
+fw_wifi = {
+    "type": "firmware", "refId": "fw-mt7915-wm",
+    "name": "MediaTek MT7915 WM/WA firmware (stock, vendor driver)",
+    "version": "MT7915_MP_7_4_2045-20220915163802",
+    "description": "Loaded from rootfs by the proprietary RT2860AP/mt_wifi driver. Calibration falls back to "
+                   "/etc/Wireless/RT2860AP_AC/RT30xxEEPROM.bin in rootfs (reservearea EEPROM not used).",
+    "parties": mfr("party-mediatek"),
+    "properties": [evidence("serial boot log ('t-neptune-mp-mt7915-2045')")],
+}
+
+# ---------------- hardware ----------------
+soc = {
+    "type": "device", "refId": "soc-en7528hu",
+    "name": "EN7528HU", "group": "EcoNet",
+    "description": "Network SoC, MIPS32 1004Kc (2 cores x 2 VPE = 4 threads) @ 900 MHz, 32K I$/D$, 256K L2. Integrated 4-port "
+                   "GbE switch + PHYs, 2x PCIe RC (Gen2 x1), HW NAT/QDMA, SPI-NAND controller, UART.",
+    "parties": mfr("party-econet"),
+    "identifiers": mpn("party-econet", "EN7528HU"),
+    "classification": cls("semiconductor", "system-on-chip", ("8542.31",)),
+    "deviceType": "qfp",
+    "quantity": {"value": 1},
+    "properties": [prop("r18:marking", "ECONET / EN7528HU / 2144-AFAL / ACMSLF8H"),
+                   prop("r18:date-code", "2144 (2021 wk44)"),
+                   prop("r18:cpu-prid", "0x0001992f"),
+                   prop("r18:linux:compatible", "econet,en751221 (stock); OpenWrt target econet/en7528"),
+                   evidence("photo", "serial boot log")],
+}
+
+dram = {
+    "type": "device", "refId": "dram-nanya-ddr3",
+    "name": "DDR3 SDRAM 2 Gbit (256 MiB) x16", "group": "Nanya",
+    "description": "Single DDR3 device next to SoC, initialised by bootbase as 'DDR3 ... DRAM size=256MB, ddr-900'. "
+                   "Exact part number not yet read from the package.",
+    "parties": mfr("party-nanya"),
+    "classification": cls("semiconductor", "dram", ("8542.32",)),
+    "deviceType": "bga",
+    "quantity": {"value": 1},
+    "properties": [prop("r18:capacity", "256 MiB"), prop("r18:todo", "read full Nanya part number from package"),
+                   evidence("photo", "serial boot log")],
+}
+
+flash = {
+    "type": "device", "refId": "u15-spinand",
+    "name": "MX35LF1GE4AB", "group": "Macronix", "version": "-Z4I",
+    "description": "1 Gbit (128 MiB) 3.3 V SLC SPI-NAND, 2048+64 B pages, 128 KiB blocks, on-die ECC. "
+                   "JEDEC ID c2 12. Vendor BMT/BBT pool of 81 blocks at end of device.",
+    "parties": mfr("party-macronix"),
+    "identifiers": mpn("party-macronix", "MX35LF1GE4AB-Z4I"),
+    "classification": cls("semiconductor", "nand-flash", ("8542.32",)),
+    "boardLocation": {"designators": ["U15"], "layer": "top"},
+    "deviceType": {"name": "WSON-8 8x6mm"},
+    "quantity": {"value": 1},
+    "components": [fw_bootloader, fw_stock, data_parts],
+    "properties": [prop("r18:marking", "MXIC X22J410 / MX35LF1GE4AB-Z4I / 2S609279"),
+                   evidence("photo", "serial boot log")],
+}
+
+wifi_die = {
+    "type": "component-choice", "refId": "choice-wifi-bb",
+    "name": "Wi-Fi 6 baseband (under RF shield)",
+    "description": "PCIe IDs 14c3:7915 (+ hif2 14c3:7916) seen in boot log, DBDC 2.4+5 GHz. AX1800 class suggests MT7905DAN; "
+                   "MT7915DAN shares the same PCI ID. Not yet visually confirmed (shield not removed).",
+    "operator": "XOR",
+    "components": [
+        {"type": "device", "refId": "wifi-mt7905dan", "name": "MT7905DAN", "group": "MediaTek",
+         "parties": mfr("party-mediatek"), "identifiers": mpn("party-mediatek", "MT7905DAN"),
+         "classification": cls("semiconductor", "wifi-soc", ("8542.31",)), "deviceType": "qfn",
+         "components": [fw_wifi]},
+        {"type": "device", "refId": "wifi-mt7915dan", "name": "MT7915DAN", "group": "MediaTek",
+         "parties": mfr("party-mediatek"), "identifiers": mpn("party-mediatek", "MT7915DAN"),
+         "classification": cls("semiconductor", "wifi-soc", ("8542.31",)), "deviceType": "qfn",
+         "components": [{"ref": "fw-mt7915-wm"}]},
+    ],
+}
+
+wifi_adie = {
+    "type": "device", "refId": "wifi-mt7975",
+    "name": "MT7975 (A-die RF transceiver)", "group": "MediaTek",
+    "description": "Companion RF die for MT7915/MT7905 ('a-die version:2' in log). Under shield, part number unconfirmed.",
+    "parties": mfr("party-mediatek"),
+    "classification": cls("semiconductor", "rf-transceiver", ("8542.39",)),
+    "deviceType": "qfn",
+    "quantity": {"value": 1},
+    "properties": [prop("r18:todo", "confirm under shield"), evidence("serial boot log")],
+}
+
+shield = {
+    "type": "device", "refId": "rf-shield",
+    "name": "RF shield can (Wi-Fi section)",
+    "description": "Soldered tin-plated shield covering Wi-Fi baseband, A-die and FEMs.",
+    "classification": cls("mechanical", "emi-shield"),
+    "deviceType": "smd", "quantity": {"value": 1},
+    "properties": [evidence("photo")],
+}
+
+magnetics = {
+    "type": "device", "refId": "eth-magnetics",
+    "name": "LG48207SN", "group": "FPE",
+    "description": "Gigabit Ethernet LAN transformer (dual-port, 48-pin), date code 2229J.",
+    "parties": mfr("party-fpe"),
+    "identifiers": mpn("party-fpe", "LG48207SN"),
+    "classification": cls("passive", "lan-transformer", ("8504.31",)),
+    "deviceType": "smd", "quantity": {"value": 2},
+    "properties": [evidence("photo")],
+}
+
+rj45_wan = {
+    "type": "device", "refId": "rj45-wan", "name": "RJ45 jack, WAN (yellow)",
+    "classification": cls("connector", "rj45", ("8536.69",)), "deviceType": "pth", "quantity": {"value": 1},
+    "properties": [prop("r18:switch-port", "4 (WAN)"), evidence("photo", "serial boot log")],
+}
+rj45_lan = {
+    "type": "device", "refId": "rj45-lan", "name": "RJ45 jack 1x3 ganged, LAN1-3",
+    "classification": cls("connector", "rj45", ("8536.69",)), "deviceType": "pth", "quantity": {"value": 1},
+    "properties": [prop("r18:switch-port", "LAN ports via switch_port_map 1..3"), evidence("photo")],
+}
+dc_jack = {
+    "type": "device", "refId": "dc-jack", "name": "DC barrel power jack",
+    "classification": cls("connector", "dc-power-jack", ("8536.69",)), "deviceType": "pth", "quantity": {"value": 1},
+    "properties": [evidence("photo")],
+}
+switch_btn = {
+    "type": "device", "refId": "sw-rear", "name": "Rear push switch (next to DC jack)",
+    "description": "Function (power vs. reset/WPS) not yet confirmed; to be mapped to GPIO during DTS work.",
+    "classification": cls("electromechanical", "switch", ("8536.50",)), "deviceType": "pth", "quantity": {"value": 1},
+    "properties": [evidence("photo")],
+}
+antennas = {
+    "type": "device", "refId": "antennas", "name": "External dipole antennas with coax pigtails",
+    "description": "4 non-detachable external antennas; pigtails to IPEX/U.FL-style pads labelled 2.4G (x2) and 5G (x2).",
+    "classification": cls("rf", "antenna", ("8529.10",)), "deviceType": {"name": "cable-assembly"},
+    "quantity": {"value": 4},
+    "properties": [evidence("photo")],
+}
+uart_console = {
+    "type": "device", "refId": "hdr-uart-console", "name": "Serial console header (unpopulated, 4-hole 2.54 mm)",
+    "description": "SoC UART0 console, 115200 8N1, 3.3 V TTL. Pin 1 (square pad) = VCC. Used for this port (GND/TX confirmed).",
+    "classification": cls("connector", "debug-header"), "deviceType": "pth", "quantity": {"value": 1},
+    "properties": [prop("r18:pinout", "1=VCC(square), others: GND, TX, RX (TBD)"), evidence("photo", "serial capture")],
+}
+uart2_tp = {
+    "type": "device", "refId": "tp-uart2", "name": "UART2 test points",
+    "description": "UART2_TXD/RXD/RTS/CTS test pads; not the console.",
+    "classification": cls("connector", "test-point"), "deviceType": "smd", "quantity": {"value": 8},
+    "boardLocation": {"designators": ["TP416", "TP417", "TP418", "TP419", "TP420", "TP421", "TP422", "TP423"], "layer": "top"},
+    "properties": [evidence("photo")],
+}
+hdr_unpop = {
+    "type": "device", "refId": "hdr-unpopulated", "name": "Unpopulated pin headers (2x5 near SoC, 2x3 near flash)",
+    "description": "Likely JTAG/EJTAG and SPI programming footprints. Function unverified.",
+    "classification": cls("connector", "debug-header"), "deviceType": "pth", "quantity": {"value": 2},
+    "properties": [evidence("photo")],
+}
+pcb = {
+    "type": "device", "refId": "pcb-main", "name": "R18 main PCB",
+    "description": "Single main board; silkscreen 'EPMBDIRR18E3OXXX' and '100B18'.",
+    "classification": cls("pcb", "rigid-pcb", ("8534.00",)), "quantity": {"value": 1},
+    "properties": [prop("r18:silkscreen", "EPMBDIRR18E3OXXX; 100B18"), evidence("photo")],
+}
+
+components = [pcb, soc, dram, flash, wifi_die, wifi_adie, shield, magnetics,
+              rj45_wan, rj45_lan, dc_jack, switch_btn, antennas, uart_console, uart2_tp, hdr_unpop]
+
+device = {
+    "type": "device", "refId": "dlink-r18",
+    "name": "EAGLE PRO AI AX1800 Smart Router", "group": "D-Link", "version": "R18 (HW rev not yet read from label)",
+    "description": "Dual-band Wi-Fi 6 (AX1800) router: EcoNet EN7528HU SoC, 256 MiB DDR3, 128 MiB SPI-NAND, MediaTek MT79x5 "
+                   "DBDC Wi-Fi over PCIe, 1x WAN + 3x LAN gigabit. Being ported to OpenWrt (econet/en7528).",
+    "parties": parties,
+    "identifiers": [
+        {"party": "party-dlink", "identities": [
+            {"scheme": "model-number", "value": "R18"},
+            {"scheme": "fcc-id", "value": "KA2R18A1"},
+            {"scheme": "mac-address", "value": "C8:78:7D:65:BF:80"},
+            {"scheme": {"name": "dlink-romid", "description": "D-Link ROM id from ODM/CSID P-section"},
+             "value": "DLK6E8112001"},
+        ]},
+    ],
+    "classification": cls("networking-equipment", "wireless-router", ("8517.62",)),
+    "quantity": {"value": 1},
+    "certifications": [
+        {"standard": "FCC Part 15", "identifier": "KA2R18A1", "jurisdiction": "US",
+         "url": "https://fccid.io/KA2R18A1"},
+    ],
+    "tags": ["hbom", "router", "wifi6", "econet", "en7528", "openwrt-port"],
+    "externalReferences": [
+        {"type": "website", "url": "https://www.dlink.com/en/products/r18-eagle-pro-ai-ax1800-smart-router"},
+        {"type": "certification-report", "url": "https://fccid.io/KA2R18A1"},
+        {"type": "vcs", "url": "https://github.com/openwrt/openwrt/tree/main/target/linux/econet",
+         "comment": "OpenWrt econet target (en7528 subtarget)"},
+    ],
+    "properties": [prop("r18:ram", "256 MiB DDR3"), prop("r18:flash", "128 MiB SPI-NAND"),
+                   prop("r18:console", "115200 8N1 3.3V")],
+}
+
+bom = {
+    "$schema": "http://cyclonedx.org/schema/2.0/",
+    "specFormat": "CycloneDX",
+    "specVersion": "2.0",
+    "serialNumber": SERIAL,
+    "version": 1,
+    "metadata": {
+        "timestamp": TS,
+        "lifecycles": [{"phase": "operations"}, {"phase": "discovery"}],
+        "tools": {"components": [{"type": "application", "name": "Claude Code", "group": "Anthropic"}]},
+        "properties": [prop("r18:method", "visual inspection of board photos + stock serial boot log; Wi-Fi section under shield not inspected")],
+    },
+    "inventories": [{"refId": "inv-dlink-r18", "subject": device, "components": components}],
+    "dependencies": [
+        {"ref": "dlink-r18", "dependsOn": [c["refId"] for c in components]},
+        {"ref": "soc-en7528hu", "dependsOn": ["dram-nanya-ddr3", "u15-spinand", "eth-magnetics"]},
+        {"ref": "u15-spinand", "dependsOn": ["fw-bootbase", "fw-stock-tclinux", "data-nand-config"]},
+        {"ref": "choice-wifi-bb", "dependsOn": ["wifi-mt7975", "fw-mt7915-wm", "antennas"]},
+        {"ref": "fw-stock-tclinux", "dependsOn": ["sw-linux-3.18.21", "sw-busybox-1.00", "fw-mt7915-wm"]},
+    ],
+    "compositions": [
+        {"kind": "components", "aggregate": "incomplete", "targets": ["inv-dlink-r18"]},
+    ],
+}
+print(json.dumps(bom, indent=2))
