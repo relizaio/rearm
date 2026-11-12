@@ -28,6 +28,7 @@ import { releaseSlug, PROSE_SLOT_LABELS } from './addendumDocument'
 import { fontCoverageRefusal } from './pdfFontCoverage'
 import { DEVICE_EOS_LABEL, DEVICE_EOL_LABEL } from './deviceDateLabels'
 import { documentFooterIdentity, documentInstantText } from './fdaLabels'
+import { DISPLAYED_VERSION_STATEMENT_PREFIX } from './displayedVersion'
 
 pdfMake.vfs = pdfFonts.vfs
 
@@ -131,7 +132,7 @@ function displayName (c: AddendumComponent): string {
 export function statementStrings (d: AddendumData): Array<string | null | undefined> {
     return [
         STATEMENT_TITLE, NOT_DECLARED,
-        d.componentName, d.releaseVersion, d.orgName,
+        d.componentName, d.releaseVersion, d.displayedVersion, d.orgName,
         // Rendered in the facts table and the footer. Server-generated today -- dates and
         // the footer's instant -- so unreachable in practice, but the invariant this function
         // states is "every string the document prints", and the next field added to the
@@ -196,6 +197,8 @@ export function buildDeviceSupportStatementDefinition (d: AddendumData): Record<
     const content: unknown[] = [
         { text: STATEMENT_TITLE, style: 'title' },
         { text: `${d.componentName || 'This device'}${d.releaseVersion ? `, version ${d.releaseVersion}` : ''}`, style: 'subtitle' },
+        // FDAW-74 3.5a: the displayed version on a line of its own, only when set; it never replaces the version
+        ...(d.displayedVersion ? [{ text: DISPLAYED_VERSION_STATEMENT_PREFIX + d.displayedVersion, style: 'subtitle' }] : []),
         { text: d.orgName || '', style: 'subtitle', margin: [0, 0, 0, 14] },
 
         { text: 'What this document covers', style: 'h2' },

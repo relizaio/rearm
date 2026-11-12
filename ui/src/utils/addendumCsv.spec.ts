@@ -88,6 +88,18 @@ describe('renderAddendumCsv', () => {
     })
 })
 
+describe('renderAddendumCsv: the displayed version (FDAW-74 row 20 b)', () => {
+    const lines = (d: AddendumData) => renderAddendumCsv(d).slice(1).split('\r\n')
+    it('writes the row once, the formula guard on a leading =, and the server line for SP', () => {
+        const l = lines(data({ displayedVersion: 'GV-2.4.1 (Build 118)' }))
+        expect(l.filter(x => x === 'Displayed version,GV-2.4.1 (Build 118),,,,,,,,')).toHaveLength(1)
+        expect(lines(data({ displayedVersion: '=1+1' }))).toContain("Displayed version,'=1+1,,,,,,,,")
+        expect(lines(data({ displayedVersion: 'R&D <b>"5"</b> =1+1, \'x\'; \u00fc' })))
+            .toContain('Displayed version,"R&D <b>""5""</b> =1+1, \'x\'; \u00fc",,,,,,,,')
+        expect(renderAddendumCsv(data())).not.toContain('Displayed version')
+    })
+})
+
 describe('addendumFileName', () => {
     it('identifies the release without the file being opened', () => {
         expect(addendumFileName(data())).toBe('fda-support-addendum-1.4.5.csv')

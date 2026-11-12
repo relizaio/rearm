@@ -19,6 +19,7 @@ import { BULK_WALK_LIMIT } from './useBulkAttest'
 // block states "N of M assessed" and the screen states the same thing; two queries would be
 // two chances for the document to disagree with the page the operator generated it from.
 import { loadReleaseSupportCoverage } from './releaseSupportCoverage'
+import { loadReleaseDisplayedVersion } from './displayedVersion'
 
 /**
  * The per-component selection the addendum needs, built by APPENDING to the fields the
@@ -276,6 +277,12 @@ export type DeviceWindowLevel = 'COMPONENT' | 'SHIPMENT'
 export interface AddendumData {
     releaseUuid: string
     releaseVersion: string | null
+    /**
+     * The version the device shows its user (FDAW-74 3.5a), printed on a row and a line of its own
+     * after the release version; null when not set or when the server lacks the field. Optional,
+     * so a fixture without it reads as not set.
+     */
+    displayedVersion?: string | null
     componentName: string | null
     /**
      * PRODUCT or COMPONENT.
@@ -433,7 +440,9 @@ export async function collectAddendumData (
         // addendum would fail to generate at all on a CE build, which is precisely what the
         // CORE/FULL split exists to prevent. Issuing FULL directly made CORE dead code
         // outside its own spec, so the protection was documented but not present.
-        const [releaseResp, orgResp, coverageResp] = await Promise.all([
+        // The displayed version by its own document, never in the shared release queries (they are
+        // validated against the CE schema, which lacks the field): drift answers unsupported and null.
+        const [releaseResp, orgResp, coverageResp, displayedResp] = await Promise.all([
             loadWithSchemaDriftFallback(client, {
                 fullQuery: ADDENDUM_RELEASE_QUERY_FULL,
                 coreQuery: ADDENDUM_RELEASE_QUERY_CORE,
@@ -441,7 +450,8 @@ export async function collectAddendumData (
                 extractPath: (d: any) => d
             }).then(r => ({ data: r.data })),
             client.query({ query: ADDENDUM_ORG_QUERY, variables: {}, fetchPolicy: 'network-only' }),
-            loadReleaseSupportCoverage(client, orgUuid, releaseUuid)
+            loadReleaseSupportCoverage(client, orgUuid, releaseUuid),
+            loadReleaseDisplayedVersion(client, releaseUuid, orgUuid)
         ])
         const release = (releaseResp.data as any)?.release
         if (!release) return { ok: false, error: 'The release could not be loaded. No addendum was generated.' }
@@ -547,6 +557,7 @@ export async function collectAddendumData (
             data: {
                 releaseUuid,
                 releaseVersion: blankToNull(release.version),
+                displayedVersion: blankToNull(displayedResp.value),
                 componentName: blankToNull(release.componentDetails?.name),
                 componentType: blankToNull(release.componentDetails?.type),
                 // D7: the DEVICE window comes from the product component, never from the

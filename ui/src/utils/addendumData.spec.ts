@@ -3,6 +3,7 @@ import { resolveNarrative, toAddendumComponent, isLiveAttestation, collectAddend
     ADDENDUM_PAGE_QUERY, ADDENDUM_RELEASE_QUERY, ADDENDUM_ORG_QUERY,
     ADDENDUM_MAX_COMPONENTS } from './addendumData'
 import { BULK_WALK_LIMIT } from './useBulkAttest'
+import { RELEASE_DISPLAYED_VERSION_QUERY } from './displayedVersion'
 // The shipment cases below assert on the RENDERED statement: the failure they guard is the
 // dates and the provenance line disagreeing, which only the document shows.
 import { buildDeviceSupportStatementDefinition } from './deviceSupportStatement'
@@ -468,6 +469,40 @@ describe('collectAddendumData', () => {
  * failure this guards is the two disagreeing: a provenance line naming a batch over the
  * dates that batch overrode. Collected data alone cannot show that.
  */
+describe('collectAddendumData: the displayed version (FDAW-74 row 20 f)', () => {
+    const page = { items: [componentRow(1)], totalCount: 1, endCursor: null, hasMore: false }
+    /** The spec's fakeClient, extended to answer (or reject) the displayed version's own document. */
+    function withDisplayed (answer: () => Promise<any>) {
+        const base = fakeClient({ release: okRelease, org: okOrg, coverage: { total: 1, attested: 1 }, pages: [page] })
+        const inner = base.query
+        return { query: vi.fn(async (opts: any) => opts.query === RELEASE_DISPLAYED_VERSION_QUERY ? answer() : inner(opts)) }
+    }
+    function driftError (): any {
+        const err: any = new Error('Validation error (FieldUndefined@[release/displayedVersion]) : Field \'displayedVersion\' in type \'Release\' is undefined')
+        err.errors = [{ message: err.message, extensions: { classification: 'ValidationError' } }]
+        return err
+    }
+
+    it('carries the value its own document answers', async () => {
+        const client = withDisplayed(async () => ({ data: { release: { uuid: 'r1', displayedVersion: 'GV-2.4.1 (Build 118)' } } }))
+        const res = await collectAddendumData(client as any, 'r1', 'o1')
+        expect(res.ok).toBe(true)
+        if (res.ok) expect(res.data.displayedVersion).toBe('GV-2.4.1 (Build 118)')
+    })
+
+    it('is null with the unextended client, and on drift; any other failure refuses the document', async () => {
+        const plain = fakeClient({ release: okRelease, org: okOrg, coverage: { total: 1, attested: 1 }, pages: [page] })
+        const res = await collectAddendumData(plain as any, 'r1', 'o1')
+        expect(res.ok).toBe(true)
+        if (res.ok) expect(res.data.displayedVersion).toBeNull()
+        const drift = await collectAddendumData(withDisplayed(async () => { throw driftError() }) as any, 'r1', 'o1')
+        expect(drift.ok).toBe(true)
+        if (drift.ok) expect(drift.data.displayedVersion).toBeNull()
+        const boom = await collectAddendumData(withDisplayed(async () => { throw new Error('boom') }) as any, 'r1', 'o1')
+        expect(boom).toEqual({ ok: false, error: 'boom' })
+    })
+})
+
 describe('a statement generated from a shipment', () => {
     const flat = (n: any): string =>
         typeof n === 'string' ? n

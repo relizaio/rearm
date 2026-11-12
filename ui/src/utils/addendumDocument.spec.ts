@@ -139,6 +139,18 @@ describe('addendumHeaderRows', () => {
     })
 })
 
+describe('addendumHeaderRows: the displayed version (FDAW-74 row 20 a)', () => {
+    it('puts the row directly after Release, and only when set', () => {
+        const withIt = addendumHeaderRows(data({ displayedVersion: 'GV-2.4.1 (Build 118)' }))
+        const at = withIt.findIndex(r => r[0] === 'Release')
+        expect(withIt[at]).toEqual(['Release', '1.4.5'])
+        expect(withIt[at + 1]).toEqual(['Displayed version', 'GV-2.4.1 (Build 118)'])
+        const without = [...withIt.slice(0, at + 1), ...withIt.slice(at + 2)]
+        expect(without).toEqual(addendumHeaderRows(data()))
+        expect(addendumHeaderRows(data({ displayedVersion: null })).map(r => r[0])).not.toContain('Displayed version')
+    })
+})
+
 describe('addendumFileStem', () => {
     // Shared by both renderers so the CSV and the PDF for one release sort together. Each
     // used to own a copy of this rule with its own hardcoded expectations, so changing one

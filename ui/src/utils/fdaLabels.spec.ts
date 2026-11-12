@@ -37,7 +37,7 @@ describe('the tables, each compared whole', () => {
         expect(HISTORY_ACTION_LABELS).toEqual({ ADDED: 'Added', REMOVED: 'Removed', CHANGED: 'Changed', UPDATED: 'Updated' })
     })
 
-    it('HISTORY_SCOPE_LABELS: the 22 values of ReleaseUpdateScope', () => {
+    it('HISTORY_SCOPE_LABELS: the 23 values of ReleaseUpdateScope', () => {
         expect(HISTORY_SCOPE_LABELS).toEqual({
             RELEASE_CREATED: 'Release created', LIFECYCLE: 'Lifecycle', SOURCE_CODE_ENTRY: 'Source code entry',
             PARENT_RELEASE: 'Parent release', ARTIFACT: 'Artifact', INBOUND_DELIVERY: 'Inbound delivery',
@@ -46,8 +46,9 @@ describe('the tables, each compared whole', () => {
             APPROVED_ENVIRONMENT: 'Approved environment', SUPPORT_WINDOW: 'Release support dates',
             FDA_NARRATIVE: 'FDA assessment narrative', SYNTHETIC_ARTIFACT: 'Generated artifact', TEA_PUBLICATION: 'TEA publication',
             SUBMISSION: 'Regulatory submission', DECLARED_LICENSE: 'Declared license',
+            DISPLAYED_VERSION: 'Displayed version',
         })
-        expect(Object.keys(HISTORY_SCOPE_LABELS)).toHaveLength(22)
+        expect(Object.keys(HISTORY_SCOPE_LABELS)).toHaveLength(23)
     })
 
     it('ARTIFACT_TYPE_LABELS: the 28 artifact types, in the order of ARTIFACT_TYPES', () => {
@@ -90,7 +91,7 @@ describe('the tables, each compared whole', () => {
                 n++
             }
         }
-        expect(n).toBe(2 + 4 + 22 + 28 + 2 + 6)
+        expect(n).toBe(2 + 4 + 23 + 28 + 2 + 6)
         expectSweepControl()
         expect('NO_COMMITTED_END_OF_SUPPORT').toMatch(ENUM_RE)
     })

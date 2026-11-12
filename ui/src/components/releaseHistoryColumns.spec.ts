@@ -19,6 +19,8 @@ vi.mock('@/utils/fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBuffer
 const { submissionHistoryText } = await import('@/utils/submissions')
 const { syntheticHistoryText } = await import('@/utils/generatedArtifacts')
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
+import { displayedVersionHistoryText } from '@/utils/displayedVersion'
+import { HISTORY_SCOPE_LABELS } from '@/utils/fdaLabels'
 import { expectSwept, UUID_RE } from '@/utils/__fixtures__/fdaSweep'
 
 const UUID = '3bef7cde-2edb-47cb-aa4e-94487c2cdced'
@@ -77,6 +79,48 @@ describe('the release History columns in words (FDAW-78 row 13)', () => {
         expectSwept(swept.join('\n'), 'history')
         // the sixth row's details are left (3.4): the scope, not a loosened expression, is what passes
         expect(c[5][2]).toMatch(UUID_RE)
+    })
+})
+
+describe('the displayed version rows of the History (FDAW-74 row 22)', () => {
+    /** ReleaseView.vue's DISPLAYED_VERSION branch, mirrored as the details column above mirrors the others. */
+    const displayedDetails = {
+        key: 'objectId',
+        title: 'Event or Object Details',
+        render: (row: any) => row.rus === 'DISPLAYED_VERSION' ? displayedVersionHistoryText(row) : row.objectId,
+    }
+    const DV_ROWS = [
+        { key: 1, rus: 'DISPLAYED_VERSION', rua: 'ADDED', oldValue: null, newValue: 'GV-2.4.2', objectId: null },
+        { key: 2, rus: 'DISPLAYED_VERSION', rua: 'CHANGED', oldValue: 'GV-2.4.2', newValue: 'GV-2.4.1 (Build 118)', objectId: null },
+        { key: 3, rus: 'DISPLAYED_VERSION', rua: 'REMOVED', oldValue: 'GV-2.4.1 (Build 118)', newValue: null, objectId: null },
+        { key: 4, rus: 'DISPLAYED_VERSION', rua: 'ADDED', oldValue: null, newValue: '<b>x</b>', objectId: null },
+    ]
+    function mounted () {
+        const w = mount(NDataTable, { props: { columns: [historyActionColumn, historyScopeColumn, displayedDetails],
+            data: DV_ROWS, rowKey: (r: any) => r.key } })
+        const rows = w.findAll('tbody tr')
+        expect(rows).toHaveLength(4)
+        return rows
+    }
+
+    it('reads Action, Scope and details in words, and passes the sweep', () => {
+        const c = mounted().map((r: any) => r.findAll('td').map((x: any) => x.text()))
+        expect(c.slice(0, 3).map(r => r[0])).toEqual(['Added', 'Changed', 'Removed'])
+        expect(c.slice(0, 3).map(r => r[1])).toEqual(['Displayed version', 'Displayed version', 'Displayed version'])
+        expect(c.slice(0, 3).map(r => r[2])).toEqual([
+            'Displayed version set to "GV-2.4.2"',
+            'Displayed version changed from "GV-2.4.2" to "GV-2.4.1 (Build 118)"',
+            'Displayed version cleared (was "GV-2.4.1 (Build 118)")',
+        ])
+        expectSwept(c.slice(0, 3).flat().join('\n'), 'history')
+        // the Scope cells come from the table, not from the humanized fallback (which prints the same words)
+        expect(HISTORY_SCOPE_LABELS.DISPLAYED_VERSION).toBe('Displayed version')
+    })
+
+    it('prints a value as text, never as markup', () => {
+        const fourth = mounted()[3].findAll('td')[2]
+        expect(fourth.text()).toBe('Displayed version set to "<b>x</b>"')
+        expect(fourth.find('b').exists()).toBe(false)
     })
 })
 

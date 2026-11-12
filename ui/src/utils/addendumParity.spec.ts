@@ -106,6 +106,23 @@ const doc: any = buildAddendumDocDefinition(DATA)
 const pdfTable = (doc.content as any[]).filter(c => c && c.table)[1].table
 const pdfDataRows: string[][] = pdfTable.body.slice(1)
 
+describe('the displayed version in both encodings (FDAW-74 row 20 c)', () => {
+    it('the PDF facts table has the pair directly after Release, as the CSV has the row', () => {
+        const withIt = { ...DATA, displayedVersion: 'GV-2.4.1 (Build 118)' }
+        const facts = ((buildAddendumDocDefinition(withIt) as any).content as any[]).filter(c => c && c.table)[0].table
+        const pairs: string[][] = facts.body.map((r: any) => [String(r[0].text), String(r[1].text)])
+        const at = pairs.findIndex(p => p[0] === 'Release')
+        expect(pairs[at]).toEqual(['Release', '9000.1.0'])
+        expect(pairs[at + 1]).toEqual(['Displayed version', 'GV-2.4.1 (Build 118)'])
+        const csv = parseCsv(renderAddendumCsv(withIt))
+        const csvAt = csv.findIndex(r => r[0] === 'Release')
+        expect(csv[csvAt + 1].slice(0, 2)).toEqual(['Displayed version', 'GV-2.4.1 (Build 118)'])
+        const withoutPairs = ((buildAddendumDocDefinition(DATA) as any).content as any[]).filter(c => c && c.table)[0]
+            .table.body.map((r: any) => String(r[0].text))
+        expect(withoutPairs).not.toContain('Displayed version')
+    })
+})
+
 describe('CSV and PDF are the same document in two encodings', () => {
     // FDAW-78 row 18: the rendered CSV of this fixture prints no uuid, enum name or machine instant.
     it('the rendered CSV passes the FDAW-78 sweep, with its control, and states the instant in words', () => {
