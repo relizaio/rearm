@@ -72,6 +72,7 @@ export const HISTORY_SCOPE_LABELS: Record<string, string> = {
     TEA_PUBLICATION: 'TEA publication',
     SUBMISSION: 'Regulatory submission',
     DECLARED_LICENSE: 'Declared license',
+    DISPLAYED_VERSION: 'Displayed version',
 }
 
 /** Every ArtifactType value, in the order of packageSettings.ts ARTIFACT_TYPES (the spec ties the two). */

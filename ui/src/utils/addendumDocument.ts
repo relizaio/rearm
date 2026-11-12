@@ -16,6 +16,7 @@
 import type { AddendumComponent, AddendumData } from './addendumData'
 import { isLiveAttestation } from './addendumData'
 import { DEVICE_EOS_LABEL, DEVICE_EOL_LABEL } from './deviceDateLabels'
+import { DISPLAYED_VERSION_DOCUMENT_LABEL } from './displayedVersion'
 import { ATTESTATION_STATE_TEXT, documentInstantText, labelOrLower, lowerEnum, UNKNOWN_REASON_TEXT } from './fdaLabels'
 
 /**
@@ -169,6 +170,8 @@ export function addendumHeaderRows (d: AddendumData): unknown[][] {
         ['Organization', d.orgName],
         ['Device', d.componentName],
         ['Release', d.releaseVersion],
+        // FDAW-74 3.5a: the displayed version, only when set, so an addendum without one is unchanged
+        ...(d.displayedVersion ? [[DISPLAYED_VERSION_DOCUMENT_LABEL, d.displayedVersion]] : []),
         ['Generated', documentInstantText(d.generatedAt)],
         [],
         [DEVICE_EOS_LABEL, d.deviceEos || 'not declared'],

@@ -132,6 +132,31 @@ describe('statementBlockReason', () => {
     })
 })
 
+describe('the displayed version line (FDAW-74 row 20 d, e)', () => {
+    const DV = 'GV-2.4.1 (Build 118)'
+    const SP = 'R&D <b>"5"</b> =1+1, \'x\'; \u00fc'
+    it('stands as content[2] between the version subtitle and the organization', () => {
+        const without = buildDeviceSupportStatementDefinition(data()).content as any[]
+        const withIt = buildDeviceSupportStatementDefinition(data({ displayedVersion: DV })).content as any[]
+        expect(withIt[2]).toEqual({ text: 'Shown on the device as GV-2.4.1 (Build 118)', style: 'subtitle' })
+        expect(withIt[1]).toEqual(without[1])
+        expect(withIt[1].text).toBe('Infusion Pump 9000, version 9000.1.0')
+        expect(withIt[3]).toEqual(without[2])
+        expect(without[2].text).toBe('Acme')
+        expect(flat(data())).not.toContain('Shown on the device')
+        const sp = buildDeviceSupportStatementDefinition(data({ displayedVersion: SP })).content as any[]
+        expect(sp[2].text).toBe('Shown on the device as ' + SP)
+    })
+
+    it('is in the font check: an undrawable character refuses, a plain value does not', () => {
+        const msg = statementBlockReason(data({ displayedVersion: 'GV \u65e5\u672c\u8a9e' })) as string
+        expect(msg).not.toBeNull()
+        expect(msg).toContain('cannot draw')
+        expect(statementBlockReason(data({ displayedVersion: DV }))).toBeNull()
+        expect(statementStrings(data({ displayedVersion: DV }))).toContain(DV)
+    })
+})
+
 describe('missingProseSlots', () => {
     it('is empty when all three are authored', () => {
         expect(missingProseSlots(data())).toEqual([])

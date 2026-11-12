@@ -2438,6 +2438,40 @@
                                 {{ deviceWindowError }}
                             </n-alert>
                         </div>
+                        <!-- FDAW-74: the version the device shows its user, written into the release SBOM,
+                             the support addendum and the device support statement. Read and written by its
+                             own documents (useReleaseDisplayedVersion, reset and fenced on navigation); hidden
+                             while not loaded for THIS release and on a server without the field. -->
+                        <div v-if="releaseDisplayedVersionLoaded" data-testid="release-displayed-version-block">
+                            <h3 class="mt-3">Displayed version</h3>
+                            <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
+                                {{ DISPLAYED_VERSION_INTRO }}
+                            </n-alert>
+                            <n-alert v-if="isShippedOrLater(updatedRelease.lifecycle)" type="warning" :show-icon="true"
+                                data-testid="release-displayed-version-shipped-note"
+                                style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
+                                {{ DISPLAYED_VERSION_SHIPPED_NOTE }}
+                            </n-alert>
+                            <n-space align="end" style="margin-bottom: 8px;">
+                                <n-input v-model:value="releaseDisplayedVersion" :placeholder="DISPLAYED_VERSION_PLACEHOLDER"
+                                    :maxlength="DISPLAYED_VERSION_MAX_LENGTH" show-count
+                                    :disabled="!isWritable || savingReleaseDisplayedVersion" style="width: 360px;"
+                                    data-testid="release-displayed-version-input"
+                                    @update:value="releaseDisplayedVersionError = null" />
+                                <n-button v-if="isWritable" size="small" type="primary" data-testid="release-displayed-version-save"
+                                    :disabled="!releaseDisplayedVersionDirty || savingReleaseDisplayedVersion"
+                                    :loading="savingReleaseDisplayedVersion"
+                                    @click="saveReleaseDisplayedVersion(false)">{{ DISPLAYED_VERSION_SAVE }}</n-button>
+                                <n-button v-if="isWritable && releaseDisplayedVersionIsSet" size="small" data-testid="release-displayed-version-clear"
+                                    :disabled="savingReleaseDisplayedVersion"
+                                    @click="saveReleaseDisplayedVersion(true)">{{ DISPLAYED_VERSION_CLEAR }}</n-button>
+                            </n-space>
+                            <div class="text-muted" style="font-size: 12px; max-width: 720px; margin-bottom: 8px;">{{ DISPLAYED_VERSION_HINT }}</div>
+                            <n-alert v-if="releaseDisplayedVersionError" type="error" :show-icon="true" data-testid="release-displayed-version-error"
+                                style="font-size: 12px; max-width: 720px; margin-bottom: 10px;">
+                                {{ releaseDisplayedVersionError }}
+                            </n-alert>
+                        </div>
                         <!-- SCORE-42: the licence ReARM declares on this release's SBOM node. On the
                              Meta tab because every release has one (the Support tab is product-only).
                              The effective line comes first, so an override shows what it displaces.
@@ -2824,6 +2858,10 @@ import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDeta
 import { setSbomComponentSupportVars, setVendoredComponentSupportVars } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
 import { useReleaseDeclaredLicense } from '@/utils/useReleaseDeclaredLicense'
+import { useReleaseDisplayedVersion } from '@/utils/useReleaseDisplayedVersion'
+import { DISPLAYED_VERSION_CLEAR, DISPLAYED_VERSION_CLEARED, DISPLAYED_VERSION_HINT, DISPLAYED_VERSION_INTRO,
+    DISPLAYED_VERSION_MAX_LENGTH, DISPLAYED_VERSION_PLACEHOLDER, DISPLAYED_VERSION_SAVE, DISPLAYED_VERSION_SAVED,
+    DISPLAYED_VERSION_SHIPPED_NOTE, displayedVersionHistoryText, isShippedOrLater } from '@/utils/displayedVersion'
 import { EXPRESSION_HINT, RELEASE_CLEARED, RELEASE_INTRO, RELEASE_PLACEHOLDER, RELEASE_SAVED, UNSUPPORTED_NOTE,
     effectiveLicenseLine, licenseUrlHref } from '@/utils/declaredLicense'
 import { useExportSupportSwitch } from '@/utils/useExportSupportSwitch'
@@ -3069,6 +3107,24 @@ const releaseLicenseDirty = releaseLicenseState.dirty
 const releaseLicenseIsOverridden = releaseLicenseState.isOverridden
 const declaredLicenseSupported: ComputedRef<boolean> = computed((): boolean =>
     store.state.declaredLicenseSupported !== false)
+
+/**
+ * The displayed version of this release (FDAW-74 3.7): the composable's state, reset and fenced
+ * across releases as the licence block's is.
+ */
+const releaseDisplayedVersionState = useReleaseDisplayedVersion(graphqlClient as any)
+const releaseDisplayedVersion = releaseDisplayedVersionState.value
+const releaseDisplayedVersionLoaded = releaseDisplayedVersionState.loaded
+const savingReleaseDisplayedVersion = releaseDisplayedVersionState.saving
+const releaseDisplayedVersionError = releaseDisplayedVersionState.error
+const releaseDisplayedVersionDirty = releaseDisplayedVersionState.dirty
+const releaseDisplayedVersionIsSet = releaseDisplayedVersionState.isSet
+
+async function saveReleaseDisplayedVersion (clear: boolean) {
+    const outcome = await releaseDisplayedVersionState.save(clear)
+    if (outcome === 'saved') notify('success', 'Saved', DISPLAYED_VERSION_SAVED)
+    else if (outcome === 'cleared') notify('success', 'Saved', DISPLAYED_VERSION_CLEARED)
+}
 
 async function saveReleaseLicense (clear: boolean) {
     const outcome = await releaseLicenseState.save(clear)
@@ -3383,6 +3439,7 @@ onMounted(async () => {
     // Not awaited, and it never rejects: keys, the Dependency-Track flag and polling never wait
     // on the licence block.
     void releaseLicenseState.load(updatedRelease.value.uuid, updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid)
+    void releaseDisplayedVersionState.load(updatedRelease.value.uuid, updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid)
     await fetchReleaseKeys()
     await loadDtrackConfigured()
     if (hasPendingStatuses()) ensureStatusPolling()
@@ -4000,6 +4057,7 @@ async function goToRelease (uuid: string) {
     // The licence block's too: its effective line, override and baseline are the previous
     // release's, and its fence drops a response for that release still in flight.
     releaseLicenseState.reset()
+    releaseDisplayedVersionState.reset()
     sbomGraphLoaded.value = false
     sbomGraphByUuid.value = {}
     sbomGraphDirty.value = true
@@ -4018,6 +4076,7 @@ async function goToRelease (uuid: string) {
         seedDeviceWindow()
         seedReleaseNarrative()
         void releaseLicenseState.load(updatedRelease.value.uuid, updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid)
+        void releaseDisplayedVersionState.load(updatedRelease.value.uuid, updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid)
         await fetchReleaseKeys()
     } finally {
         isLoading.value = false
@@ -8296,6 +8355,10 @@ const releaseHistoryFields = computed(() => [
             if (row.rus === 'FDA_NARRATIVE') {
                 const txt = formatNarrativeChange(row.oldValue, row.newValue)
                 return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
+            }
+            // The displayed version (FDAW-74): old and new value in words, as text.
+            if (row.rus === 'DISPLAYED_VERSION') {
+                return displayedVersionHistoryText(row)
             }
             // A generated artifact bound or removed (TEA-4): named while bound, 'no longer attached' once removed (FDAW-78).
             if (row.rus === 'SYNTHETIC_ARTIFACT') {
