@@ -740,6 +740,9 @@
                                                     <n-button text type="primary" size="small" @click="componentSettingsTab = 'regulatory'">Customize</n-button>
                                                 </template>
                                             </div>
+                                            <!-- FDAW-81: what Yes does with the device support statement on this product -->
+                                            <DeviceStatementSetupLine :status="setupStatus" :answer="fdaPremarketEdit" :component-type="componentData?.type"
+                                                @edit="componentSettingsTab = 'regulatory'" />
                                             <!-- The organization steps as the status reads them; the bar follows the
                                                  caller's own pending steps only (F-10), these lines follow the store. -->
                                             <div data-testid="device-setup-status" style="font-size: 12px; margin-top: 10px; max-width: 720px;">
@@ -832,7 +835,9 @@
                                             :is-writable="isAdmin"
                                             :perspective-options="teaPerspectiveOptions"
                                             :installation-type="myUser.installationType"
-                                            :names="teaPerspectiveNames()" />
+                                            :names="teaPerspectiveNames()"
+                                            @saved="loadSetupStatus"
+                                            @removed="loadSetupStatus" />
                                     </n-tab-pane>
                                     <n-tab-pane name="outputTriggers" tab="Actions" v-if="myUser.installationType !== 'OSS' && !isDocument">
                                         <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Actions</h4>
@@ -1573,6 +1578,7 @@ import ActionGuards from './ActionGuards.vue'
 import TeaProfileEditor from './TeaProfileEditor.vue'
 import SbomProfileOverrides from './SbomProfileOverrides.vue'
 import PackageSettingsEditor from './PackageSettingsEditor.vue'
+import DeviceStatementSetupLine from './DeviceStatementSetupLine.vue'
 import ProductSubmissionsPanel from './ProductSubmissionsPanel.vue'
 import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
 import { submissionsAvailable } from '@/utils/submissions'
