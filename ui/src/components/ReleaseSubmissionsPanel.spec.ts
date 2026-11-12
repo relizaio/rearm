@@ -31,6 +31,7 @@ vi.mock('@/utils/artifactDownload', async (importOriginal) => ({
 
 const { default: Panel } = await import('./ReleaseSubmissionsPanel.vue')
 const { artifactDownloadUrl } = await import('@/utils/artifactDownload')
+const { expectSwept } = await import('@/utils/__fixtures__/fdaSweep')
 
 const A1 = '11111111-1111-4111-8111-111111111111'
 const A2 = '22222222-2222-4222-8222-222222222222'
@@ -229,7 +230,7 @@ describe('ReleaseSubmissionsPanel', () => {
         expect(empty.find('[data-testid="submissions-empty"]').text()).toBe('No submission of this release yet')
         const create = empty.find('[data-testid="submission-create"]')
         expect(create.attributes('disabled')).toBeDefined()
-        expect(create.attributes('title')).toBe('The release must be ASSEMBLED or above')
+        expect(create.attributes('title')).toBe('The release must be Assembled or later')
         empty.unmount()
     })
 
@@ -569,5 +570,48 @@ describe('ReleaseSubmissionsPanel: the newest version and the actors (FDAW-4)', 
 
     it('T4: the panel takes no userLabel prop any more', () => {
         expect(Object.keys((Panel as any).props ?? {})).not.toContain('userLabel')
+    })
+})
+
+/** FDAW-78 row 15 (REQ-67): the release panel's Requirement and Settings cells in words, swept. */
+describe('ReleaseSubmissionsPanel in words (FDAW-78 row 15)', () => {
+    const HEAD = { uuid: 's9', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastActKind: 'RESUBMITTED',
+        lastActDate: '2026-10-02T00:00:00Z', lastActBy: 'u1', versions: [
+            v(1, { submission: 's9' }),
+            v(2, { submission: 's9', settings: { row: 'row-1', revision: 0, source: 'COMPONENT' }, parts: [
+                { part: 'NARRATIVE', requirement: 'REQUIRED', outcome: 'PRODUCED', artifact: A1, artifactVersion: '1',
+                    fileName: 'narrative.txt', mediaType: 'text/plain', size: 5, sha256: 'd'.repeat(64) },
+                { part: 'VEX', requirement: 'OPTIONAL', outcome: 'SKIPPED', skipReason: 'EXCLUDED_BY_SETTINGS', detail: null },
+            ] }),
+        ] }
+
+    beforeEach(() => {
+        query.mockReset()
+        query.mockImplementation(async (opts: any) => {
+            switch (operation(opts)) {
+            case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
+            case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: [HEAD] } }
+            default: throw new Error('unexpected query ' + operation(opts))
+            }
+        })
+    })
+
+    it('Required and Optional in the parts table, the settings in words, and the panel swept', async () => {
+        const w = await mountPanel({ componentType: 'PRODUCT' })
+        const parts = w.find('[data-testid="submission-parts-FDA_PREMARKET-2"]')
+        const reqCells = parts.findAll('tbody tr').map((r: any) => r.findAll('td')[1].text())
+        expect(reqCells).toEqual(['Required', 'Optional'])
+        const table = w.find('[data-testid="submission-versions-FDA_PREMARKET"]')
+        const text = table.text()
+        expect(text).toContain('This product\'s own settings, revision 0')
+        expect(text).toContain('Built-in defaults')
+        // the sweep reads the panel's text with the sha256 cells removed by their test id
+        const root = w.find('[data-testid="submission-head-FDA_PREMARKET"]').element.closest('div')!.parentElement!.cloneNode(true) as HTMLElement
+        root.querySelectorAll('[data-testid="submission-sha256"]').forEach(e => e.remove())
+        const swept = root.textContent ?? ''
+        expect(swept).toContain('Required')
+        expect(swept).toContain('This product\'s own settings, revision 0')
+        expectSwept(swept, 'release panel')
+        w.unmount()
     })
 })

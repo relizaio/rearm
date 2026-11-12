@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { expectSwept } from './__fixtures__/fdaSweep'
 import { belongsToLabel, generatedArtifactRows, isSyntheticArtifact, syntheticArtifactsAvailable, syntheticHistoryText,
     generatedArtifactDownloadRef, generatedArtifactOrigin } from './generatedArtifacts'
 
@@ -66,14 +67,34 @@ describe('belongsToLabel', () => {
 describe('syntheticHistoryText', () => {
     const details = [{ uuid: 's-1', type: 'BOM', displayIdentifier: 'aggregated.cdx.json' }]
 
-    it('names a bound generated artifact by type and display id', () => {
-        expect(syntheticHistoryText('s-1', details)).toBe('Generated artifact BOM aggregated.cdx.json')
+    it('names a bound generated artifact by type label and display id', () => {
+        expect(syntheticHistoryText('s-1', details)).toBe('Generated artifact: BOM aggregated.cdx.json')
     })
 
-    it('falls back to the uuid once the artifact is no longer bound, or nothing was loaded', () => {
-        expect(syntheticHistoryText('s-gone', details)).toBe('Generated artifact s-gone')
-        expect(syntheticHistoryText('s-gone', [])).toBe('Generated artifact s-gone')
-        expect(syntheticHistoryText('s-gone', undefined)).toBe('Generated artifact s-gone')
+    it('says the artifact is no longer attached once it is not bound, or nothing was loaded; never its uuid', () => {
+        expect(syntheticHistoryText('s-gone', details)).toBe('Generated artifact (no longer attached)')
+        expect(syntheticHistoryText('s-gone', [])).toBe('Generated artifact (no longer attached)')
+        expect(syntheticHistoryText('s-gone', undefined)).toBe('Generated artifact (no longer attached)')
+    })
+
+    /** FDAW-78 row 12 (REQ-66): the type by its label, missing pieces dropped, no uuid. */
+    it('reads in words: the type label, the display id, the fallbacks (FDAW-78 row 12)', () => {
+        const id = '3bef7cde-2edb-47cb-aa4e-94487c2cdced'
+        const outs = [
+            syntheticHistoryText(id, [{ uuid: id, type: 'REGULATORY_DOCUMENT', displayIdentifier: 'p-2.4.0-narrative.txt' }]),
+            syntheticHistoryText(id, [{ uuid: id, type: 'REGULATORY_DOCUMENT' }]),
+            syntheticHistoryText(id, [{ uuid: id }]),
+            syntheticHistoryText(id, []),
+            syntheticHistoryText(id, null),
+        ]
+        expect(outs).toEqual([
+            'Generated artifact: Regulatory document p-2.4.0-narrative.txt',
+            'Generated artifact: Regulatory document',
+            'Generated artifact',
+            'Generated artifact (no longer attached)',
+            'Generated artifact (no longer attached)',
+        ])
+        expectSwept(outs.join('\n'))
     })
 })
 
@@ -112,7 +133,7 @@ describe('generated artifact download and submission facts', () => {
         expect(generatedArtifactOrigin({ tags: [tag('submissionKind', 'FDA_PREMARKET'), tag('submissionManifest', 'true'),
             tag('submissionVersion', '1')] })).toEqual({ title: 'FDA premarket submission (v1)', details: [{ label: 'Part', value: 'Manifest' }] })
         expect(generatedArtifactOrigin({ tags: [tag('submissionKind', 'OTHER_KIND'), tag('submissionPart', 'NEW_PART')] }))
-            .toEqual({ title: 'OTHER_KIND submission', details: [{ label: 'Part', value: 'NEW_PART' }] })
+            .toEqual({ title: 'Other kind submission', details: [{ label: 'Part', value: 'New part' }] })
     })
 
     it('answers null for an artifact neither a TEA publication nor a submission wrote', () => {

@@ -8,6 +8,7 @@
 import { isProEdition } from './editionCapabilities'
 import { artifactDownloadRef, type ArtifactDownloadRef } from './artifactDownload'
 import { packageKindLabel, packagePartLabel } from './packageSettings'
+import { ARTIFACT_TYPE_LABELS, labelOrHumanized } from './fdaLabels'
 
 /**
  * Whether this edition serves generated artifacts. Both do: the CE backend serves
@@ -56,15 +57,17 @@ export function generatedArtifactRows (details: any[] | null | undefined, releas
 }
 
 /**
- * The History text of a SYNTHETIC_ARTIFACT event: the generated artifact named by its type and
- * display id while it is still bound, its uuid once it is not (a REMOVED row).
+ * The History text of a SYNTHETIC_ARTIFACT event (FDAW-78 3.4): `Generated artifact: <type label> <display
+ * id>` while it is still bound, missing pieces dropped (`Generated artifact` when both are); `Generated
+ * artifact (no longer attached)` once it is not (a REMOVED row). Never the artifact's uuid.
  */
 export function syntheticHistoryText (objectId: string | null | undefined, details: any[] | null | undefined): string {
     const ad = Array.isArray(details)
         ? details.find((a: any) => a && a.uuid === objectId)
         : undefined
-    if (!ad) return `Generated artifact ${objectId ?? ''}`.trim()
-    return ['Generated artifact', ad.type, ad.displayIdentifier].filter(Boolean).join(' ')
+    if (!ad) return 'Generated artifact (no longer attached)'
+    const rest = [labelOrHumanized(ARTIFACT_TYPE_LABELS, ad.type), ad.displayIdentifier].filter(Boolean).join(' ')
+    return rest ? 'Generated artifact: ' + rest : 'Generated artifact'
 }
 
 /** A tag's value on a generated artifact row, or '' when absent. */

@@ -631,8 +631,8 @@
                                                 </n-checkbox>
                                             </div>
                                             <div class="text-muted" style="font-size: 12px; max-width: 720px; margin-top: 6px;">
-                                                Answering No <strong>retracts any declared window</strong>: the
-                                                window lives in the medical profile that a non-device has none of.
+                                                Answering No <strong>removes the device support dates</strong> entered
+                                                below: only a medical device has them.
                                             </div>
                                             <div v-if="fdaHalfShown && !isDeviceComponent && setupStatus?.productState === 'ENABLED'"
                                                 data-testid="device-fda-still-on" class="text-muted" style="font-size: 12px; margin-top: 6px;">
@@ -736,33 +736,17 @@
                                                     <n-button text type="primary" size="small" @click="componentSettingsTab = 'regulatory'">Edit</n-button>
                                                 </template>
                                                 <template v-else>
-                                                    {{ fdaDefaultsLine(setupStatus?.orgPackageProfile || 'default') }}
+                                                    {{ fdaDefaultsLine(setupStatus?.orgPackageProfile) }}
                                                     <n-button text type="primary" size="small" @click="componentSettingsTab = 'regulatory'">Customize</n-button>
                                                 </template>
                                             </div>
                                             <!-- FDAW-81: what Yes does with the device support statement on this product -->
                                             <DeviceStatementSetupLine :status="setupStatus" :answer="fdaPremarketEdit" :component-type="componentData?.type"
                                                 @edit="componentSettingsTab = 'regulatory'" />
-                                            <!-- The organization steps as the status reads them; the bar follows the
-                                                 caller's own pending steps only (F-10), these lines follow the store. -->
-                                            <div data-testid="device-setup-status" style="font-size: 12px; margin-top: 10px; max-width: 720px;">
-                                                <div v-for="l in setupStatusLines(setupStatus)" :key="l.step"
-                                                    :data-testid="'device-setup-line-' + l.step">
-                                                    {{ l.done ? '\u2713' : 'not done:' }} {{ l.text }}
-                                                </div>
-                                                <n-alert v-if="setupStatus?.mustFix?.length" type="warning" :show-icon="true"
-                                                    data-testid="device-setup-must-fix" style="margin-top: 6px;">
-                                                    <div v-for="m in setupStatus.mustFix" :key="m">{{ m }}</div>
-                                                    <router-link :to="{ name: 'OrgSettings', params: { orguuid: componentData?.org },
-                                                        query: { tab: 'adminSettings', adminTab: 'sbomProfiles' } }">
-                                                        Organization Settings > SBOM Profiles
-                                                    </router-link>
-                                                </n-alert>
-                                                <div v-for="l in setupStepNotes" :key="l.step" :data-testid="'device-step-not-done-' + l.step"
-                                                    class="text-muted" style="margin-top: 4px;">
-                                                    not done: {{ l.text }}
-                                                </div>
-                                            </div>
+                                            <!-- FDAW-78 3.6: the FDA texts block, the intro, the organization steps, the
+                                                 must-fix alert and the step notes, in their own component. -->
+                                            <MedicalDeviceSetupStatus :status="setupStatus" :step-notes="setupStepNotes"
+                                                :org-uuid="componentData?.org" :fda-premarket="fdaPremarketEdit" />
                                         </div>
                                         <!-- FDAW-3, B8 / FDAW-18: one Save for the whole tab, like Core Settings: one
                                              setUpMedicalDevice (on CE, where the setup is not served, one
@@ -1579,6 +1563,7 @@ import TeaProfileEditor from './TeaProfileEditor.vue'
 import SbomProfileOverrides from './SbomProfileOverrides.vue'
 import PackageSettingsEditor from './PackageSettingsEditor.vue'
 import DeviceStatementSetupLine from './DeviceStatementSetupLine.vue'
+import MedicalDeviceSetupStatus from './MedicalDeviceSetupStatus.vue'
 import ProductSubmissionsPanel from './ProductSubmissionsPanel.vue'
 import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
 import { submissionsAvailable } from '@/utils/submissions'
@@ -1594,7 +1579,7 @@ import {
     MEDICAL_DEVICE_SAVED, QUESTION_FDA_PREMARKET, QUESTION_TRACKED_821, SET_UP_MEDICAL_DEVICE, completeSetupOffered,
     deviceClassFromAnswers, deviceProfileDiffers, deviceProfileFormOf, deviceStepWritten, fdaCustomizedLine,
     fdaDefaultsLine, fdaPremarketBaseline, fdaStillOnLine, isCustomized, loadMedicalDeviceSetupStatus,
-    medicalDeviceSetupInput, questionIsMedical, setupStatusLines, setupStepLines, EMPTY_DEVICE_PROFILE,
+    medicalDeviceSetupInput, questionIsMedical, setupStepLines, EMPTY_DEVICE_PROFILE,
     type DeviceProfileForm, type SetupStepLine
 } from '@/utils/medicalDeviceSetup'
 import { EOS_FIELD_LABEL, EOL_FIELD_LABEL } from '@/utils/deviceDateLabels'

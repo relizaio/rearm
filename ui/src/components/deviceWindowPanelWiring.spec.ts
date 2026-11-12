@@ -13,6 +13,9 @@ import { fileURLToPath } from 'url'
  */
 const source = readFileSync(
     fileURLToPath(new URL('./ComponentView.vue', import.meta.url)), 'utf8')
+/** The Medical device tab's status block, out of ComponentView.vue since FDAW-78 (row 16). */
+const statusSource = readFileSync(
+    fileURLToPath(new URL('./MedicalDeviceSetupStatus.vue', import.meta.url)), 'utf8')
 
 /** A top-level function of the page, from its opening to the first `}` at column 0. */
 function fnBody (opening: string): string {
@@ -462,10 +465,15 @@ describe('the D7 UI surfaces can actually render and read', () => {
 describe('the Medical device tab is wired into the component page (FDAW-18)', () => {
     it('carries the questions, the defaults line, the status and Complete setup', () => {
         for (const id of ['device-is-medical', 'device-tracked-821', 'device-fda-premarket', 'device-fda-defaults',
-            'device-fda-still-on', 'device-setup-status', 'device-complete-setup']) {
+            'device-fda-still-on', 'device-complete-setup']) {
             expect(source, id).toContain('data-testid="' + id + '"')
         }
-        expect(source).toContain(":data-testid=\"'device-step-not-done-' + l.step\"")
+        // FDAW-78 row 17: the status block moved to MedicalDeviceSetupStatus.vue with its three test ids
+        expect(source).toContain('<MedicalDeviceSetupStatus')
+        expect(source).not.toContain("'device-setup-line-'")
+        expect(source).not.toContain("'device-step-not-done-'")
+        expect(statusSource).toContain('data-testid="device-setup-status"')
+        expect(statusSource).toContain(":data-testid=\"'device-step-not-done-' + l.step\"")
         expect(source).not.toContain('DEVICE_CLASS_OPTIONS')
         expect(source).not.toMatch(/label: 'MEDICAL_TRACKED'/)
         expect(source).not.toMatch(/label: 'MEDICAL_UNTRACKED'/)
@@ -552,9 +560,10 @@ describe('the component page counts a scoped ADMIN grant as write (FDAW-66)', ()
                 expect(t, org).not.toContain(org)
             }
         }
-        const lineAt = pane.indexOf("'device-setup-line-'")
+        // FDAW-78 row 17: the line element lives in MedicalDeviceSetupStatus.vue now; it still holds no control
+        const lineAt = statusSource.indexOf("'device-setup-line-'")
         expect(lineAt).toBeGreaterThan(-1)
-        const line = pane.slice(lineAt, pane.indexOf('</div>', lineAt))
+        const line = statusSource.slice(lineAt, statusSource.indexOf('</div>', lineAt))
         expect(line).not.toMatch(/<(n-[\w-]+|input|select|textarea|button)\b/)
     })
 })

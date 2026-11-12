@@ -5,7 +5,8 @@
 // server's packageKinds answer, never from this file.
 
 import { isProEdition } from './editionCapabilities'
-import { TEA_INHERIT, teaInheritConflictHint, teaSourceLabel } from './teaProfile'
+import { TEA_INHERIT, teaInheritConflictHint } from './teaProfile'
+import { ARTIFACT_TYPE_LABELS, humanizeEnum, labelOrHumanized, PACKAGE_KIND_LABELS } from './fdaLabels'
 
 /**
  * Whether this edition serves regulatory package settings and submissions. The Pro backend does;
@@ -47,7 +48,7 @@ export const ARTIFACT_TYPES = ['BOM', 'ATTESTATION', 'VDR', 'BOV', 'VEX', 'USER_
     'CERTIFICATION', 'FORMULATION', 'LICENSE', 'RELEASE_NOTES', 'SECURITY_TXT', 'THREAT_MODEL', 'SIGNATURE',
     'SIGNED_PAYLOAD', 'PUBLIC_KEY', 'CERTIFICATE_X_509', 'CERTIFICATE_PGP', 'RISK_ASSESSMENT', 'AGENTIC_REPORT', 'REGULATORY_DOCUMENT', 'OTHER']
 
-export const PACKAGE_ARTIFACT_TYPE_OPTIONS: Option[] = ARTIFACT_TYPES.map(t => opt(t, t.replace(/_/g, ' ')))
+export const PACKAGE_ARTIFACT_TYPE_OPTIONS: Option[] = ARTIFACT_TYPES.map(t => opt(t, labelOrHumanized(ARTIFACT_TYPE_LABELS, t)))
 
 export const PACKAGE_PART_LABELS: Record<string, string> = {
     AGGREGATE_SBOM: 'Aggregate SBOM',
@@ -60,33 +61,50 @@ export const PACKAGE_PART_LABELS: Record<string, string> = {
     RAW_ARTIFACTS: 'Raw artifacts',
 }
 
-export const PACKAGE_KIND_LABELS: Record<string, string> = {
-    FDA_PREMARKET: 'FDA premarket',
-}
+/** Defined in fdaLabels.ts (the release History parses with it) and read here under its old name. */
+export { PACKAGE_KIND_LABELS }
 
-/** A kind's label; an unknown kind renders its value (the editor is generic over packageKinds). */
+/** A kind's label; an unknown kind renders humanized (FDAW-78 3.1; the editor is generic over packageKinds). */
 export function packageKindLabel (kind: string | null | undefined): string {
-    return (kind && PACKAGE_KIND_LABELS[kind]) || kind || ''
+    return (kind && PACKAGE_KIND_LABELS[kind]) || humanizeEnum(kind)
 }
 
-/** A part's label; an unknown part renders its value. */
+/** A part's label; an unknown part renders humanized. */
 export function packagePartLabel (part: string | null | undefined): string {
-    return (part && PACKAGE_PART_LABELS[part]) || part || ''
+    return (part && PACKAGE_PART_LABELS[part]) || humanizeEnum(part)
 }
 
 /** FDAW-18: the switch of a product's FDA premarket row is question 2 of its Medical device tab. */
 export const PACKAGE_COMPONENT_QUESTION_HINT = 'On the Medical device tab this is question 2'
 
+/** The label of the switch (FDAW-78 3.5, C3): the organization's row is a default, every other row `Enabled`. */
+export function packageEnabledLabel (scope?: PackageScope | null): string {
+    return scope === 'ORGANIZATION' ? 'On by default' : 'Enabled'
+}
+
 /**
- * The help text of the Enabled switch, naming the kind and describing the value the switch shows; at a
- * COMPONENT scope the FDA premarket switch also names the Medical device tab question it answers (FDAW-18).
+ * The help text of the switch, naming the kind and describing the value the switch shows (FDAW-78 3.5, C3):
+ * at the organization it says what the default does and that a product switched on for itself keeps
+ * working; elsewhere what releases of this `scopeWord` offer. At a COMPONENT scope the FDA premarket switch
+ * also names the Medical device tab question it answers (FDAW-18).
  */
 export function packageEnabledHelp (kind: string | null | undefined, enabled: boolean | null | undefined,
-    scope?: PackageScope | null): string {
-    const line = enabled === true
-        ? 'On: releases of this scope offer ' + packageKindLabel(kind) + ' and can be submitted.'
-        : 'Off: releases of this scope do not offer ' + packageKindLabel(kind)
-            + ' and no new submission can be made; existing submissions stay readable and can be withdrawn.'
+    scope?: PackageScope | null, scopeWord?: string | null): string {
+    const k = packageKindLabel(kind)
+    let line: string
+    if (scope === 'ORGANIZATION') {
+        line = enabled === true
+            ? 'On: every product and component without its own setting offers ' + k + ' and can be submitted.'
+            : 'Off: ' + k + ' is not offered by default. A product offers it once it is switched on for that product'
+                + ' (the product\'s Settings > Medical device, question 2); products already switched on there keep'
+                + ' working. Existing submissions stay readable and can be cancelled.'
+    } else {
+        const w = scopeWord || 'component'
+        line = enabled === true
+            ? 'On: releases of this ' + w + ' offer ' + k + ' and can be submitted.'
+            : 'Off: releases of this ' + w + ' do not offer ' + k
+                + ' and no new submission can be made; existing submissions stay readable and can be cancelled.'
+    }
     return scope === 'COMPONENT' && kind === 'FDA_PREMARKET' ? line + ' ' + PACKAGE_COMPONENT_QUESTION_HINT + '.' : line
 }
 
@@ -102,19 +120,19 @@ export function packageStateOf (settings: any): 'ENABLED' | 'DISABLED' {
 
 /** The effective on/off of a kind at a scope, from the resolver's settings; off when nothing resolves. */
 export function packageEnabledLine (resolution: any): string {
-    return 'Enabled here: ' + (packageStateOf(resolution?.settings) === 'ENABLED' ? 'on' : 'off')
+    return 'In use here: ' + (packageStateOf(resolution?.settings) === 'ENABLED' ? 'switched on' : 'switched off')
 }
 
 export const PACKAGE_FIELD_HELP: Record<string, string> = {
     kind: 'The regulatory package kind these settings tailor; each kind has its own parts.',
-    sbomProfile: 'The SBOM profile the aggregate SBOM part is generated under; one name, resolved at this scope',
-    selection: 'Whether the part is in the package; a REQUIRED part is always included.',
+    sbomProfile: 'The SBOM profile the aggregate SBOM part is generated under; one name, as it is in use here',
+    selection: 'Whether the part is in the package; a required part is always included.',
     suppressedFindings: 'Whether findings suppressed by an analysis stay in the document.',
     inTriageFindings: 'Whether findings still in triage stay in the VEX.',
     vexFormat: 'The format the VEX part is written in.',
-    artifactTypes: 'Attached release artifacts of these types ride along as RAW_ARTIFACTS; at least one type when included',
+    artifactTypes: 'Attached release artifacts of these types are added to the package as raw artifacts; at least one type when included',
     description: 'Shown beside the settings only; at most 1024 characters.',
-    mode: 'Inherit stores nothing here; Override defines the settings at this scope; Follow takes one perspective\'s settings.',
+    mode: 'Inherit saves nothing here; Override defines the settings here; Follow takes one perspective\'s settings.',
 }
 
 /** The editor-only mode of a scope with no stored row (as TEA_INHERIT): never sent, going back removes the row. */
@@ -253,20 +271,45 @@ export function packageFormError (form: PackageSettingsForm): string | null {
     if (form.mode === 'FOLLOW_PERSPECTIVE' || form.mode === PACKAGE_INHERIT) return null
     const raw = form.parts.find(p => p.part === 'RAW_ARTIFACTS')
     if (raw && raw.selection === 'INCLUDE' && !(raw.artifactTypes ?? []).length) {
-        return 'RAW_ARTIFACTS needs at least one artifact type while included'
+        return 'Raw artifacts needs at least one artifact type while included'
     }
     if (!(form.sbomProfile ?? '').trim()) return 'An SBOM profile is required'
     return null
 }
 
 function names (r: any, map: Record<string, string>): string {
-    return (r?.conflictingPerspectives ?? []).map((p: any) => p.name || map[p.uuid] || p.uuid).join(', ')
+    return (r?.conflictingPerspectives ?? []).map((p: any) => p.name || map[p.uuid] || 'a perspective').join(', ')
 }
 
-function sourceWithRevision (r: any, map: Record<string, string>): string {
-    const label = teaSourceLabel(r?.source, r?.sourceObject, map)
+const STORED_SOURCES = ['ORGANIZATION', 'COMPONENT', 'PERSPECTIVE', 'FOLLOWED_PERSPECTIVE']
+
+/**
+ * Where package settings come from, in words (FDAW-78 3.5, L6): `organization settings`, `this product's own
+ * settings` (`typeWord` product or component), `settings of perspective <name>` (`settings of a perspective`
+ * when the map has no name: never the uuid), and `built-in defaults` for DEFAULT, none or any other value.
+ * The TEA editor's teaSourceLabel is TEA's and stays.
+ */
+export function packageSourceLabel (r: any, map: Record<string, string> = {}, typeWord?: string | null): string {
+    switch (r?.source) {
+    case 'ORGANIZATION': return 'organization settings'
+    case 'COMPONENT': return 'this ' + (typeWord || 'component') + '\'s own settings'
+    case 'PERSPECTIVE':
+    case 'FOLLOWED_PERSPECTIVE': {
+        const name = r?.sourceObject ? map[r.sourceObject] : null
+        return name ? 'settings of perspective ' + name : 'settings of a perspective'
+    }
+    default: return 'built-in defaults'
+    }
+}
+
+function typeWordOf (scopeWord?: string | null): string {
+    return scopeWord === 'product' ? 'product' : 'component'
+}
+
+function sourceWithRevision (r: any, map: Record<string, string>, typeWord?: string | null): string {
+    const label = packageSourceLabel(r, map, typeWord)
     const rev = r?.settings?.revision
-    if (!r?.source || r.source === 'DEFAULT' || rev == null) return label
+    if (!STORED_SOURCES.includes(r?.source) || rev == null) return label
     return label + ', revision ' + rev
 }
 
@@ -276,31 +319,36 @@ export function packageInheritConflictHint (scope: PackageScope, mode: string | 
     return teaInheritConflictHint(scope, mode, perspectiveCount, view, packageKindLabel(kind) + ' settings')
 }
 
-/** The editor's source line, the SBOM editor's text with "package settings" for the name; in INHERIT, where they come from. */
-export function packageSourceLine (view: any, map: Record<string, string> = {}, mode: string | null = null): string {
+/**
+ * The editor's source line (FDAW-78 3.5, L6), worded for the `scopeWord` (organization, perspective, product
+ * or component); in INHERIT, where the settings come from.
+ */
+export function packageSourceLine (view: any, map: Record<string, string> = {}, mode: string | null = null,
+    scopeWord: string = 'component'): string {
     const parent = view?.parent
+    const typeWord = typeWordOf(scopeWord)
     if (mode === PACKAGE_INHERIT && parent?.status !== 'CONFLICT') {
-        const from = (!parent || parent.status === 'NOT_FOUND') ? 'built-in defaults' : sourceWithRevision(parent, map)
-        return 'Inherited from ' + from + (view?.stored ? ': Save removes the stored settings' : '')
+        const from = (!parent || parent.status === 'NOT_FOUND') ? 'built-in defaults' : sourceWithRevision(parent, map, typeWord)
+        return 'Inherited from ' + from + (view?.stored ? ': Save removes the settings saved here' : '')
     }
-    if (view?.stored) return 'Stored at this scope'
+    if (view?.stored) return 'Saved for this ' + scopeWord
     if (!parent || parent.status === 'NOT_FOUND') {
-        return 'No package settings above this scope: pre-filled from the built-in defaults'
+        return 'Nothing saved for this ' + scopeWord + ' or above it: pre-filled from the built-in defaults'
     }
     if (parent.status === 'CONFLICT') {
         return 'Conflict: the perspectives ' + names(parent, map) + ' each define package settings; choose Override or Follow here'
     }
-    return 'No override: pre-filled from ' + sourceWithRevision(parent, map)
+    return 'Nothing saved for this ' + scopeWord + ': pre-filled from ' + sourceWithRevision(parent, map, typeWord)
 }
 
-/** The resolver's effective view of the package settings at this scope, as one line. */
-export function packageEffectiveLine (resolution: any, map: Record<string, string> = {}): string {
+/** The resolver's view of the package settings in use here, as one line; `scopeWord` words a COMPONENT source. */
+export function packageEffectiveLine (resolution: any, map: Record<string, string> = {}, scopeWord: string = 'component'): string {
     if (!resolution) return ''
     if (resolution.status === 'CONFLICT') {
-        return 'Effective here: conflict between perspectives ' + names(resolution, map) + '; a submission is refused'
+        return 'In use here: conflict between perspectives ' + names(resolution, map) + '; a submission is refused'
     }
-    if (resolution.status === 'NOT_FOUND') return 'Effective here: not found; a submission is refused'
-    return 'Effective here: ' + sourceWithRevision(resolution, map)
+    if (resolution.status === 'NOT_FOUND') return 'In use here: not found; a submission is refused'
+    return 'In use here: ' + sourceWithRevision(resolution, map, typeWordOf(scopeWord))
 }
 
 /** The confirmation before a stored row goes back to INHERIT; the editor then removes the row. */

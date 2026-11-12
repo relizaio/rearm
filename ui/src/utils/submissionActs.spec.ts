@@ -131,7 +131,8 @@ describe('useSubmissionActs', () => {
         await acts().create('r1', 'FDA_PREMARKET', NAMES)
         expect(operation(mutate.mock.calls[0][0])).toBe('CreateSubmission')
         expect(mutate.mock.calls[0][0].variables).toEqual({ release: 'r1', kind: 'FDA_PREMARKET', reason: null })
-        expect(fire.mock.calls.at(-1)![0]).toEqual({ title: 'Submission', text: 'Created v1 (Created).', icon: 'success' })
+        // FDAW-78 row 14 (L11): the result in words, the outcome not echoed
+        expect(fire.mock.calls.at(-1)![0]).toEqual({ title: 'Submission', text: 'Version 1 created.', icon: 'success' })
         expect(reload).toHaveBeenCalledTimes(1)
 
         fire.mockResolvedValueOnce({ isConfirmed: true, value: 'first filing' })
@@ -152,6 +153,9 @@ describe('useSubmissionActs', () => {
         expect(query.mock.calls[0][0].variables).toEqual({ release: 'r1', kind: 'FDA_PREMARKET' })
         expect(operation(mutate.mock.calls[0][0])).toBe('ResubmitSubmission')
         expect(mutate.mock.calls[0][0].variables).toEqual({ submission: 's1', reason: 'updated SBOM', expectedLatestVersion: 2 })
+        // FDAW-78 row 14 (L11): the result in words, the outcome not echoed
+        expect(fire.mock.calls.at(-1)![0]).toEqual({ title: 'Submission', text: 'Version 3 created.', icon: 'success' })
+        for (const c of fire.mock.calls.slice(1)) expect(String(c[0].text ?? '')).not.toContain('(')
         expect(reload).toHaveBeenCalledTimes(1)
         everyCallIsOneObject()
     })

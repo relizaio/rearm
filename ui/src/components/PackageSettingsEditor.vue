@@ -42,7 +42,7 @@
             <n-form v-if="view && !follows" label-placement="left" label-width="210" :disabled="readOnly" size="small">
                 <div data-testid="package-fields" :data-inherited="inherits ? 'true' : undefined">
                     <n-form-item label-for="package-enabled">
-                        <template #label><FieldLabel label="Enabled" :tip="enabledHelp" /></template>
+                        <template #label><FieldLabel :label="enabledLabel" :tip="enabledHelp" /></template>
                         <n-switch data-testid="package-enabled" :value="shown.state === 'ENABLED'" :disabled="readOnly"
                             @update:value="setEnabled" />
                         <span class="text-muted package-enabled-help">{{ enabledHelp }}</span>
@@ -69,13 +69,13 @@
                                     </n-tag>
                                 </td>
                                 <td>
-                                    <n-tag size="small" :type="p.requirement === 'REQUIRED' ? 'error' : 'default'">{{ p.requirement }}</n-tag>
+                                    <n-tag size="small" :type="p.requirement === 'REQUIRED' ? 'error' : 'default'" :data-testid="'package-requirement-' + p.part">{{ labelOrHumanized(REQUIREMENT_LABELS, p.requirement) }}</n-tag>
                                 </td>
                                 <td :title="PACKAGE_FIELD_HELP.selection">
                                     <n-select :data-testid="'package-selection-' + p.part" v-model:value="p.selection"
                                         :options="PACKAGE_SELECTION_OPTIONS" :filterable="false" :disabled="p.requirement === 'REQUIRED' || readOnly" />
                                     <div v-if="p.requirement === 'REQUIRED'" :data-testid="'package-selection-reason-' + p.part" class="text-muted">
-                                        REQUIRED by the kind
+                                        Always included: {{ packageKindLabel(kind) }} requires this part
                                     </div>
                                 </td>
                                 <td>
@@ -127,12 +127,13 @@ import SbomProfilePicker from './SbomProfilePicker.vue'
 import {
     Option, PackageScope, PackageSettingsForm, PACKAGE_ARTIFACT_TYPE_OPTIONS, PACKAGE_FIELD_HELP,
     PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS, PACKAGE_INHERIT, PACKAGE_SELECTION_OPTIONS,
-    PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine, packageEnabledHelp,
+    PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine, packageEnabledHelp, packageEnabledLabel,
     packageEnabledLine, packageFormError, packageInheritConfirm, packageInheritConflictHint, packageInheritedForm, packageModeOptions,
     packageFormFromView, packageKindLabel, packagePartFields, packagePartLabel, packageRemoveConfirm,
     packageSettingsInput, packageSourceLine,
 } from '@/utils/packageSettings'
 import { sbomScopeWord } from '@/utils/sbomProfile'
+import { labelOrHumanized, REQUIREMENT_LABELS } from '@/utils/fdaLabels'
 
 const props = withDefaults(defineProps<{
     orgUuid: string
@@ -196,11 +197,12 @@ const inherits = computed(() => form.value.mode === PACKAGE_INHERIT)
 const readOnly = computed(() => !props.isWritable || inherits.value)
 const inheritedForm = computed((): PackageSettingsForm => packageInheritedForm(view.value, props.scope))
 const shown = computed((): PackageSettingsForm => inherits.value ? inheritedForm.value : form.value)
-const sourceLine = computed(() => packageSourceLine(view.value, allNames.value, form.value.mode))
-const effectiveLine = computed(() => packageEffectiveLine(view.value?.effective, allNames.value))
+const sourceLine = computed(() => packageSourceLine(view.value, allNames.value, form.value.mode, scopeWord.value))
+const effectiveLine = computed(() => packageEffectiveLine(view.value?.effective, allNames.value, scopeWord.value))
 const effectiveEnabledLine = computed(() => packageEnabledLine(view.value?.effective))
 // Follows the value the switch shows, the read-only INHERIT display included.
-const enabledHelp = computed(() => packageEnabledHelp(kind.value, shown.value.state === 'ENABLED', props.scope))
+const enabledHelp = computed(() => packageEnabledHelp(kind.value, shown.value.state === 'ENABLED', props.scope, scopeWord.value))
+const enabledLabel = computed(() => packageEnabledLabel(props.scope))
 /** The switch flips the row's state (FDAW-18); the form never holds the deprecated enabled alias. */
 function setEnabled (on: boolean): void {
     shown.value.state = on ? 'ENABLED' : 'DISABLED'

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { addendumRow, addendumHeaderRows, ADDENDUM_COLUMNS, ADDENDUM_TITLE, NOT_ASSESSED,
     LEVEL_NOT_STATED, VENDORED_SUFFIX, addendumFileStem } from './addendumDocument'
 import type { AddendumComponent, AddendumData } from './addendumData'
+import { expectSwept, UUID_RE } from './__fixtures__/fdaSweep'
 
 function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
     return {
@@ -80,7 +81,7 @@ describe('addendumRow', () => {
         const row = addendumRow(comp({ attestationState: 'WITHDRAWN' }))
         expect(row[3]).toBe(NOT_ASSESSED)
         expect(row[4]).toBeNull()
-        expect(row[6]).toBe('WITHDRAWN')
+        expect(row[6]).toBe('withdrawn')
         expect(row[7]).toBeNull()
     })
 
@@ -194,8 +195,8 @@ describe('the FDAW-14 columns', () => {
         expect(by({ assertedByName: 'A', attestationState: 'WITHDRAWN' })).toBeNull()
     })
 
-    it('prints not available with the code for an end-of-support unknown', () => {
-        expect(addendumRow(comp(unknown(false)))[at('End of support')]).toBe('not available: NO_COMMITTED_END_OF_SUPPORT')
+    it('prints not available with the reason\'s text for an end-of-support unknown (FDAW-78 3.8)', () => {
+        expect(addendumRow(comp(unknown(false)))[at('End of support')]).toBe('not available: no committed end of support')
         expect(addendumRow(comp({ ...unknown(false), endOfSupportDate: '2030-01-01' }))[at('End of support')])
             .toBe('2030-01-01')
     })
@@ -230,5 +231,80 @@ describe('the vendored row', () => {
 
     it('a component without the flag is unlabelled', () => {
         expect(addendumRow(comp({ vendored: false }))[2]).toBe('pkg:maven/org.apache/log4j-core@2.14.1')
+    })
+})
+
+/**
+ * FDAW-78 row 18 (REQ-69): the UI's addendum prints the strings the server's prints (row 4 pins the same
+ * literals on the server): no Release UUID row, the instant as `yyyy-MM-dd HH:mm UTC`, and the Attestation
+ * state, End of support and Last assessed cells in lower-case words.
+ */
+describe('the header and cells in words (FDAW-78 row 18)', () => {
+    const at = (name: string) => ADDENDUM_COLUMNS.indexOf(name)
+    const d18 = data({ generatedAt: '2026-10-20T08:15:30.123Z', orgName: 'Acme', componentName: 'Pump', releaseVersion: '1.2.0',
+        releaseUuid: '3bef7cde-2edb-47cb-aa4e-94487c2cdced' })
+
+    it('the first six header rows, in order, and no Release UUID row', () => {
+        const rows = addendumHeaderRows(d18)
+        expect(rows.slice(0, 6)).toEqual([
+            ['FDA software support addendum'],
+            ['Organization', 'Acme'],
+            ['Device', 'Pump'],
+            ['Release', '1.2.0'],
+            ['Generated', '2026-10-20 08:15 UTC'],
+            [],
+        ])
+        expect(rows.some(r => r[0] === 'Release UUID')).toBe(false)
+        expect(JSON.stringify(rows)).not.toMatch(UUID_RE)
+        expect(d18.releaseUuid).toMatch(UUID_RE)
+    })
+
+    it('Attestation state: attested, withdrawn, not assessed; an unknown state humanized in lower case', () => {
+        const state = (over: Partial<AddendumComponent>) => addendumRow(comp(over))[at('Attestation state')]
+        expect(state({})).toBe('attested')
+        expect(state({ attestationState: 'WITHDRAWN' })).toBe('withdrawn')
+        expect(state({ attestationState: null })).toBe('not assessed')
+        expect(state({ attestationState: 'SUSPENDED' })).toBe('suspended')
+    })
+
+    it('End of support: the four END_OF_SUPPORT codes in words, and an unknown code humanized', () => {
+        const eos = (code: string) => addendumRow(comp({ endOfSupportDate: null, endOfSupportUnknownCode: code }))[at('End of support')]
+        expect(eos('NO_COMMITTED_END_OF_SUPPORT')).toBe('not available: no committed end of support')
+        expect(eos('COMMUNITY_PROJECT')).toBe('not available: community project, no support commitment')
+        expect(eos('SUPPLIER_PUBLISHES_NO_DATE')).toBe('not available: supplier publishes no end-of-support date')
+        expect(eos('OTHER')).toBe('not available: see the manufacturer\'s recorded justification')
+        expect(eos('NEW_CODE')).toBe('not available: new code')
+        expect(addendumRow(comp({ endOfSupportDate: '2030-01-01' }))[at('End of support')]).toBe('2030-01-01')
+        expect(addendumRow(comp({ endOfSupportDate: null }))[at('End of support')]).toBeNull()
+    })
+
+    it('Last assessed: the document instant; empty for none; an unparsable text as it is', () => {
+        const last = (over: Partial<AddendumComponent>) => addendumRow(comp(over))[at('Last assessed')]
+        expect(last({ assessedAt: '2026-09-01T00:00:00Z' })).toBe('2026-09-01 00:00 UTC')
+        expect(last({ assessedAt: null })).toBe('')
+        expect(last({ assessedAt: 'last spring' })).toBe('last spring')
+        expect(last({ attestationState: 'WITHDRAWN' })).toBeNull()
+    })
+
+    it('Source: the four values in lower case', () => {
+        const source = (v: string) => addendumRow(comp({ source: v }))[at('Source')]
+        expect(['MANUAL', 'SUPPLIER', 'ENRICHED', 'RULE'].map(source)).toEqual(['manual', 'supplier', 'enriched', 'rule'])
+    })
+
+    it('the header and the cells this task writes pass the sweep, with its control', () => {
+        const rows = [
+            comp({ source: 'MANUAL' }),
+            comp({ attestationState: 'WITHDRAWN' }),
+            comp({ attestationState: null, levelOfSupport: null }),
+            comp({ endOfSupportDate: null, endOfSupportUnknownCode: 'OTHER', source: 'SUPPLIER' }),
+            comp({ source: 'ENRICHED' }),
+            comp({ source: 'RULE', assessedAt: '2026-09-01T02:30:00+02:00' }),
+        ]
+        const written = rows.map(c => {
+            const r = addendumRow(c)
+            return [r[at('End of support')], r[at('Attestation state')], r[at('Last assessed')], r[at('Source')]].join(' | ')
+        })
+        expectSwept(JSON.stringify(addendumHeaderRows(d18)) + '\n' + written.join('\n'))
+        expect(written.join('\n')).toContain('2026-09-01 00:30 UTC')
     })
 })

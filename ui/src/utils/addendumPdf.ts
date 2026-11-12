@@ -13,6 +13,7 @@ import pdfMake from 'pdfmake/build/pdfmake'
 import pdfFonts from 'pdfmake/build/vfs_fonts'
 import type { AddendumData } from './addendumData'
 import { fontCoverageRefusal } from './pdfFontCoverage'
+import { documentFooterIdentity, documentInstantText } from './fdaLabels'
 import { ADDENDUM_COLUMNS, ADDENDUM_TITLE, addendumRow, addendumHeaderRows, displayOrder,
     addendumFileStem } from './addendumDocument'
 
@@ -144,8 +145,8 @@ export function buildAddendumDocDefinition (d: AddendumData): Record<string, unk
             style: 'footer',
             margin: [28, 8, 28, 0],
             columns: [
-                { text: `${d.componentName || '(unnamed device)'} ${d.releaseVersion || ''} (${d.releaseUuid})`, alignment: 'left' },
-                { text: `Generated ${d.generatedAt}`, alignment: 'center' },
+                { text: documentFooterIdentity(d.componentName, d.releaseVersion), alignment: 'left' },
+                { text: 'Generated ' + documentInstantText(d.generatedAt), alignment: 'center' },
                 { text: `Page ${currentPage} of ${pageCount}`, alignment: 'right' }
             ]
         }),

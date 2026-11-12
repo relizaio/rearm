@@ -7,6 +7,7 @@ import {
     answersFromDeviceClass, completeSetupOffered, deviceClassFromAnswers, deviceProfileDiffers, deviceProfileFormOf,
     deviceStepWritten, fdaCustomizedLine, fdaDefaultsLine, fdaPremarketBaseline, fdaStillOnLine, isCustomized,
     loadMedicalDeviceSetupStatus, medicalDeviceSetupInput, questionIsMedical, setupStatusLines, setupStepLines,
+    DEVICE_SETUP_INTRO, SBOM_PROFILES_LINK_TEXT,
     submissionsNotSetUpCell, submissionsNotSetUpLead, type MedicalDeviceSetupDraft
 } from './medicalDeviceSetup'
 import { withExpectedRevision } from './componentRevision'
@@ -149,21 +150,38 @@ describe('the save result', () => {
         expect(deviceStepWritten(null)).toBe(false)
     })
 
-    it('setupStepLines: one line per NOT_AUTHORIZED step with its text, none for the others', () => {
-        expect(setupStepLines(result('WRITTEN'))).toEqual([
-            { step: 'ORG_SUPPORT_EXPORT', text: 'org sentence' }, { step: 'ORG_FDA_PROFILE', text: 'org sentence' }])
+    it('setupStepLines: one line per distinct NOT_AUTHORIZED sentence, none for the others (FDAW-78 X13)', () => {
+        expect(setupStepLines(result('WRITTEN'))).toEqual([{ step: 'ORG_SUPPORT_EXPORT', text: 'org sentence' }])
+        expect(setupStepLines({ steps: [
+            { step: 'ORG_SUPPORT_EXPORT', outcome: 'NOT_AUTHORIZED', text: 'one' },
+            { step: 'PRODUCT_PACKAGE_SETTINGS', outcome: 'NOT_AUTHORIZED', text: 'two' }] }))
+            .toEqual([{ step: 'ORG_SUPPORT_EXPORT', text: 'one' }, { step: 'PRODUCT_PACKAGE_SETTINGS', text: 'two' }])
         expect(setupStepLines({ steps: [{ step: 'X', outcome: 'NOT_REQUESTED', text: null }] })).toEqual([])
         expect(setupStepLines(undefined)).toEqual([])
     })
 
-    it('setupStatusLines: the three organization steps, done or not', () => {
-        expect(setupStatusLines({ supportExport: 'DISABLED', fdaProfile: 'ABSENT', orgPackageProfile: 'default' })).toEqual([
-            { step: 'ORG_SUPPORT_EXPORT', done: false, text: 'Support metadata export: off' },
-            { step: 'ORG_FDA_PROFILE', done: false, text: 'SBOM profile fda: absent' },
-            { step: 'ORG_PACKAGE_SETTINGS', done: false, text: 'Organization FDA package settings: SBOM profile default' }])
-        expect(setupStatusLines({ supportExport: 'ENABLED', fdaProfile: 'INCLUDES_SUPPORT', orgPackageProfile: 'fda' })
-            .map(l => l.done)).toEqual([true, true, true])
-        expect(setupStatusLines({ fdaProfile: 'EXCLUDES_SUPPORT' })[1].text).toBe('SBOM profile fda: excludes support metadata')
+    // FDAW-78 row 16 (REQ-68): each line says what is done, or what is still to do.
+    it('setupStatusLines: the three organization steps, done or not, in words (FDAW-78 row 16)', () => {
+        const notDone = setupStatusLines({ supportExport: 'DISABLED', fdaProfile: null, orgPackageProfile: null })
+        expect(notDone.map(l => l.step)).toEqual(['ORG_SUPPORT_EXPORT', 'ORG_FDA_PROFILE', 'ORG_PACKAGE_SETTINGS'])
+        expect(notDone.map(l => l.done)).toEqual([false, false, false])
+        expect(notDone.map(l => l.todo)).toEqual([
+            'include support information (level of support, end-of-support dates) in the SBOMs this organization exports',
+            'add the FDA recipe for SBOMs (SBOM profile fda)',
+            'point the organization\'s FDA premarket defaults at the FDA recipe'])
+        const done = setupStatusLines({ supportExport: 'ENABLED', fdaProfile: 'INCLUDES_SUPPORT', orgPackageProfile: 'fda' })
+        expect(done.map(l => l.done)).toEqual([true, true, true])
+        expect(done.map(l => l.text)).toEqual([
+            'Support information is included in the SBOMs this organization exports',
+            'The FDA recipe for SBOMs is ready (SBOM profile fda)',
+            'The organization\'s FDA premarket defaults use the FDA recipe'])
+        const excludes = setupStatusLines({ fdaProfile: 'EXCLUDES_SUPPORT' })[1]
+        expect(excludes.done).toBe(false)
+        expect(excludes.todo).toBe('the FDA recipe for SBOMs (SBOM profile fda) leaves out support information')
+        const custom = setupStatusLines({ orgPackageProfile: 'custom' })[2]
+        expect(custom.done).toBe(true)
+        expect(custom.text).toBe('The organization\'s FDA premarket defaults use the SBOM profile custom')
+        expect(setupStatusLines({ orgPackageProfile: 'default' })[2].done).toBe(false)
         expect(setupStatusLines(null)).toEqual([])
     })
 })
@@ -173,8 +191,16 @@ describe('the texts of 3.5 and 3.6', () => {
         expect(questionIsMedical('Pump')).toBe('Is Pump a medical device?')
         expect(QUESTION_TRACKED_821).toBe('Subject to an FDA tracking order (21 CFR 821)')
         expect(QUESTION_FDA_PREMARKET).toBe('Prepare FDA premarket submissions (US)?')
-        expect(fdaDefaultsLine('default')).toBe('Using organization defaults: SBOM profile default')
-        expect(fdaCustomizedLine('mine')).toBe('Customized: SBOM profile mine')
+        // FDAW-78 row 16: the FDA recipe by name (O-4), no settings words
+        expect(fdaDefaultsLine('fda')).toBe('Using organization defaults (FDA recipe)')
+        expect(fdaDefaultsLine('default')).toBe('Using organization defaults')
+        expect(fdaDefaultsLine('')).toBe('Using organization defaults')
+        expect(fdaDefaultsLine(null)).toBe('Using organization defaults')
+        expect(fdaDefaultsLine('custom')).toBe('Using organization defaults (SBOM profile custom)')
+        expect(fdaCustomizedLine('fda')).toBe('Customized for this product: FDA recipe')
+        expect(fdaCustomizedLine('custom')).toBe('Customized for this product: SBOM profile custom')
+        expect(DEVICE_SETUP_INTRO).toBe('Save completes the steps below that your role allows. The organization steps need an organization administrator.')
+        expect(SBOM_PROFILES_LINK_TEXT).toBe('Organization Settings > Admin Settings > SBOM Profiles')
         expect(MEDICAL_DEVICE_SAVED).toBe('Medical device settings saved')
         expect(fdaStillOnLine('Pump')).toBe('FDA premarket submissions stay switched on for Pump: switch them off under Settings > Regulatory')
         expect(submissionsNotSetUpLead('Pump') + MEDICAL_DEVICE_SETUP_LINK_TEXT + SUBMISSIONS_NOT_SET_UP_TAIL)

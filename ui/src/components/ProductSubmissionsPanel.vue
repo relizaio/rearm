@@ -19,7 +19,7 @@
                 canConfigure ? '' : ' ' + ADMIN_DOES_THIS }}
         </p>
         <p v-else-if="!loadFailed && loaded && !heads.length" data-testid="submissions-none" class="text-muted">
-            No submission yet; create one from a release that is ASSEMBLED or above
+            No submission yet; create one from a release that is Assembled or later
         </p>
         <n-data-table data-testid="submissions-release-rows" :columns="columns" :data="rows" :row-key="rowKey"
             :pagination="false" :bordered="false" size="small" />
@@ -44,6 +44,7 @@ import profilesQueries from '@/utils/profilesQueries'
 import submissionQueries from '@/utils/submissionQueries'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { packageKindLabel } from '@/utils/packageSettings'
+import { fdaLifecycleLabel } from '@/utils/fdaLabels'
 import {
     MEDICAL_DEVICE_SETUP_LINK_TEXT, SUBMISSIONS_ADMIN_DOES_THIS, SUBMISSIONS_NOT_SET_UP_CELL_LINK, SUBMISSIONS_NOT_SET_UP_TAIL,
     submissionsNotSetUpCell, submissionsNotSetUpLead
@@ -162,13 +163,13 @@ function kindCell (row: any, kind: string) {
 
 const columns = computed(() => [
     { key: 'version', title: 'Release', render: (r: any) => releaseLink(r.release, r.version) },
-    { key: 'lifecycle', title: 'Lifecycle' },
+    { key: 'lifecycle', title: 'Lifecycle', render: (r: any) => fdaLifecycleLabel(r.lifecycle) },
     { key: 'createdDate', title: 'Created', render: (r: any) => dateText(r.createdDate) },
     ...shownKinds.value.map(k => ({ key: 'kind-' + k, title: packageKindLabel(k), render: (r: any) => kindCell(r, k) })),
 ])
 
 const otherColumns = [
-    { key: 'releaseVersion', title: 'Release', render: (r: any) => releaseLink(r.release, r.releaseVersion || r.release) },
+    { key: 'releaseVersion', title: 'Release', render: (r: any) => releaseLink(r.release, r.releaseVersion || 'release') },
     { key: 'kind', title: 'Kind', render: (r: any) => packageKindLabel(r.kind) },
     { key: 'state', title: 'State', render: (r: any) => labelOf(SUBMISSION_STATE_LABELS, r.state) },
     { key: 'latestVersion', title: 'Version', render: (r: any) => 'v' + r.latestVersion },

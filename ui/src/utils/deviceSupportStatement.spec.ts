@@ -5,7 +5,9 @@ vi.mock('pdfmake/build/vfs_fonts', () => ({ default: { vfs: {} } }))
 
 import { buildDeviceSupportStatementDefinition, statementBlockReason, missingProseSlots,
     componentsEndingBeforeDevice, deviceSupportStatementFileName, STATEMENT_TITLE,
-    NOT_DECLARED, REQUIRED_PROSE_SLOTS, renderDeviceSupportStatementBlob } from './deviceSupportStatement'
+    NOT_DECLARED, REQUIRED_PROSE_SLOTS, renderDeviceSupportStatementBlob, statementStrings,
+    PROSE_SETTINGS_LOCATION } from './deviceSupportStatement'
+import { UUID_RE } from './__fixtures__/fdaSweep'
 import type { AddendumComponent, AddendumData } from './addendumData'
 
 function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
@@ -66,6 +68,15 @@ describe('statementBlockReason', () => {
         const msg = statementBlockReason(data({ [slot.key]: null } as any)) as string
         expect(msg).not.toBeNull()
         expect(msg).toContain(slot.label)
+    })
+
+    // FDAW-78 X4: the path named is the one that exists, as the server's DeviceSupportStatementPartGenerator names it.
+    it('says where the text is written, by the full Organization Settings path (FDAW-78 X4)', () => {
+        expect(PROSE_SETTINGS_LOCATION).toBe('Organization Settings > Admin Settings > General > Submission and labeling text')
+        const msg = statementBlockReason(data({ patchesMayCeaseStatement: null })) as string
+        expect(msg.endsWith('Add the text under Organization Settings > Admin Settings > General > Submission and labeling text.'))
+            .toBe(true)
+        expect(msg).not.toContain('->')
     })
 
     it('treats a whitespace-only slot as empty', () => {
@@ -300,9 +311,37 @@ describe('buildDeviceSupportStatementDefinition', () => {
         it('carries device identity, a UTC instant and page N of M', () => {
             const t = footer().columns.map((c: any) => c.text).join(' | ')
             expect(t).toContain('Infusion Pump 9000')
-            expect(t).toContain('r-1')
-            expect(t).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/)
+            expect(t).not.toContain('r-1')
+            expect(t).toMatch(/Generated \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/)
             expect(t).toContain('Page 2 of 3')
+        })
+
+        // FDAW-78 row 18 (REQ-69): the statement footer prints what the server's footer prints.
+        it('reads <device> <version> and the document instant, no uuid, on every page (FDAW-78 row 18)', () => {
+            const uuid = '3bef7cde-2edb-47cb-aa4e-94487c2cdced'
+            const cols = (d: any, page: number) => (buildDeviceSupportStatementDefinition(d).footer as any)(page, 2)
+                .columns.map((c: any) => c.text)
+            const base = { componentName: 'Pump', releaseVersion: '1.2.0', releaseUuid: uuid,
+                generatedAt: '2026-10-20T08:15:30.123Z' }
+            for (const page of [1, 2]) {
+                const c = cols(data(base), page)
+                expect(c[0]).toBe('Pump 1.2.0')
+                expect(c[1]).toBe('Generated 2026-10-20 08:15 UTC')
+                expect(c[2]).toBe('Page ' + page + ' of 2')
+                expect(c.join(' ')).not.toMatch(UUID_RE)
+            }
+            expect(cols(data({ ...base, componentName: null }), 1)[0]).toBe('(unnamed device) 1.2.0')
+            expect(cols(data({ ...base, releaseVersion: null }), 1)[0]).toBe('Pump')
+            // control: the expression finds the fixture's uuid
+            expect(uuid).toMatch(UUID_RE)
+        })
+
+        it('statementStrings lists no release uuid and the instant as printed (FDAW-78 row 18)', () => {
+            const d = data({ releaseUuid: '3bef7cde-2edb-47cb-aa4e-94487c2cdced', generatedAt: '2026-10-20T08:15:30.123Z' })
+            const strings = statementStrings(d)
+            expect(strings).not.toContain(d.releaseUuid)
+            expect(strings).not.toContain(d.generatedAt)
+            expect(strings).toContain('2026-10-20 08:15 UTC')
         })
     })
 
@@ -513,14 +552,14 @@ describe('the device window provenance line', () => {
                 level: 'SHIPMENT', siteName: 'St Elsewhere ICU', shipDate: '2026-04-02',
                 batchIdentifier: 'LOT-77' }
         })
-        // The CONTENT carries no uuid, and the FOOTER deliberately does -- they are different
-        // claims, and `flat()` only walks content, so the old document-wide assertion was
-        // never testing the footer at all. Both stated here so neither can quietly change.
+        // The CONTENT carries no uuid, and since FDAW-78 (O-2) neither does the FOOTER: `flat()`
+        // only walks content, so the footer is read on its own. Both stated here so neither can
+        // quietly change.
         expect(text).not.toMatch(/277c971c/)
         const footerText = (buildDeviceSupportStatementDefinition(
             data({ releaseUuid: '277c971c-687d-46eb-bded-74a55149a978' })).footer as any)(1, 1)
             .columns.map((c: any) => c.text).join(' | ')
-        expect(footerText).toMatch(/277c971c/)
+        expect(footerText).not.toMatch(/277c971c/)
         const line = text.split('\n').find(l => /delivered to/.test(l)) || ''
         expect(line).not.toBe('')
         expect(line.toLowerCase()).not.toMatch(/override/)

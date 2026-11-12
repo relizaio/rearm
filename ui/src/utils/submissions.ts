@@ -3,23 +3,17 @@
 // reason check and the History text. Pure logic, so the specs pin it. Names and reasons go into the
 // confirmations' `text` only; titles and buttons are constants (design 3.8).
 
-import { regulatoryPackagesAvailable, packageKindLabel, packagePartLabel } from './packageSettings'
+import { regulatoryPackagesAvailable, packageKindLabel, packagePartLabel, packageSourceLabel } from './packageSettings'
 import { teaActErrorText, teaShortSha } from './teaPublication'
-import { teaSourceLabel } from './teaProfile'
+import { humanizeEnum, SUBMISSION_STATE_LABELS, submissionHistoryShape } from './fdaLabels'
 import { SBOM_DEFAULT_NAME } from './sbomProfile'
 import { artifactDownloadRef, ArtifactDownloadRef } from './artifactDownload'
 
 /** One gate, two names: the product and release pages ask this one. */
 export const submissionsAvailable = regulatoryPackagesAvailable
 
-export const SUBMISSION_STATE_LABELS: Record<string, string> = {
-    FINAL: 'Final',
-    SENT: 'Sent',
-    AMENDED: 'Amended',
-    SUPERSEDED: 'Superseded',
-    WITHDRAWN: 'Withdrawn',
-    CANCELLED: 'Cancelled',
-}
+/** Defined in fdaLabels.ts (the release History parses with it) and read here under its old name. */
+export { SUBMISSION_STATE_LABELS }
 
 export const SUBMISSION_ACT_LABELS: Record<string, string> = {
     CREATED: 'Created',
@@ -41,9 +35,10 @@ export const PART_SKIP_REASON_LABELS: Record<string, string> = {
     EXCLUDED_BY_SETTINGS: 'excluded by settings',
 }
 
-/** A label from one of the tables; an unknown value renders itself. */
+/** A label from one of the tables; an unknown value renders humanized (FDAW-78 3.1), never as itself. */
 export function labelOf (table: Record<string, string>, value: string | null | undefined): string {
-    return (value && table[value]) || value || ''
+    if (!value) return ''
+    return table[value] || humanizeEnum(value)
 }
 
 /** A date as the submission panels show it; empty for none. */
@@ -100,7 +95,7 @@ export function submissionCancelNote (head: any): { lead: string, reason: string
 export const SUBMITTABLE_LIFECYCLES = ['ASSEMBLED', 'READY_TO_SHIP', 'GENERAL_AVAILABILITY', 'END_OF_MARKETING',
     'END_OF_DISTRIBUTION', 'END_OF_SUPPORT', 'END_OF_LIFE']
 
-export const CREATE_LIFECYCLE_REASON = 'The release must be ASSEMBLED or above'
+export const CREATE_LIFECYCLE_REASON = 'The release must be Assembled or later'
 
 export function canCreateSubmission (lifecycle: string | null | undefined): boolean {
     return !!lifecycle && SUBMITTABLE_LIFECYCLES.includes(lifecycle)
@@ -165,20 +160,33 @@ export function submissionRefBuiltIn (ref: any): boolean {
     return !ref || !ref.row || !ref.source || ref.source === 'DEFAULT'
 }
 
-/** "<source label>, r<n>", or the built-in defaults when the ref names no row. */
-export function submissionRefLabel (ref: any, names: Record<string, string> = {}): string {
+/**
+ * "<source label>, revision <n>" (FDAW-78 3.5, L5: `this product's own settings, revision 0`), or the built-in
+ * defaults when the ref names no row. `typeWord` words a COMPONENT source: `product` or `component`.
+ */
+export function submissionRefLabel (ref: any, names: Record<string, string> = {}, typeWord?: string | null): string {
     if (submissionRefBuiltIn(ref)) return 'built-in defaults'
-    return teaSourceLabel(ref.source, ref.sourceObject, names) + ', r' + (ref.revision ?? 0)
+    return packageSourceLabel(ref, names, typeWord) + ', revision ' + (ref.revision ?? 0)
+}
+
+/** The product-or-component word of a component type: PRODUCT reads `product`, anything else `component`. */
+export function componentTypeWord (componentType: string | null | undefined): string {
+    return componentType === 'PRODUCT' ? 'product' : 'component'
+}
+
+/** A text with its first letter capital, for a table cell. */
+export function capitalFirst (s: string | null | undefined): string {
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
 }
 
 /**
- * "<name> (<source label>, r<n>)" for the SBOM profile a version applied; a built-in other than
+ * "<name> (<source label>, revision <n>)" for the SBOM profile a version applied; a built-in other than
  * `default` (the server's `fda`) reads "<name> (built-in)".
  */
-export function submissionProfileLabel (ref: any, names: Record<string, string> = {}): string {
+export function submissionProfileLabel (ref: any, names: Record<string, string> = {}, typeWord?: string | null): string {
     if (!ref) return ''
     if (submissionRefBuiltIn(ref) && ref.name && ref.name !== SBOM_DEFAULT_NAME) return ref.name + ' (built-in)'
-    return (ref.name ?? '') + ' (' + submissionRefLabel(ref, names) + ')'
+    return (ref.name ?? '') + ' (' + submissionRefLabel(ref, names, typeWord) + ')'
 }
 
 /** The manifest's download name (no field carries one; decision D7). */
@@ -192,7 +200,7 @@ export function manifestDownloadRef (version: any): ArtifactDownloadRef | null {
 }
 
 /** A head's versions, newest first, with the table's labels. */
-export function submissionVersionRows (head: any, names: Record<string, string> = {}): any[] {
+export function submissionVersionRows (head: any, names: Record<string, string> = {}, typeWord?: string | null): any[] {
     const versions: any[] = [...(head?.versions ?? [])].sort((a, b) => (b?.version ?? 0) - (a?.version ?? 0))
     return versions.map(v => {
         const parts: any[] = v.parts ?? []
@@ -203,8 +211,8 @@ export function submissionVersionRows (head: any, names: Record<string, string> 
             createdBy: v.createdBy ?? null,
             createdByName: v.createdByName ?? null,
             reason: v.reason ?? '',
-            settingsLabel: submissionRefLabel(v.settings, names),
-            profileLabel: submissionProfileLabel(v.sbomProfile, names),
+            settingsLabel: capitalFirst(submissionRefLabel(v.settings, names, typeWord)),
+            profileLabel: submissionProfileLabel(v.sbomProfile, names, typeWord),
             partCount: parts.length,
             producedCount: parts.filter(p => p?.outcome === 'PRODUCED' || p?.outcome === 'REFERENCED').length,
             skippedCount: parts.filter(p => p?.outcome === 'SKIPPED').length,
@@ -260,7 +268,7 @@ export function submissionActorText (name: string | null | undefined, uuid: stri
 
 /** The KIND_DISABLED refusal, said for a reader: what is switched off and where to switch it on (B18). */
 export function submissionKindDisabledText (kind: string, componentType: string | null | undefined): string {
-    const typeWord = componentType === 'PRODUCT' ? 'product' : 'component'
+    const typeWord = componentTypeWord(componentType)
     return packageKindLabel(kind) + ' is switched off for this ' + typeWord
         + '; switch it on under Settings > Regulatory and try again.'
 }
@@ -270,9 +278,9 @@ function planText (preview: any): string {
     return plan.map(p => packagePartLabel(p.part) + ' ' + (p.selection === 'INCLUDE' ? 'included' : 'excluded')).join(', ')
 }
 
-function previewFacts (preview: any, names: Record<string, string>): string {
-    return 'Parts: ' + planText(preview) + '; SBOM profile ' + submissionProfileLabel(preview?.sbomProfile, names)
-        + '; settings ' + submissionRefLabel(preview?.settings, names) + '.'
+function previewFacts (preview: any, names: Record<string, string>, typeWord: string): string {
+    return 'Parts: ' + planText(preview) + '; SBOM profile ' + submissionProfileLabel(preview?.sbomProfile, names, typeWord)
+        + '; settings: ' + submissionRefLabel(preview?.settings, names, typeWord) + '.'
 }
 
 function releaseLabel (n: SubmissionNames): string {
@@ -285,7 +293,7 @@ export function submissionCreateConfirm (preview: any, kind: string, n: Submissi
     return {
         title: 'Create submission?',
         text: 'Writes v' + next + ' of the ' + packageKindLabel(kind) + ' submission of ' + releaseLabel(n) + '. '
-            + previewFacts(preview, names),
+            + previewFacts(preview, names, componentTypeWord(n.componentType)),
         confirmButtonText: 'Create v' + next,
     }
 }
@@ -296,7 +304,7 @@ export function submissionResubmitConfirm (preview: any, kind: string, n: Submis
     return {
         title: 'Resubmit?',
         text: 'Writes v' + next + ' of the ' + packageKindLabel(kind) + ' submission of ' + releaseLabel(n) + '. '
-            + previewFacts(preview, names) + ' A resubmission always writes a new version, equal content or not.',
+            + previewFacts(preview, names, componentTypeWord(n.componentType)) + ' A resubmission always writes a new version, equal content or not.',
         confirmButtonText: 'Resubmit v' + next,
     }
 }
@@ -329,10 +337,20 @@ export function submissionActErrorText (err: any): string {
     return teaActErrorText(err)
 }
 
-/** The History text of a SUBMISSION release event (the four shapes the server writes, design 3.5.6). */
+/**
+ * The History text of a SUBMISSION release event, in words, from the unchanged stored values (FDAW-78 3.4):
+ * `FDA premarket submission: version 1 created`; a shape this build does not know reads `Regulatory
+ * submission updated`. Never the submission's uuid. The Action word is fdaLabels.ts historyActionLabel.
+ */
 export function submissionHistoryText (row: any): string {
-    const oldValue = typeof row?.oldValue === 'string' ? row.oldValue.trim() : ''
-    const newValue = typeof row?.newValue === 'string' ? row.newValue.trim() : ''
-    if (!newValue) return row?.objectId ?? ''
-    return oldValue ? 'Submission ' + oldValue + ' -> ' + newValue : 'Submission ' + newValue
+    return submissionHistoryShape(row).text
+}
+
+/**
+ * The text of a create or resubmit result (FDAW-78 3.5, L11): `Version 1 created.`; with no version number
+ * `Submission created.`. The act's outcome is not echoed.
+ */
+export function submissionWrittenText (result: any): string {
+    const n = result?.version?.version
+    return n == null ? 'Submission created.' : 'Version ' + n + ' created.'
 }
