@@ -104,10 +104,11 @@ import profilesQueries from '@/utils/profilesQueries'
 import submissionQueries from '@/utils/submissionQueries'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { packageKindLabel } from '@/utils/packageSettings'
+import { labelOrHumanized, REQUIREMENT_LABELS } from '@/utils/fdaLabels'
 import {
     CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, canCreateSubmission, labelOf,
     manifestDownloadRef, submissionActorText, submissionCancelNote, submissionPartRows, submissionStateTagType,
-    submissionStateText, submissionVersionRows,
+    submissionStateText, submissionVersionRows, componentTypeWord,
 } from '@/utils/submissions'
 import { ArtifactDownloadRef, artifactDownloadUrl, downloadArtifactBytes, saveBlob } from '@/utils/artifactDownload'
 import { useSubmissionActs } from '@/utils/submissionActs'
@@ -255,7 +256,7 @@ function latestOf (kind: string): any {
 }
 
 function versionRows (kind: string): any[] {
-    return submissionVersionRows(headOf(kind), props.names)
+    return submissionVersionRows(headOf(kind), props.names, componentTypeWord(props.componentType))
 }
 
 function dateText (d: string | null | undefined): string {
@@ -284,14 +285,14 @@ async function download (ref: ArtifactDownloadRef, mediaType?: string | null) {
 
 function shaCell (full: string, short: string) {
     return full
-        ? h('span', { title: full }, [short, ' ', h(NButton, { size: 'tiny', quaternary: true, 'aria-label': 'Copy sha256',
+        ? h('span', { title: full, 'data-testid': 'submission-sha256' }, [short, ' ', h(NButton, { size: 'tiny', quaternary: true, 'aria-label': 'Copy sha256',
             onClick: () => copy(full) }, () => 'copy')])
         : ''
 }
 
 const partColumns = [
     { key: 'label', title: 'Part' },
-    { key: 'requirement', title: 'Requirement' },
+    { key: 'requirement', title: 'Requirement', render: (r: any) => labelOrHumanized(REQUIREMENT_LABELS, r.requirement) },
     { key: 'outcome', title: 'Outcome', render: (r: any) => r.outcome === 'SKIPPED'
         ? r.outcomeLabel + (r.skipText ? ': ' + r.skipText : '') : r.outcomeLabel },
     { key: 'fileName', title: 'File name' },

@@ -24,13 +24,22 @@ export function questionIsMedical (name: string | null | undefined): string {
     return 'Is ' + (name || 'this component') + ' a medical device?'
 }
 
-export function fdaDefaultsLine (orgPackageProfile: string): string {
-    return 'Using organization defaults: SBOM profile ' + orgPackageProfile
+/** FDAW-78 3.6 (O-4): the profile `fda` is the FDA recipe; `default` or none names no profile. */
+export function fdaDefaultsLine (orgPackageProfile: string | null | undefined): string {
+    if (orgPackageProfile === 'fda') return 'Using organization defaults (FDA recipe)'
+    if (!orgPackageProfile || orgPackageProfile === 'default') return 'Using organization defaults'
+    return 'Using organization defaults (SBOM profile ' + orgPackageProfile + ')'
 }
 
-export function fdaCustomizedLine (profile: string): string {
-    return 'Customized: SBOM profile ' + profile
+export function fdaCustomizedLine (profile: string | null | undefined): string {
+    return profile === 'fda' ? 'Customized for this product: FDA recipe' : 'Customized for this product: SBOM profile ' + profile
 }
+
+/** Above the status lines while one is not done (FDAW-78 3.6, C1): what Save does and who the organization steps need. */
+export const DEVICE_SETUP_INTRO = 'Save completes the steps below that your role allows. The organization steps need an organization administrator.'
+
+/** The must-fix alert's link text: the path the server's setupMustFix sentence names (FDAW-78 3.6, F-4). */
+export const SBOM_PROFILES_LINK_TEXT = 'Organization Settings > Admin Settings > SBOM Profiles'
 
 /** F-8: answering No to question 1 never turns the product's FDA row off; the line says where that is done. */
 export function fdaStillOnLine (name: string | null | undefined): string {
@@ -189,30 +198,48 @@ export interface SetupStepLine {
     text: string
 }
 
-/** One line per step the caller could not make, with the server's sentence; none for the others. */
+/**
+ * One line per step the caller could not make, with the server's sentence; none for the others. A sentence
+ * an earlier line already carries is not repeated (FDAW-78 X13: the organization sentence came once per step).
+ */
 export function setupStepLines (result: any): SetupStepLine[] {
     const steps = Array.isArray(result?.steps) ? result.steps : []
-    return steps.filter((s: any) => s?.outcome === 'NOT_AUTHORIZED' && typeof s.text === 'string')
-        .map((s: any) => ({ step: String(s.step), text: s.text }))
+    const seen = new Set<string>()
+    const out: SetupStepLine[] = []
+    for (const s of steps) {
+        if (s?.outcome !== 'NOT_AUTHORIZED' || typeof s.text !== 'string' || seen.has(s.text)) continue
+        seen.add(s.text)
+        out.push({ step: String(s.step), text: s.text })
+    }
+    return out
 }
 
 export interface SetupStatusLine {
     step: string
     done: boolean
+    /** What is done, shown as `✓ <text>`. */
     text: string
+    /** What is still to do, shown as `Not done yet: <todo>`. */
+    todo: string
 }
 
-/** The organization steps as the status reads them: one line each, done or not. */
+/** The organization steps as the status reads them (FDAW-78 3.6, L10/C1): one line each, done or not. */
 export function setupStatusLines (status: any): SetupStatusLine[] {
     if (!status) return []
-    const fda = status.fdaProfile === 'INCLUDES_SUPPORT' ? 'present'
-        : status.fdaProfile === 'EXCLUDES_SUPPORT' ? 'excludes support metadata' : 'absent'
+    const p = status.orgPackageProfile
     return [
         { step: 'ORG_SUPPORT_EXPORT', done: status.supportExport === 'ENABLED',
-            text: 'Support metadata export: ' + (status.supportExport === 'ENABLED' ? 'on' : 'off') },
-        { step: 'ORG_FDA_PROFILE', done: status.fdaProfile === 'INCLUDES_SUPPORT', text: 'SBOM profile fda: ' + fda },
-        { step: 'ORG_PACKAGE_SETTINGS', done: !!status.orgPackageProfile && status.orgPackageProfile !== 'default',
-            text: 'Organization FDA package settings: SBOM profile ' + (status.orgPackageProfile || 'default') }
+            text: 'Support information is included in the SBOMs this organization exports',
+            todo: 'include support information (level of support, end-of-support dates) in the SBOMs this organization exports' },
+        { step: 'ORG_FDA_PROFILE', done: status.fdaProfile === 'INCLUDES_SUPPORT',
+            text: 'The FDA recipe for SBOMs is ready (SBOM profile fda)',
+            todo: status.fdaProfile === 'EXCLUDES_SUPPORT'
+                ? 'the FDA recipe for SBOMs (SBOM profile fda) leaves out support information'
+                : 'add the FDA recipe for SBOMs (SBOM profile fda)' },
+        { step: 'ORG_PACKAGE_SETTINGS', done: !!p && p !== 'default',
+            text: p === 'fda' ? 'The organization\'s FDA premarket defaults use the FDA recipe'
+                : 'The organization\'s FDA premarket defaults use the SBOM profile ' + p,
+            todo: 'point the organization\'s FDA premarket defaults at the FDA recipe' }
     ]
 }
 

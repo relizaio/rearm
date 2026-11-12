@@ -7,6 +7,7 @@ import { renderAddendumCsv } from './addendumCsv'
 import { buildAddendumDocDefinition } from './addendumPdf'
 import { ADDENDUM_COLUMNS, ADDENDUM_TITLE } from './addendumDocument'
 import type { AddendumComponent, AddendumData } from './addendumData'
+import { expectSwept } from './__fixtures__/fdaSweep'
 
 /**
  * CSV / PDF parity.
@@ -106,6 +107,14 @@ const pdfTable = (doc.content as any[]).filter(c => c && c.table)[1].table
 const pdfDataRows: string[][] = pdfTable.body.slice(1)
 
 describe('CSV and PDF are the same document in two encodings', () => {
+    // FDAW-78 row 18: the rendered CSV of this fixture prints no uuid, enum name or machine instant.
+    it('the rendered CSV passes the FDAW-78 sweep, with its control, and states the instant in words', () => {
+        const csv = renderAddendumCsv(DATA)
+        expectSwept(csv)
+        expect(csv).toContain('Generated,2026-09-08 12:00 UTC')
+        expect(csv).not.toContain('Release UUID')
+    })
+
     it('agree on the column set and its order', () => {
         expect(csvRows[csvHeaderIdx]).toEqual(ADDENDUM_COLUMNS)
         expect(pdfTable.body[0].map((c: any) => c.text)).toEqual(ADDENDUM_COLUMNS)

@@ -1,7 +1,7 @@
 <template>
     <div class="latestReleases">
         <div class="latestReleasesHeader">
-            <span class="latestReleasesTitle">Most recent releases across {{ props.featureSetLabel.toLowerCase() }}es</span>
+            <span class="latestReleasesTitle">Most recent releases across {{ pluralWord(props.featureSetLabel) }}</span>
             <n-input-number v-model:value="limit" size="small" :min="1" :max="200" :step="5" style="width: 110px;" data-testid="latest-limit" @update:value="onLimitChange" />
             <n-icon class="clickable" size="18" title="Refresh" @click="fetchLatest"><Refresh /></n-icon>
         </div>
@@ -61,6 +61,7 @@ import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService
 import { isDtrackConfiguredForOrg, getReleaseScanStatus } from '@/utils/releaseScanStatus'
 import { renderVulnerabilityCells, renderViolationCells } from '@/utils/releaseScanCells'
 import { lifecycleLabel } from '@/utils/lifecycle'
+import { pluralWord } from '@/utils/fdaLabels'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 
 const props = withDefaults(defineProps<{

@@ -8,7 +8,7 @@ import { ref } from 'vue'
 import Swal from 'sweetalert2'
 import submissionQueries from './submissionQueries'
 import {
-    SUBMISSION_ACT_LABELS, SubmissionNames, labelOf, submissionActErrorText, submissionCreateConfirm,
+    SubmissionNames, submissionActErrorText, submissionWrittenText, submissionCreateConfirm,
     submissionKindDisabledText, submissionReasonError, submissionResubmitConfirm, submissionWithdrawConfirm,
 } from './submissions'
 
@@ -80,8 +80,7 @@ export function useSubmissionActs (deps: SubmissionActsDeps) {
                 showCancelButton: true, cancelButtonText: 'Cancel' })
             if (!answer?.isConfirmed) return
             await act(submissionQueries.CreateSubmissionGql, { release, kind, reason: reasonOf(answer.value) },
-                'createSubmission', r => 'Created v' + (r?.version?.version ?? '') + ' ('
-                    + labelOf(SUBMISSION_ACT_LABELS, r?.outcome) + ').')
+                'createSubmission', r => submissionWrittenText(r))
         } finally {
             busy.value = false
         }
@@ -104,8 +103,7 @@ export function useSubmissionActs (deps: SubmissionActsDeps) {
             if (!answer?.isConfirmed) return
             await act(submissionQueries.ResubmitSubmissionGql,
                 { submission: head.uuid, reason: reasonOf(answer.value), expectedLatestVersion: head.latestVersion },
-                'resubmitSubmission', r => 'Resubmitted v' + (r?.version?.version ?? '') + ' ('
-                    + labelOf(SUBMISSION_ACT_LABELS, r?.outcome) + ').')
+                'resubmitSubmission', r => submissionWrittenText(r))
         } finally {
             busy.value = false
         }

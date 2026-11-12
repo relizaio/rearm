@@ -104,10 +104,11 @@ describe('justified unknowns and withdrawn records (row 3)', () => {
         expect(cell.unknownBulk).toBe(true)
     })
 
-    it('a code this build does not know shows the raw code', () => {
+    // FDAW-78 X1: an unknown code reads humanized, never as its raw name.
+    it('a code this build does not know shows the code humanized', () => {
         const cell: any = supportCellOf(row({ attestationState: 'ATTESTED',
             endOfSupportUnknown: unknown('FUTURE_CODE', null) }))
-        expect(cell.unknownLabel).toBe('FUTURE_CODE')
+        expect(cell.unknownLabel).toBe('Future code')
     })
 
     it('the date wins over an unknown', () => {

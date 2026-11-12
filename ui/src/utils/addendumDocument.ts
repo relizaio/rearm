@@ -16,6 +16,7 @@
 import type { AddendumComponent, AddendumData } from './addendumData'
 import { isLiveAttestation } from './addendumData'
 import { DEVICE_EOS_LABEL, DEVICE_EOL_LABEL } from './deviceDateLabels'
+import { ATTESTATION_STATE_TEXT, documentInstantText, labelOrLower, lowerEnum, UNKNOWN_REASON_TEXT } from './fdaLabels'
 
 /**
  * The document's own title, owned here because every renderer needs it and one of them also
@@ -60,17 +61,20 @@ export const NOT_AVAILABLE_PREFIX = 'not available: '
  */
 export const VENDORED_SUFFIX = ' (vendored, described in ReARM)'
 
-/** The date, else `not available: <CODE>` for a justified unknown, else empty. */
+/**
+ * The date, else `not available: <reason>` for a justified unknown (the reason's lower-case text, the
+ * server's FdaDocumentText.unknownReasonText; FDAW-78 3.8), else empty. The unknown's free text is never printed.
+ */
 function endOfSupportCell (c: AddendumComponent): string | null {
     if (c.endOfSupportDate) return c.endOfSupportDate
-    return c.endOfSupportUnknownCode ? NOT_AVAILABLE_PREFIX + c.endOfSupportUnknownCode : null
+    return c.endOfSupportUnknownCode ? NOT_AVAILABLE_PREFIX + labelOrLower(UNKNOWN_REASON_TEXT, c.endOfSupportUnknownCode) : null
 }
 
 /** `manual`, `manual (bulk)`, then `; justification` or `; bulk justification` for an unknown. */
 function sourceCell (c: AddendumComponent): string | null {
     let s = ''
     if (c.source) {
-        s += c.source.toLowerCase()
+        s += lowerEnum(c.source)
         if (c.bulk) s += SOURCE_BULK_SUFFIX
     }
     if (c.endOfSupportUnknownCode) s += c.endOfSupportUnknownBulk ? SOURCE_BULK_JUSTIFICATION : SOURCE_JUSTIFICATION
@@ -141,8 +145,8 @@ export function addendumRow (c: AddendumComponent): unknown[] {
         live ? (c.levelOfSupport || LEVEL_NOT_STATED) : NOT_ASSESSED,
         live ? endOfSupportCell(c) : null,
         live && !c.levelOfSupport ? c.justification : null,
-        live ? 'ATTESTED' : (c.attestationState || NOT_ASSESSED),
-        live ? c.assessedAt : null,
+        live ? 'attested' : (c.attestationState ? labelOrLower(ATTESTATION_STATE_TEXT, c.attestationState) : NOT_ASSESSED),
+        live ? documentInstantText(c.assessedAt, true) : null,
         live ? sourceCell(c) : null,
         live ? assertedByCell(c) : null
     ]
@@ -165,8 +169,7 @@ export function addendumHeaderRows (d: AddendumData): unknown[][] {
         ['Organization', d.orgName],
         ['Device', d.componentName],
         ['Release', d.releaseVersion],
-        ['Release UUID', d.releaseUuid],
-        ['Generated', d.generatedAt],
+        ['Generated', documentInstantText(d.generatedAt)],
         [],
         [DEVICE_EOS_LABEL, d.deviceEos || 'not declared'],
         [DEVICE_EOL_LABEL, d.deviceEol || 'not declared'],

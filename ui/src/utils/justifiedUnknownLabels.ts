@@ -1,6 +1,9 @@
 // The FDA-facing words for the justified-unknown codes (FDAW-14 3.11). One map, used by the
-// bulk dialog, the per-component editor and the list row. The addendum prints the code name,
-// not these labels, so the document matches the server's line for line.
+// bulk dialog, the per-component editor and the list row. The addendum prints its own lower-case
+// reason texts (fdaLabels.ts UNKNOWN_REASON_TEXT, the server's FdaDocumentText.unknownReasonText,
+// FDAW-78), not these labels, so the document matches the server's line for line.
+
+import { humanizeEnum } from './fdaLabels'
 
 export type JustifiedUnknownReason = 'NO_COMMITTED_END_OF_SUPPORT' | 'COMMUNITY_PROJECT'
     | 'SUPPLIER_PUBLISHES_NO_DATE' | 'DISTRIBUTION_PUBLISHES_NO_HASH' | 'VENDORED_SOURCE_NO_HASH' | 'OTHER'
@@ -25,10 +28,10 @@ export const HASH_CODES: JustifiedUnknownReason[] =
 /** The server's bound on an unknown's text. */
 export const JUSTIFIED_UNKNOWN_TEXT_MAX = 512
 
-/** The label of a code; the raw code for one this build does not know. */
+/** The label of a code; a code this build does not know reads humanized (FDAW-78 3.1), never raw. */
 export function justifiedUnknownLabel (code: string | null | undefined): string {
     if (!code) return ''
-    return (JUSTIFIED_UNKNOWN_LABELS as Record<string, string>)[code] ?? code
+    return (JUSTIFIED_UNKNOWN_LABELS as Record<string, string>)[code] ?? humanizeEnum(code)
 }
 
 export function justifiedUnknownOptions (codes: JustifiedUnknownReason[]): Array<{ label: string, value: string }> {

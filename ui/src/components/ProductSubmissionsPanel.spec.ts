@@ -19,6 +19,7 @@ vi.mock('sweetalert2', () => ({ default: { fire: vi.fn() } }))
 vi.mock('@/utils/fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 
 const { default: Panel } = await import('./ProductSubmissionsPanel.vue')
+const { expectSwept, UUID_RE } = await import('@/utils/__fixtures__/fdaSweep')
 
 const operation = (opts: any) => (opts.query ?? opts.mutation)?.definitions?.[0]?.name?.value
 const calls = (name: string) => query.mock.calls.filter(c => operation(c[0]) === name)
@@ -103,7 +104,7 @@ describe('ProductSubmissionsPanel', () => {
         const create = draft.find('[data-testid="submission-create"]')
         expect(create.exists()).toBe(true)
         expect(create.attributes('disabled')).toBeDefined()
-        expect(create.attributes('title')).toBe('The release must be ASSEMBLED or above')
+        expect(create.attributes('title')).toBe('The release must be Assembled or later')
         const rows = w.findAll('[data-testid="submissions-release-rows"] tbody tr')
         expect(rows.map((r: any) => r.find('td').text())).toEqual(['1.1.0', '1.0.0', '0.8.0'])
         w.unmount()
@@ -239,7 +240,7 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
         const create = draft.find('[data-testid="submission-create"]')
         expect(create.exists()).toBe(true)
         expect(create.attributes('disabled')).toBeDefined()
-        expect(create.attributes('title')).toBe('The release must be ASSEMBLED or above')
+        expect(create.attributes('title')).toBe('The release must be Assembled or later')
         expect(marker(draft).exists()).toBe(false)
         expect(w.find('[data-testid="submissions-none"]').exists()).toBe(false)
         w.unmount()
@@ -266,7 +267,7 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
         const create = rowOf(w, '1.1.0').find('[data-testid="submission-create"]')
         expect(create.exists()).toBe(true)
         expect(create.attributes('disabled')).toBeDefined()
-        expect(create.attributes('title')).toBe('The release must be ASSEMBLED or above')
+        expect(create.attributes('title')).toBe('The release must be Assembled or later')
         expect(rowOf(w, '0.8.0').find('[data-testid="submission-state"]').text()).toBe('Cancelled')
         const rows = w.findAll('[data-testid="submissions-release-rows"] tbody tr')
         expect(rows.map((r: any) => r.find('td').text())).toEqual(['1.1.0', '1.0.0', '0.8.0'])
@@ -318,7 +319,7 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
         const empty = await mountPanel()
         await filterBy(empty.w, 'CANCELLED')
         expect(empty.w.find('[data-testid="submissions-none"]').text())
-            .toBe('No submission yet; create one from a release that is ASSEMBLED or above')
+            .toBe('No submission yet; create one from a release that is Assembled or later')
         expect(rowOf(empty.w, '1.1.0').find('[data-testid="submission-create"]').exists()).toBe(true)
         empty.w.unmount()
     })
@@ -461,3 +462,55 @@ describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
     })
 })
 
+
+/** FDAW-78 row 15 (REQ-67): the product Submissions list in words: lifecycles, the empty line, link texts. */
+describe('ProductSubmissionsPanel in words (FDAW-78 row 15)', () => {
+    const UUID = '3bef7cde-2edb-47cb-aa4e-94487c2cdced'
+    const LIFE_RELEASES = [
+        { uuid: 'l1', version: '4.0.0', lifecycle: 'ASSEMBLED', createdDate: '2026-10-04T00:00:00Z' },
+        { uuid: 'l2', version: '3.0.0', lifecycle: 'GENERAL_AVAILABILITY', createdDate: '2026-10-03T00:00:00Z' },
+        { uuid: 'l3', version: '2.0.0', lifecycle: 'DRAFT', createdDate: '2026-10-02T00:00:00Z' },
+        { uuid: 'l4', version: '1.0.0', lifecycle: 'SUNSET_REVIEW', createdDate: '2026-10-01T00:00:00Z' },
+    ]
+    let heads: any[] = []
+
+    beforeEach(() => {
+        query.mockReset()
+        query.mockImplementation(async (opts: any) => {
+            switch (operation(opts)) {
+            case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
+            case 'SubmissionsOfComponent': return { data: { submissionsOfComponent: heads } }
+            case 'SubmissionReleasesOfBranch': return { data: { releases: LIFE_RELEASES } }
+            case 'ComponentRegulatoryPackageKinds': return { data: { component: { uuid: 'c1', regulatoryPackageKinds: ['FDA_PREMARKET'] } } }
+            default: throw new Error('unexpected query ' + operation(opts))
+            }
+        })
+    })
+
+    it('the empty line, the lifecycles in words in order, the lifecycle reason, and swept', async () => {
+        heads = []
+        const { w } = await mountPanel()
+        expect(w.find('[data-testid="submissions-none"]').text())
+            .toBe('No submission yet; create one from a release that is Assembled or later')
+        const rows = w.findAll('[data-testid="submissions-release-rows"] tbody tr')
+        expect(rows.map((r: any) => r.findAll('td')[1].text())).toEqual(['Assembled', 'Shipped', 'Draft', 'Sunset review'])
+        const create = rowOf(w, '2.0.0').find('[data-testid="submission-create"]')
+        expect(create.attributes('disabled')).toBeDefined()
+        expect(create.attributes('title')).toBe('The release must be Assembled or later')
+        expectSwept((w.element.parentElement ?? document.body).textContent ?? '', 'product panel')
+        w.unmount()
+    })
+
+    it('a head on another feature set\'s release with no version reads release as its link text, never the uuid', async () => {
+        heads = [{ uuid: 's1', release: UUID, releaseVersion: '', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 1,
+            lastActKind: 'CREATED', lastActDate: '2026-10-02T00:00:00Z' }]
+        const { w } = await mountPanel()
+        const other = w.find('[data-testid="submissions-other-rows"]')
+        const link = other.find('[data-testid="submission-release-link"]')
+        expect(link.text()).toBe('release')
+        expect(other.text()).not.toMatch(UUID_RE)
+        expect(UUID).toMatch(UUID_RE)
+        expectSwept(other.text(), 'other feature sets')
+        w.unmount()
+    })
+})

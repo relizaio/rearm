@@ -37,6 +37,24 @@ describe('renderAddendumCsv', () => {
         expect(lines.slice(idx + 1).filter(l => l.length).length).toBe(2)
     })
 
+    // FDAW-78 row 18 (REQ-69): the header block lines the server's CSV writes, in order, no Release UUID row.
+    it('writes the header block of the server, no Release UUID, the instant in words (FDAW-78 row 18)', () => {
+        const csv = renderAddendumCsv(data({ generatedAt: '2026-10-20T08:15:30.123Z', orgName: 'Acme', componentName: 'Pump',
+            releaseVersion: '1.2.0' }))
+        const pad = (n: number) => ','.repeat(ADDENDUM_COLUMNS.length - n)
+        const lines = csv.slice(1).split('\r\n')
+        expect(lines.slice(0, 6)).toEqual([
+            'FDA software support addendum' + pad(1),
+            'Organization,Acme' + pad(2),
+            'Device,Pump' + pad(2),
+            'Release,1.2.0' + pad(2),
+            'Generated,2026-10-20 08:15 UTC' + pad(2),
+            ','.repeat(ADDENDUM_COLUMNS.length - 1),
+        ])
+        expect(csv).not.toContain('Release UUID')
+        expect(csv).toContain(',attested,2026-09-01 00:00 UTC,')
+    })
+
     // THE probe assertion, asserted here too so it does not depend on a browser: the number
     // of data rows must equal the total the header states.
     it('emits exactly totalComponents data rows', () => {

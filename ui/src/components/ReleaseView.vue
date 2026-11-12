@@ -2762,6 +2762,7 @@ import SbomScorePanel from '@/components/SbomScorePanel.vue'
 import ArtifactScanStatusPanel from '@/components/ArtifactScanStatusPanel.vue'
 import ReleaseSubmissionsPanel from '@/components/ReleaseSubmissionsPanel.vue'
 import { submissionHistoryText, submissionsAvailable } from '@/utils/submissions'
+import { historyActionColumn, historyScopeColumn } from '@/utils/releaseHistoryRender'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import { fetchWithAuth } from '../utils/fetchClient'
 import { artifactDownloadUrl, downloadArtifactBytes, saveBlob } from '@/utils/artifactDownload'
@@ -8248,14 +8249,8 @@ const releaseHistoryFields = computed(() => [
             }
         }
     },
-    {
-        key: 'rua',
-        title: 'Action'
-    },
-    {
-        key: 'rus',
-        title: 'Scope'
-    },
+    historyActionColumn,
+    historyScopeColumn,
     {
         key: 'objectId',
         title: 'Event or Object Details',
@@ -8302,7 +8297,7 @@ const releaseHistoryFields = computed(() => [
                 const txt = formatNarrativeChange(row.oldValue, row.newValue)
                 return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
-            // A generated artifact bound or removed (TEA-4): named while bound, its uuid once removed.
+            // A generated artifact bound or removed (TEA-4): named while bound, 'no longer attached' once removed (FDAW-78).
             if (row.rus === 'SYNTHETIC_ARTIFACT') {
                 return syntheticHistoryText(row.objectId, syntheticArtifactDetails.value)
             }
