@@ -93,7 +93,7 @@ const columns = computed(() => [
     { key: 'name', title: 'Name' },
     {
         key: 'effective',
-        title: 'Effective here',
+        title: 'In use here',
         render: (r: any) => r.status === 'CONFLICT'
             ? h('span', {}, [
                 h(NTag, { size: 'small', type: 'warning', 'data-testid': 'sbom-conflict-tag' }, () => 'conflict'),

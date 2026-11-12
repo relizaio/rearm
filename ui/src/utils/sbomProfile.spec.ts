@@ -11,7 +11,9 @@ import {
     sbomPickerMultiple, sbomPickerOptions, sbomProfileInput, sbomProfileNamesAvailable, sbomResetAvailable,
     sbomResetLabel, sbomResetRecipe, sbomRowsForEdition, sbomSourceLabel, sbomSourceLine,
     sbomValueText, sbomPerspectivesDefiningName,
+    conflictNames, sbomNotFoundWarning,
 } from './sbomProfile'
+import { UUID_RE } from './__fixtures__/fdaSweep'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 
 const values = (opts: { value: string }[]) => opts.map(o => o.value)
@@ -166,20 +168,21 @@ describe('the source and effective lines (row 5)', () => {
 
     it('RESOLVED by organization, perspective by name, component and DEFAULT', () => {
         expect(sbomSourceLine({ stored: null, parent: resolved('ORGANIZATION', PARENT_PROFILE) }, names, 'top'))
-            .toBe('No override: pre-filled from organization, revision 2')
+            .toBe('Nothing saved for this component: pre-filled from organization, revision 2')
         expect(sbomSourceLine({ stored: null, parent: resolved('PERSPECTIVE', PARENT_PROFILE, 'p1') }, names, 'top'))
-            .toBe('No override: pre-filled from perspective Payments, revision 2')
+            .toBe('Nothing saved for this component: pre-filled from perspective Payments, revision 2')
+        // FDAW-78 X27: a perspective with no name reads 'a perspective', never its id
         expect(sbomSourceLine({ stored: null, parent: resolved('FOLLOWED_PERSPECTIVE', PARENT_PROFILE, 'p9') }, names, 'top'))
-            .toBe('No override: pre-filled from perspective p9, revision 2')
+            .toBe('Nothing saved for this component: pre-filled from a perspective, revision 2')
         expect(sbomSourceLine({ stored: null, parent: resolved('DEFAULT', { ...PARENT_PROFILE, revision: 0 }) }, names, 'default'))
-            .toBe('No override: pre-filled from built-in defaults')
-        expect(sbomSourceLine({ stored: { name: 'top' } }, names, 'top')).toBe('Stored at this scope')
-        expect(sbomEffectiveLine(resolved('ORGANIZATION', PARENT_PROFILE), names)).toBe('Effective here: organization, revision 2')
+            .toBe('Nothing saved for this component: pre-filled from built-in defaults')
+        expect(sbomSourceLine({ stored: { name: 'top' } }, names, 'top')).toBe('Saved for this component')
+        expect(sbomEffectiveLine(resolved('ORGANIZATION', PARENT_PROFILE), names)).toBe('In use here: organization, revision 2')
         expect(sbomEffectiveLine(resolved('PERSPECTIVE', PARENT_PROFILE, 'p1'), names))
-            .toBe('Effective here: perspective Payments, revision 2')
+            .toBe('In use here: perspective Payments, revision 2')
         expect(sbomEffectiveLine(resolved('COMPONENT', { ...PARENT_PROFILE, revision: 0 }), names))
-            .toBe('Effective here: component, revision 0')
-        expect(sbomEffectiveLine(resolved('DEFAULT', PARENT_PROFILE), names)).toBe('Effective here: built-in defaults')
+            .toBe('In use here: component, revision 0')
+        expect(sbomEffectiveLine(resolved('DEFAULT', PARENT_PROFILE), names)).toBe('In use here: built-in defaults')
     })
 
     it('CONFLICT names both perspectives; NOT_FOUND says the publish is refused', () => {
@@ -187,11 +190,11 @@ describe('the source and effective lines (row 5)', () => {
         expect(sbomSourceLine({ stored: null, parent: conflict }, {}, 'top'))
             .toBe('Conflict: the perspectives Payments, Retail each define top; choose Override or Follow here')
         expect(sbomEffectiveLine(conflict))
-            .toBe('Effective here: conflict between perspectives Payments, Retail; a publish naming this profile is refused')
+            .toBe('In use here: conflict between perspectives Payments, Retail; a publish naming this profile is refused')
         const notFound = { status: 'NOT_FOUND', profile: null, conflictingPerspectives: [] }
         expect(sbomSourceLine({ stored: null, parent: notFound }, {}, 'top'))
-            .toBe('No definition of top above this scope: pre-filled from the built-in defaults')
-        expect(sbomEffectiveLine(notFound)).toBe('Effective here: not found; a publish naming this profile is refused')
+            .toBe('No definition of top above this component: pre-filled from the built-in defaults')
+        expect(sbomEffectiveLine(notFound)).toBe('In use here: not found; a publish naming this profile is refused')
     })
 })
 
@@ -217,21 +220,21 @@ describe('the picker options (row 7)', () => {
         const opts = sbomPickerOptions(catalog, ['stale', 'top'])
         expect(opts.map(o => o.value)).toEqual(['default', 'top', 'gone', 'stale'])
         for (const o of opts) expect((o as any).disabled, o.value).not.toBe(true)
-        expect(opts[0].label).toBe('default (organization, r1)')
+        expect(opts[0].label).toBe('default (organization, revision 1)')
         expect(opts[1].label.endsWith('(conflict)')).toBe(true)
         expect(opts[1].title).toContain('Payments, Retail')
         expect(opts[1].title).toBe('Perspectives Payments, Retail each define top; override or follow it on the TEA tab, or drop it')
         expect(opts[2].label).toBe('gone (not found)')
         expect(opts[3]).toEqual({ label: 'stale (not found)', value: 'stale',
-            title: 'No definition of stale resolves at this scope; drop it or define it' })
+            title: 'No definition of stale is in use here; drop it or define it' })
     })
 
     it('the lines under the picker are red exactly for a CONFLICT or a name that resolves nowhere', () => {
         const lines = sbomPickerLines(catalog, ['default', 'top', 'stale'])
         expect(lines.map(l => l.danger)).toEqual([false, true, true])
-        expect(lines[0].text).toBe('default: Effective here: organization, revision 1')
+        expect(lines[0].text).toBe('default: In use here: organization, revision 1')
         expect(lines[1].text).toContain('Payments, Retail')
-        expect(lines[2].text).toBe('stale: Not found at this scope: drop it or define it')
+        expect(lines[2].text).toBe('stale: Not found here: drop it or define it')
     })
 
     it('multiple on Pro unless the host forces one, single on CE', () => {
@@ -363,9 +366,9 @@ describe('the built-in label of a named built-in (FDAW-46 row 21)', () => {
     })
 
     it('the effective line reads built-in for fda only', () => {
-        expect(sbomEffectiveLine(resolved('DEFAULT', FDA), {}, 'fda')).toBe('Effective here: built-in')
-        expect(sbomEffectiveLine(resolved('DEFAULT', FDA), {}, 'default')).toBe('Effective here: built-in defaults')
-        expect(sbomEffectiveLine(resolved('DEFAULT', FDA), {})).toBe('Effective here: built-in defaults')
+        expect(sbomEffectiveLine(resolved('DEFAULT', FDA), {}, 'fda')).toBe('In use here: built-in')
+        expect(sbomEffectiveLine(resolved('DEFAULT', FDA), {}, 'default')).toBe('In use here: built-in defaults')
+        expect(sbomEffectiveLine(resolved('DEFAULT', FDA), {})).toBe('In use here: built-in defaults')
     })
 
     it('the picker labels, titles and lines', () => {
@@ -374,10 +377,10 @@ describe('the built-in label of a named built-in (FDAW-46 row 21)', () => {
         const fda = opts.find(o => o.value === 'fda')!
         const def = opts.find(o => o.value === 'default')!
         expect(fda.label).toBe('fda (built-in)')
-        expect(fda.title).toBe('Effective here: built-in')
-        expect(def.title).toBe('Effective here: built-in defaults')
+        expect(fda.title).toBe('In use here: built-in')
+        expect(def.title).toBe('In use here: built-in defaults')
         expect(sbomPickerLines(catalog, ['default', 'fda']).map(l => l.text))
-            .toEqual(['default: Effective here: built-in defaults', 'fda: Effective here: built-in'])
+            .toEqual(['default: In use here: built-in defaults', 'fda: In use here: built-in'])
     })
 })
 
@@ -406,5 +409,70 @@ describe('the reset helpers (FDAW-46 row 21)', () => {
     it('says which built-in it resets to', () => {
         expect(sbomResetLabel('default')).toBe('Reset to built-in defaults')
         expect(sbomResetLabel('fda')).toBe('Reset to the built-in fda recipe')
+    })
+})
+
+/** FDAW-78 row 14 (REQ-67): the SBOM editor's source line per scope word, and the picker's texts in words. */
+describe('the picker and the source line in words (FDAW-78 row 14)', () => {
+    const UUID = '3bef7cde-2edb-47cb-aa4e-94487c2cdced'
+    const PROFILE = (revision: number) => ({ name: 'fda', revision })
+
+    it('sbomSourceLine by scope word', () => {
+        expect(sbomSourceLine({ stored: { name: 'fda' } }, {}, 'fda', 'organization')).toBe('Saved for this organization')
+        expect(sbomSourceLine({ stored: null, parent: null }, {}, 'fda', 'product'))
+            .toBe('No definition of fda above this product: pre-filled from the built-in defaults')
+        expect(sbomSourceLine({ stored: null, parent: resolved('ORGANIZATION', PROFILE(3)) }, {}, 'fda', 'product'))
+            .toBe('Nothing saved for this product: pre-filled from organization, revision 3')
+    })
+
+    it('sbomPickerOptions: revision in words, a perspective by name or as a perspective, never r<n> or a uuid (F-4)', () => {
+        const e = (resolution: any) => ({ name: 'fda', resolution: { conflictingPerspectives: [], ...resolution } })
+        const label = (resolution: any, names: Record<string, string> = {}) => sbomPickerOptions([e(resolution)], [], names)[0].label
+        const labels = [
+            label({ status: 'RESOLVED', source: 'ORGANIZATION', sourceObject: null, profile: PROFILE(2) }),
+            label({ status: 'RESOLVED', source: 'DEFAULT', sourceObject: null, profile: PROFILE(0) }),
+            label({ status: 'RESOLVED', source: 'PERSPECTIVE', sourceObject: 'p1', profile: PROFILE(1) }, { p1: 'Payments' }),
+            label({ status: 'RESOLVED', source: 'PERSPECTIVE', sourceObject: UUID, profile: PROFILE(1) }),
+        ]
+        expect(labels).toEqual(['fda (organization, revision 2)', 'fda (built-in)', 'fda (perspective Payments, revision 1)',
+            'fda (a perspective, revision 1)'])
+        for (const l of labels) {
+            expect(l).not.toMatch(/, r\d/)
+            expect(l).not.toMatch(UUID_RE)
+        }
+        // control: the old label and the perspective id match the two expressions
+        expect('fda (organization, r2)').toMatch(/, r\d/)
+        expect(UUID).toMatch(UUID_RE)
+        expect(conflictNames({ conflictingPerspectives: [{ uuid: UUID }] } as any)).toBe('a perspective')
+    })
+
+    it('the not-found texts and the composed lines over the row-7 fixture, whole (F-8)', () => {
+        const catalog = [entry('default'), entry('top', 'CONFLICT', { conflictingPerspectives: [P1, P2] }), entry('gone', 'NOT_FOUND')]
+        const selected = ['default', 'top', 'gone', 'stale']
+        expect(sbomNotFoundWarning('stale')).toBe('No definition of stale is in use here; drop it or define it')
+        const opts = sbomPickerOptions(catalog, selected)
+        expect(opts).toHaveLength(4)
+        expect(opts[0].title).toBe('In use here: organization, revision 1')
+        expect(opts[2]).toEqual({ label: 'gone (not found)', value: 'gone', title: 'No definition of gone is in use here; drop it or define it' })
+        expect(opts[3]).toEqual({ label: 'stale (not found)', value: 'stale', title: 'No definition of stale is in use here; drop it or define it' })
+        const lines = sbomPickerLines(catalog, selected)
+        expect(lines).toHaveLength(4)
+        expect(lines.map(l => l.danger)).toEqual([false, true, true, true])
+        expect(lines[0].text).toBe('default: In use here: organization, revision 1')
+        expect(lines[1].text).toBe('top: In use here: conflict between perspectives Payments, Retail; a publish naming this profile is refused.'
+            + ' Perspectives Payments, Retail each define top; override or follow it on the TEA tab, or drop it')
+        expect(lines[2].text).toBe('gone: In use here: not found; a publish naming this profile is refused.'
+            + ' No definition of gone is in use here; drop it or define it')
+        expect(lines[3].text).toBe('stale: Not found here: drop it or define it')
+        const texts = [...opts.flatMap(o => [o.label, o.title ?? '']), ...lines.map(l => l.text)]
+        expect(texts).toHaveLength(12)
+        for (const t of texts) {
+            expect(t).not.toMatch(/scope/i)
+            expect(t).not.toMatch(/Effective here/)
+        }
+        // control: the old literals match the two expressions
+        expect('No definition of stale resolves at this scope; drop it or define it').toMatch(/scope/i)
+        expect('stale: Not found at this scope: drop it or define it').toMatch(/scope/i)
+        expect('default: Effective here: organization, revision 1').toMatch(/Effective here/)
     })
 })

@@ -27,6 +27,7 @@ import { isLiveAttestation, deviceWindowProvenanceLine } from './addendumData'
 import { releaseSlug, PROSE_SLOT_LABELS } from './addendumDocument'
 import { fontCoverageRefusal } from './pdfFontCoverage'
 import { DEVICE_EOS_LABEL, DEVICE_EOL_LABEL } from './deviceDateLabels'
+import { documentFooterIdentity, documentInstantText } from './fdaLabels'
 
 pdfMake.vfs = pdfFonts.vfs
 
@@ -53,7 +54,7 @@ export const REQUIRED_PROSE_SLOTS: Array<{ key: keyof AddendumData, label: strin
 ]
 
 /** Where an operator goes to author them. Named in the block message so it is actionable. */
-export const PROSE_SETTINGS_LOCATION = 'Organization Settings -> Submission and labeling text'
+export const PROSE_SETTINGS_LOCATION = 'Organization Settings > Admin Settings > General > Submission and labeling text'
 
 /** The slots that are missing, by label, in the order the document would print them. */
 export function missingProseSlots (d: AddendumData): string[] {
@@ -127,15 +128,16 @@ function displayName (c: AddendumComponent): string {
 }
 
 /** Every string the document prints, for the font-coverage check. */
-function statementStrings (d: AddendumData): Array<string | null | undefined> {
+export function statementStrings (d: AddendumData): Array<string | null | undefined> {
     return [
         STATEMENT_TITLE, NOT_DECLARED,
         d.componentName, d.releaseVersion, d.orgName,
-        // Rendered in the facts table and the footer. Server-generated today -- dates, a
-        // uuid, an ISO instant -- so unreachable in practice, but the invariant this function
+        // Rendered in the facts table and the footer. Server-generated today -- dates and
+        // the footer's instant -- so unreachable in practice, but the invariant this function
         // states is "every string the document prints", and the next field added to the
-        // footer would otherwise escape the whitelist silently.
-        d.deviceEos, d.deviceEol, d.releaseUuid, d.generatedAt,
+        // footer would otherwise escape the whitelist silently. The footer prints no release
+        // uuid since FDAW-78, and the instant as documentInstantText prints it.
+        d.deviceEos, d.deviceEol, documentInstantText(d.generatedAt),
         d.patchesMayCeaseStatement, d.riskTransferProcessRef, d.riskIncreasesNotice,
         // The SHIPMENT provenance line's three fields. These are USER-ENTERED -- a site name,
         // a lot code -- which makes them the likeliest strings in the whole document to carry
@@ -275,8 +277,8 @@ export function buildDeviceSupportStatementDefinition (d: AddendumData): Record<
             style: 'footer',
             margin: [56, 10, 56, 0],
             columns: [
-                { text: `${d.componentName || '(unnamed device)'} ${d.releaseVersion || ''} (${d.releaseUuid})`, alignment: 'left' },
-                { text: `Generated ${d.generatedAt}`, alignment: 'center' },
+                { text: documentFooterIdentity(d.componentName, d.releaseVersion), alignment: 'left' },
+                { text: 'Generated ' + documentInstantText(d.generatedAt), alignment: 'center' },
                 { text: `Page ${currentPage} of ${pageCount}`, alignment: 'right' }
             ]
         }),

@@ -30,6 +30,7 @@ vi.mock('naive-ui', async (importOriginal) => {
 
 const { default: Editor } = await import('./PackageSettingsEditor.vue')
 const { packageFormFromView, packageSettingsInput } = await import('@/utils/packageSettings')
+const { expectSwept } = await import('@/utils/__fixtures__/fdaSweep')
 
 const FDA = { kind: 'FDA_PREMARKET', parts: [
     { part: 'AGGREGATE_SBOM', requirement: 'REQUIRED', defaultSelection: 'INCLUDE', generatorPresent: true },
@@ -118,7 +119,7 @@ describe('PackageSettingsEditor', () => {
         for (const part of ['AGGREGATE_SBOM', 'VDR', 'NARRATIVE', 'SUPPORT_ADDENDUM']) {
             expect(select(w, 'package-selection-' + part).props('disabled'), part).toBe(true)
             expect(select(w, 'package-selection-' + part).props('value'), part).toBe('INCLUDE')
-            expect(w.find('[data-testid="package-selection-reason-' + part + '"]').text()).toBe('REQUIRED by the kind')
+            expect(w.find('[data-testid="package-selection-reason-' + part + '"]').text()).toBe('Always included: FDA premarket requires this part')
         }
         expect(select(w, 'package-selection-VEX').props('disabled')).toBe(false)
         for (const id of ['package-suppressed-VEX', 'package-in-triage-VEX', 'package-vex-format-VEX', 'package-suppressed-VDR']) {
@@ -163,7 +164,7 @@ describe('PackageSettingsEditor', () => {
         const w = await mountWith()
         await pickMode(w, 'OVERRIDE')
         await select(w, 'package-selection-RAW_ARTIFACTS').vm.$emit('update:value', 'INCLUDE')
-        expect(w.find('[data-testid="package-form-error"]').text()).toBe('RAW_ARTIFACTS needs at least one artifact type while included')
+        expect(w.find('[data-testid="package-form-error"]').text()).toBe('Raw artifacts needs at least one artifact type while included')
         expect(w.find('[data-testid="package-save"]').attributes('disabled')).toBeDefined()
         await select(w, 'package-artifact-types-RAW_ARTIFACTS').vm.$emit('update:value', ['USER_DOCUMENT'])
         expect(w.find('[data-testid="package-form-error"]').exists()).toBe(false)
@@ -180,7 +181,7 @@ describe('PackageSettingsEditor', () => {
         expect(enabledSwitch(w).props('value')).toBe(true)
         expect(enabledSwitch(w).props('disabled')).toBe(true)
         expect(select(w, 'sbom-profile-picker').props('value')).toBe('default')
-        expect(w.find('[data-testid="package-source"]').text()).toBe('Inherited from organization, revision 2: Save removes the stored settings')
+        expect(w.find('[data-testid="package-source"]').text()).toBe('Inherited from organization settings, revision 2: Save removes the settings saved here')
         await w.find('[data-testid="package-save"]').trigger('click')
         await flushPromises()
         expect(dialogWarning).toHaveBeenCalledTimes(1)
@@ -223,8 +224,10 @@ describe('PackageSettingsEditor', () => {
     it('the organization keeps no mode radio and its Remove, which confirms, then deletes', async () => {
         views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 's1', sbomProfile: 'default', parts: [] } })
         const w = await mountWith({ scope: 'ORGANIZATION', objectUuid: null })
-        // FDAW-18: only a component's switch names the Medical device tab question
-        expect(w.find('.package-enabled-help').text()).not.toContain('Medical device')
+        // FDAW-18: only a component's switch names the Medical device tab question. The organization's Off text
+        // names Settings > Medical device itself (FDAW-78 C3), so the cell excludes the hint by its own sentence.
+        expect(w.find('.package-enabled-help').text()).not.toContain('On the Medical device tab this is question 2')
+        expect(w.find('.package-enabled-help').text()).toContain('Settings > Medical device')
         expect(w.find('[data-testid="package-mode"]').exists()).toBe(false)
         expect(w.find('[data-testid="package-save"]').exists()).toBe(true)
         fire.mockResolvedValueOnce({ isConfirmed: false })
@@ -247,7 +250,7 @@ describe('PackageSettingsEditor', () => {
         expect(modeValues(w)).toEqual(['INHERIT', 'OVERRIDE', 'FOLLOW_PERSPECTIVE'])
         expect(w.find('[data-testid="package-mode"]').text()).toContain('Inherit: use the perspective or organization settings')
         expect(checkedMode(w)).toBe('INHERIT')
-        expect(w.find('[data-testid="package-source"]').text()).toBe('Inherited from organization, revision 2')
+        expect(w.find('[data-testid="package-source"]').text()).toBe('Inherited from organization settings, revision 2')
         expect(w.find('[data-testid="package-fields"]').attributes('data-inherited')).toBe('true')
         expect(enabledSwitch(w).props('value')).toBe(true)
         expect(enabledSwitch(w).props('disabled')).toBe(true)
@@ -271,7 +274,7 @@ describe('PackageSettingsEditor', () => {
         expect(enabledSwitch(w).props('value')).toBe(true)
         expect(enabledSwitch(w).props('disabled')).toBe(false)
         expect(select(w, 'package-selection-VEX').props('disabled')).toBe(false)
-        expect(w.find('[data-testid="package-source"]').text()).toBe('No override: pre-filled from organization, revision 2')
+        expect(w.find('[data-testid="package-source"]').text()).toBe('Nothing saved for this component: pre-filled from organization settings, revision 2')
         await w.find('[data-testid="package-save"]').trigger('click')
         await flushPromises()
         expect(dialogWarning).not.toHaveBeenCalled()
@@ -339,8 +342,8 @@ describe('PackageSettingsEditor', () => {
         const sw = w.findAllComponents(NSwitch).find((c: any) => c.attributes('data-testid') === 'package-enabled')!
         expect(sw.props('value')).toBe(false)
         await pickMode(w, 'OVERRIDE')
-        expect(fields.text()).toContain('Off: releases of this scope do not offer FDA premarket and no new submission can be made; '
-            + 'existing submissions stay readable and can be withdrawn. On the Medical device tab this is question 2.')
+        expect(fields.text()).toContain('Off: releases of this component do not offer FDA premarket and no new submission can be made; '
+            + 'existing submissions stay readable and can be cancelled. On the Medical device tab this is question 2.')
         await sw.vm.$emit('update:value', true)
         await w.find('[data-testid="package-save"]').trigger('click')
         await flushPromises()
@@ -362,7 +365,7 @@ describe('PackageSettingsEditor', () => {
         })
         const follow = await mountWith({ perspectiveOptions: [{ label: 'Payments', value: 'p1' }] })
         expect(follow.find('[data-testid="package-enabled"]').exists()).toBe(false)
-        expect(follow.find('[data-testid="package-effective-enabled"]').text()).toBe('Enabled here: on')
+        expect(follow.find('[data-testid="package-effective-enabled"]').text()).toBe('In use here: switched on')
         await follow.find('[data-testid="package-save"]').trigger('click')
         await flushPromises()
         expect(mutate.mock.calls[0][0].variables.settings).toEqual({ mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' })
@@ -380,28 +383,28 @@ describe('PackageSettingsEditor', () => {
         views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', state: 'DISABLED', sbomProfile: 'default', parts: [] } })
         const w = await mountWith()
         const help = () => w.find('.package-enabled-help').text()
-        expect(help()).toBe('Off: releases of this scope do not offer FDA premarket and no new submission can be made; '
-            + 'existing submissions stay readable and can be withdrawn. On the Medical device tab this is question 2.')
+        expect(help()).toBe('Off: releases of this component do not offer FDA premarket and no new submission can be made; '
+            + 'existing submissions stay readable and can be cancelled. On the Medical device tab this is question 2.')
         await enabledSwitch(w).vm.$emit('update:value', true)
         await flushPromises()
-        expect(help()).toBe('On: releases of this scope offer FDA premarket and can be submitted. On the Medical device tab this is question 2.')
+        expect(help()).toBe('On: releases of this component offer FDA premarket and can be submitted. On the Medical device tab this is question 2.')
     })
 
     it('the Enabled help describes the shown value when read-only: an inherited on, a reader on a stored on', async () => {
         views.FDA_PREMARKET = viewOf(FDA, { parent: { ...resolution, settings: { ...resolution.settings, enabled: true } } })
         const inherit = await mountWith()
         expect(checkedMode(inherit)).toBe('INHERIT')
-        expect(inherit.find('.package-enabled-help').text()).toBe('On: releases of this scope offer FDA premarket and can be submitted. On the Medical device tab this is question 2.')
+        expect(inherit.find('.package-enabled-help').text()).toBe('On: releases of this component offer FDA premarket and can be submitted. On the Medical device tab this is question 2.')
         // Override pre-filled from the parent: switched off there, the text follows.
         await pickMode(inherit, 'OVERRIDE')
         await enabledSwitch(inherit).vm.$emit('update:value', false)
         await flushPromises()
-        expect(inherit.find('.package-enabled-help').text()).toContain('Off: releases of this scope do not offer FDA premarket')
+        expect(inherit.find('.package-enabled-help').text()).toContain('Off: releases of this component do not offer FDA premarket')
         inherit.unmount()
 
         views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', state: 'ENABLED', sbomProfile: 'default', parts: [] } })
         const reader = await mountWith({ isWritable: false })
-        expect(reader.find('.package-enabled-help').text()).toBe('On: releases of this scope offer FDA premarket and can be submitted. On the Medical device tab this is question 2.')
+        expect(reader.find('.package-enabled-help').text()).toBe('On: releases of this component offer FDA premarket and can be submitted. On the Medical device tab this is question 2.')
     })
 
     it('INHERIT at COMPONENT scope with perspectives shows the conflict hint under the source line, naming the kind', async () => {
@@ -434,5 +437,97 @@ describe('PackageSettingsEditor', () => {
         const conflicted = await mountWith({ perspectiveOptions: [{ label: 'Payments', value: 'p1' }, { label: 'Retail', value: 'p2' }] })
         expect(conflicted.find('[data-testid="package-inherit-hint"]').exists()).toBe(false)
         expect(conflicted.find('[data-testid="package-conflict"]').exists()).toBe(true)
+    })
+})
+
+/**
+ * FDAW-78 row 15 (REQ-67): the Regulatory pane mounted, read in words. The organization's switch is a
+ * default, the Requirement and the always-included reason are words, the source and in-use lines name no
+ * scope, and a profile name the catalog lacks reads `Not found here`.
+ */
+describe('PackageSettingsEditor in words (FDAW-78 row 15)', () => {
+    const KIND = { kind: 'FDA_PREMARKET', parts: [
+        { part: 'NARRATIVE', requirement: 'REQUIRED', defaultSelection: 'INCLUDE', generatorPresent: true },
+        { part: 'VEX', requirement: 'OPTIONAL', defaultSelection: 'INCLUDE', generatorPresent: true },
+        { part: 'CLE', requirement: 'CONDITIONAL', defaultSelection: 'EXCLUDE', generatorPresent: true },
+    ] }
+    const ORG_RES = { status: 'RESOLVED', source: 'ORGANIZATION', sourceObject: null, conflictingPerspectives: [],
+        settings: { sbomProfile: 'fda', state: 'DISABLED', revision: 0, parts: [] } }
+    const FDA_CATALOG = [{ name: 'fda', resolution: { status: 'RESOLVED', source: 'ORGANIZATION', sourceObject: null,
+        profile: { name: 'fda', revision: 1 }, conflictingPerspectives: [] } }]
+    const C3_ORG_OFF = 'Off: FDA premarket is not offered by default. A product offers it once it is switched on for that product'
+        + ' (the product\'s Settings > Medical device, question 2); products already switched on there keep working.'
+        + ' Existing submissions stay readable and can be cancelled.'
+    const C3_PRODUCT_ON = 'On: releases of this product offer FDA premarket and can be submitted. On the Medical device tab this is question 2.'
+    let view: any = null
+
+    beforeEach(() => {
+        query.mockReset()
+        mutate.mockReset()
+        query.mockImplementation(async (opts: any) => {
+            switch (operation(opts)) {
+            case 'PackageKinds': return { data: { packageKinds: [KIND] } }
+            case 'PackageSettingsEditorView': return { data: { packageSettingsEditorView: view } }
+            case 'SbomProfileCatalog': return { data: { sbomProfileCatalog: FDA_CATALOG } }
+            default: throw new Error('unexpected query ' + operation(opts))
+            }
+        })
+    })
+
+    const enabledLabel = (w: any) => w.findAll('.n-form-item').find((f: any) => f.find('[data-testid="package-enabled"]').exists())!
+        .find('.n-form-item-label').text()
+    const text = (w: any) => (w.element as HTMLElement).textContent ?? ''
+    const OLD = ['Stored at this scope',
+        'Off: releases of this scope do not offer FDA premarket and no new submission can be made; existing submissions stay readable and can be withdrawn.',
+        'gone-profile: Not found at this scope: drop it or define it']
+
+    function noScope (t: string) {
+        expect(t).not.toMatch(/scope/i)
+        for (const old of OLD) expect(old).toMatch(/scope/i)
+    }
+
+    it('ORGANIZATION, stored DISABLED with the fda profile: On by default, the C3 Off text, the lines and the Requirement in words', async () => {
+        view = { kind: KIND, stored: { uuid: 's1', state: 'DISABLED', sbomProfile: 'fda', revision: 0, parts: [] },
+            parent: null, effective: ORG_RES }
+        const w = await mountWith({ scope: 'ORGANIZATION', objectUuid: null })
+        expect(enabledLabel(w)).toContain('On by default')
+        expect(w.find('.package-enabled-help').text()).toBe(C3_ORG_OFF)
+        expect(w.find('[data-testid="package-source"]').text()).toBe('Saved for this organization')
+        expect(w.find('[data-testid="package-effective"]').text()).toBe('In use here: organization settings, revision 0')
+        expect(['NARRATIVE', 'VEX', 'CLE'].map(p => w.find('[data-testid="package-requirement-' + p + '"]').text()))
+            .toEqual(['Required', 'Optional', 'Conditional'])
+        expect(w.find('[data-testid="package-selection-reason-NARRATIVE"]').text()).toBe('Always included: FDA premarket requires this part')
+        expect(w.find('[data-testid="package-selection-reason-VEX"]').exists()).toBe(false)
+        // the hint is the component's only
+        expect(w.find('.package-enabled-help').text()).not.toContain('On the Medical device tab this is question 2')
+        expectSwept(text(w), 'organization pane')
+        noScope(text(w))
+    })
+
+    it('COMPONENT of a product, ENABLED: Enabled, the product On text with the hint', async () => {
+        view = { kind: KIND, stored: { uuid: 's2', mode: 'OVERRIDE', state: 'ENABLED', sbomProfile: 'fda', revision: 0, parts: [] },
+            parent: ORG_RES, effective: { ...ORG_RES, source: 'COMPONENT', settings: { ...ORG_RES.settings, revision: 0 } } }
+        const w = await mountWith({ scope: 'COMPONENT', objectIsProduct: true })
+        expect(enabledLabel(w)).toContain('Enabled')
+        expect(enabledLabel(w)).not.toContain('On by default')
+        expect(w.find('.package-enabled-help').text()).toBe(C3_PRODUCT_ON)
+        expect(w.find('.package-enabled-help').text().endsWith('On the Medical device tab this is question 2.')).toBe(true)
+        expect(w.find('[data-testid="package-source"]').text()).toBe('Saved for this product')
+        expect(w.find('[data-testid="package-effective"]').text()).toBe('In use here: this product\'s own settings, revision 0')
+        expectSwept(text(w), 'product pane')
+        noScope(text(w))
+    })
+
+    it('COMPONENT of a product naming a profile the catalog lacks: one red line, Not found here (F-8)', async () => {
+        view = { kind: KIND, stored: { uuid: 's3', mode: 'OVERRIDE', state: 'ENABLED', sbomProfile: 'gone-profile', revision: 0, parts: [] },
+            parent: ORG_RES, effective: ORG_RES }
+        const w = await mountWith({ scope: 'COMPONENT', objectIsProduct: true })
+        const lines = w.findAll('[data-testid="sbom-picker-line"]')
+        expect(lines).toHaveLength(1)
+        expect(lines[0].classes()).toContain('text-danger')
+        expect(lines[0].text()).toBe('gone-profile: Not found here: drop it or define it')
+        expect(text(w)).toContain('gone-profile: Not found here: drop it or define it')
+        expectSwept(text(w), 'stale profile pane')
+        noScope(text(w))
     })
 })

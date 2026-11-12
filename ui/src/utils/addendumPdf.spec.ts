@@ -11,6 +11,7 @@ import { buildAddendumDocDefinition, addendumPdfFileName, renderAddendumPdfBlob,
     findUnrenderableText } from './addendumPdf'
 import { ADDENDUM_COLUMNS, ADDENDUM_TITLE } from './addendumDocument'
 import type { AddendumComponent, AddendumData } from './addendumData'
+import { INSTANT_RE, UUID_RE } from './__fixtures__/fdaSweep'
 
 function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
     return {
@@ -141,17 +142,35 @@ describe('buildAddendumDocDefinition', () => {
 
         // A page separated from the document must still say which release it describes;
         // these get printed and passed around.
-        it('carries release identity on every page', () => {
+        it('carries release identity on every page, by device and version, no uuid (FDAW-78 O-2)', () => {
             const texts = footer().columns.map((c: any) => c.text).join(' | ')
             expect(texts).toContain('Pump')
             expect(texts).toContain('1.4.5')
-            expect(texts).toContain('r-1')
+            expect(texts).not.toContain('r-1')
         })
 
-        it('carries the generation timestamp as a UTC RFC-3339 instant', () => {
+        it('carries the generation timestamp as the document instant, minute precision, UTC named (FDAW-78 O-7)', () => {
             const t = footer().columns.map((c: any) => c.text).join(' ')
-            expect(t).toContain('2026-09-08T12:00:00Z')
-            expect(t).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/)
+            expect(t).toContain('Generated 2026-09-08 12:00 UTC')
+            expect(t).not.toMatch(INSTANT_RE)
+        })
+
+        // FDAW-78 row 18 (REQ-69): the same two footer strings the server's documents print.
+        it('reads <device> <version> and Generated <instant> on page 1 of 2 and 2 of 2 (FDAW-78 row 18)', () => {
+            const uuid = '3bef7cde-2edb-47cb-aa4e-94487c2cdced'
+            const base = { componentName: 'Pump', releaseVersion: '1.2.0', releaseUuid: uuid, generatedAt: '2026-10-20T08:15:30.123Z' }
+            const cols = (over: any, page: number) => (buildAddendumDocDefinition(data(over)).footer as any)(page, 2)
+                .columns.map((c: any) => c.text)
+            for (const page of [1, 2]) {
+                const c = cols(base, page)
+                expect(c[0]).toBe('Pump 1.2.0')
+                expect(c[1]).toBe('Generated 2026-10-20 08:15 UTC')
+                expect(c[2]).toBe('Page ' + page + ' of 2')
+                expect(c.join(' ')).not.toMatch(UUID_RE)
+            }
+            expect(cols({ ...base, componentName: null }, 1)[0]).toBe('(unnamed device) 1.2.0')
+            expect(cols({ ...base, releaseVersion: null }, 1)[0]).toBe('Pump')
+            expect(uuid).toMatch(UUID_RE)
         })
 
         it('numbers pages as N of M', () => {
@@ -161,7 +180,7 @@ describe('buildAddendumDocDefinition', () => {
         it('survives a release with no name or version', () => {
             const t = footer(data({ componentName: null, releaseVersion: null }))
             expect(() => JSON.stringify(t)).not.toThrow()
-            expect(t.columns[0].text).toContain('r-1')
+            expect(t.columns[0].text).toBe('(unnamed device)')
         })
     })
 })
@@ -338,7 +357,7 @@ describe('the table fits the page (FDAW-68)', () => {
         expect(r[8]).toBe('manual (bulk); bulk justification')
         expect(r[9]).toBe('Fdaw65 Tester 7a6c3160 ' + 'a'.repeat(80) + '; justification: Second Person ' + 'b'.repeat(80))
         expect(r[2]).toBe('pkg:deb/debian/' + 'p'.repeat(200) + '@1')
-        expect(r[4]).toBe('not available: NO_COMMITTED_END_OF_SUPPORT')
+        expect(r[4]).toBe('not available: no committed end of support')
     })
 
     it('(row 7 c) the widths do not depend on the data', () => {

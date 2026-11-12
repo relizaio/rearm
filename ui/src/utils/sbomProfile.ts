@@ -260,6 +260,11 @@ export function sbomProfileInput (form: SbomProfileForm, scope: SbomScope): Reco
 export function sbomSourceLabel (source: string | null | undefined, sourceObject: string | null | undefined,
     names: Record<string, string> = {}, name?: string | null): string {
     if (source === 'DEFAULT' && name && name !== SBOM_DEFAULT_NAME) return 'built-in'
+    // A perspective with no name in the map reads 'a perspective', never its uuid (FDAW-78 X27);
+    // decided here, as teaSourceLabel is TEA's and stays.
+    if ((source === 'PERSPECTIVE' || source === 'FOLLOWED_PERSPECTIVE') && !(sourceObject && names[sourceObject])) {
+        return 'a perspective'
+    }
     return teaSourceLabel(source, sourceObject, names)
 }
 
@@ -273,34 +278,34 @@ function sourceWithRevision (r: SbomResolution, revision: number | null | undefi
 
 /** The names of a CONFLICT's perspectives, joined. */
 export function conflictNames (r: SbomResolution | null | undefined, names: Record<string, string> = {}): string {
-    return (r?.conflictingPerspectives ?? []).map(p => p.name || names[p.uuid] || p.uuid).join(', ')
+    return (r?.conflictingPerspectives ?? []).map(p => p.name || names[p.uuid] || 'a perspective').join(', ')
 }
 
-/** The editor's source line: where an unsaved form comes from. */
+/** The editor's source line: where an unsaved form comes from, worded for the `scopeWord` (FDAW-78 3.5). */
 export function sbomSourceLine (view: SbomEditorView | null | undefined, names: Record<string, string> = {},
-    name = SBOM_DEFAULT_NAME): string {
-    if (view?.stored) return 'Stored at this scope'
+    name = SBOM_DEFAULT_NAME, scopeWord = 'component'): string {
+    if (view?.stored) return 'Saved for this ' + scopeWord
     const parent = view?.parent
     if (!parent || parent.status === 'NOT_FOUND') {
-        return 'No definition of ' + name + ' above this scope: pre-filled from the built-in defaults'
+        return 'No definition of ' + name + ' above this ' + scopeWord + ': pre-filled from the built-in defaults'
     }
     if (parent.status === 'CONFLICT') {
         return 'Conflict: the perspectives ' + conflictNames(parent, names) + ' each define ' + name
             + '; choose Override or Follow here'
     }
-    return 'No override: pre-filled from ' + sourceWithRevision(parent, parent.profile?.revision, names, name)
+    return 'Nothing saved for this ' + scopeWord + ': pre-filled from ' + sourceWithRevision(parent, parent.profile?.revision, names, name)
 }
 
-/** The resolver's effective view of a name at a scope, as one line. */
+/** The resolver's view of the name in use here, as one line. */
 export function sbomEffectiveLine (resolution: SbomResolution | null | undefined, names: Record<string, string> = {},
     name?: string | null): string {
     if (!resolution) return ''
     if (resolution.status === 'CONFLICT') {
-        return 'Effective here: conflict between perspectives ' + conflictNames(resolution, names)
+        return 'In use here: conflict between perspectives ' + conflictNames(resolution, names)
             + '; a publish naming this profile is refused'
     }
-    if (resolution.status === 'NOT_FOUND') return 'Effective here: not found; a publish naming this profile is refused'
-    return 'Effective here: ' + sourceWithRevision(resolution, resolution.profile?.revision, names, name)
+    if (resolution.status === 'NOT_FOUND') return 'In use here: not found; a publish naming this profile is refused'
+    return 'In use here: ' + sourceWithRevision(resolution, resolution.profile?.revision, names, name)
 }
 
 export interface SbomCatalogRow {
@@ -358,7 +363,7 @@ export function sbomConflictWarning (name: string, r: SbomResolution | null | un
 
 /** The warning a name that resolves nowhere carries in the picker. */
 export function sbomNotFoundWarning (name: string): string {
-    return 'No definition of ' + name + ' resolves at this scope; drop it or define it'
+    return 'No definition of ' + name + ' is in use here; drop it or define it'
 }
 
 /**
@@ -382,7 +387,7 @@ export function sbomPickerOptions (entries: any[] | null | undefined, selected: 
         } else {
             const rev = r.profile?.revision
             const label = sbomSourceLabel(r.source, r.sourceObject, names, e.name)
-                + (r.source && r.source !== 'DEFAULT' && rev != null ? ', r' + rev : '')
+                + (r.source && r.source !== 'DEFAULT' && rev != null ? ', revision ' + rev : '')
             out.push({ label: e.name + ' (' + label + ')', value: e.name, title: sbomEffectiveLine(r, names, e.name) })
         }
     }
@@ -403,7 +408,7 @@ export function sbomPickerLines (entries: any[] | null | undefined, selected: st
     for (const e of entries ?? []) if (e?.name) byName.set(e.name, e)
     return (selected ?? []).filter(Boolean).map(name => {
         const e = byName.get(name)
-        if (!e) return { name, text: name + ': Not found at this scope: drop it or define it', danger: true }
+        if (!e) return { name, text: name + ': Not found here: drop it or define it', danger: true }
         const r: SbomResolution = e.resolution ?? {}
         if (r.status === 'CONFLICT') {
             return { name, text: name + ': ' + sbomEffectiveLine(r, names, name) + '. ' + sbomConflictWarning(name, r, names), danger: true }

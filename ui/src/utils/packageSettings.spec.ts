@@ -7,8 +7,9 @@ import {
     PACKAGE_COMPONENT_QUESTION_HINT, packageEnabledHelp, packageEnabledLine, packageStateOf, packageFormError, packageFormFromView, packageKindLabel, packagePartFields, packageRemoveConfirm,
     packageSettingsInput, packageSourceLine, regulatoryPackagesAvailable,
     PACKAGE_MODE_OPTIONS, PACKAGE_PERSPECTIVE_MODE_OPTIONS, packageInheritConfirm, packageInheritedForm, packageModeOptions,
-    packageInheritConflictHint, PACKAGE_INHERIT,
+    packageInheritConflictHint, PACKAGE_INHERIT, PACKAGE_FIELD_HELP, packageEnabledLabel,
 } from './packageSettings'
+import { ENUM_RE, UUID_RE, expectSwept } from './__fixtures__/fdaSweep'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 
 const values = (opts: { value: string }[]) => opts.map(o => o.value)
@@ -37,9 +38,10 @@ describe('parts and options (row 20)', () => {
         }
     })
 
-    it('the artifact types are the CE ArtifactType enum, labelled with spaces', () => {
+    it('the artifact types are the CE ArtifactType enum, labelled in words (FDAW-78 X8)', () => {
         expect(values(PACKAGE_ARTIFACT_TYPE_OPTIONS)).toEqual(enumValuesOf(ceSchema, 'ArtifactType'))
-        expect(PACKAGE_ARTIFACT_TYPE_OPTIONS.find(o => o.value === 'USER_DOCUMENT')!.label).toBe('USER DOCUMENT')
+        expect(PACKAGE_ARTIFACT_TYPE_OPTIONS.find(o => o.value === 'USER_DOCUMENT')!.label).toBe('User document')
+        expect(PACKAGE_ARTIFACT_TYPE_OPTIONS.find(o => o.value === 'OTHER')!.label).toBe('Uncategorized')
     })
 
     it.runIf(proSchema)('the lists equal the Pro enums, and every part label is a PackagePart and back', () => {
@@ -50,9 +52,9 @@ describe('parts and options (row 20)', () => {
         for (const k of Object.keys(PACKAGE_KIND_LABELS)) expect(enumValuesOf(proSchema!, 'PackageKind')).toContain(k)
     })
 
-    it('an unknown kind renders its value; the gate is the Pro edition', () => {
+    it('an unknown kind renders humanized (FDAW-78 X1); the gate is the Pro edition', () => {
         expect(packageKindLabel('FDA_PREMARKET')).toBe('FDA premarket')
-        expect(packageKindLabel('TEST_KIND')).toBe('TEST_KIND')
+        expect(packageKindLabel('TEST_KIND')).toBe('Test kind')
         expect(regulatoryPackagesAvailable('OSS')).toBe(false)
         for (const t of ['SAAS', 'DEMO', 'MANAGED_SERVICE']) expect(regulatoryPackagesAvailable(t)).toBe(true)
     })
@@ -123,16 +125,16 @@ describe('the form and the save over two kinds (row 21)', () => {
         const f = packageFormFromView(view(TEST_PARTS), 'ORGANIZATION')
         expect(packageFormError(f)).toBeNull()
         f.parts[1].selection = 'INCLUDE'
-        expect(packageFormError(f)).toBe('RAW_ARTIFACTS needs at least one artifact type while included')
+        expect(packageFormError(f)).toBe('Raw artifacts needs at least one artifact type while included')
         f.parts[1].artifactTypes = ['OTHER']
         expect(packageFormError(f)).toBeNull()
         expect(packageFormError({ ...f, sbomProfile: ' ' })).toBe('An SBOM profile is required')
     })
 
     it('the lines and the removal confirmation', () => {
-        expect(packageSourceLine(view(TEST_PARTS))).toBe('No override: pre-filled from organization, revision 3')
-        expect(packageSourceLine({ stored: { uuid: 'x' } })).toBe('Stored at this scope')
-        expect(packageEffectiveLine(view(TEST_PARTS).effective)).toBe('Effective here: organization, revision 3')
+        expect(packageSourceLine(view(TEST_PARTS))).toBe('Nothing saved for this component: pre-filled from organization settings, revision 3')
+        expect(packageSourceLine({ stored: { uuid: 'x' } })).toBe('Saved for this component')
+        expect(packageEffectiveLine(view(TEST_PARTS).effective)).toBe('In use here: organization settings, revision 3')
         expect(packageEffectiveLine({ status: 'CONFLICT', conflictingPerspectives: [{ uuid: 'p1', name: 'Payments' }] }))
             .toContain('Payments')
         const c = packageRemoveConfirm('FDA_PREMARKET', 'component')
@@ -175,23 +177,23 @@ describe('the form and the save over two kinds (row 21)', () => {
     })
 
     it('the Enabled help names the kind and follows the value shown, and the effective line reads the resolved settings', () => {
-        const off = 'Off: releases of this scope do not offer FDA premarket and no new '
-            + 'submission can be made; existing submissions stay readable and can be withdrawn.'
-        const on = 'On: releases of this scope offer FDA premarket and can be submitted.'
+        const off = 'Off: releases of this component do not offer FDA premarket and no new '
+            + 'submission can be made; existing submissions stay readable and can be cancelled.'
+        const on = 'On: releases of this component offer FDA premarket and can be submitted.'
         expect(packageEnabledHelp('FDA_PREMARKET', false)).toBe(off)
         expect(packageEnabledHelp('FDA_PREMARKET', null)).toBe(off)
         expect(packageEnabledHelp('FDA_PREMARKET', true)).toBe(on)
         // FDAW-18: at a component scope the FDA premarket switch names its Medical device tab question
-        expect(packageEnabledHelp('FDA_PREMARKET', true, 'COMPONENT')).toBe(on + ' On the Medical device tab this is question 2.')
-        expect(packageEnabledHelp('FDA_PREMARKET', false, 'COMPONENT')).toBe(off + ' On the Medical device tab this is question 2.')
-        expect(packageEnabledHelp('FDA_PREMARKET', true, 'ORGANIZATION')).toBe(on)
-        expect(packageEnabledHelp('FDA_PREMARKET', true, 'PERSPECTIVE')).toBe(on)
+        expect(packageEnabledHelp('FDA_PREMARKET', true, 'COMPONENT', 'component')).toBe(on + ' On the Medical device tab this is question 2.')
+        expect(packageEnabledHelp('FDA_PREMARKET', false, 'COMPONENT', 'component')).toBe(off + ' On the Medical device tab this is question 2.')
+        expect(packageEnabledHelp('FDA_PREMARKET', true, 'PERSPECTIVE', 'perspective'))
+            .toBe('On: releases of this perspective offer FDA premarket and can be submitted.')
         expect(PACKAGE_COMPONENT_QUESTION_HINT).toBe('On the Medical device tab this is question 2')
-        expect(packageEnabledLine({ status: 'RESOLVED', settings: { state: 'ENABLED' } })).toBe('Enabled here: on')
-        expect(packageEnabledLine({ status: 'RESOLVED', settings: { state: 'DISABLED' } })).toBe('Enabled here: off')
-        expect(packageEnabledLine({ status: 'RESOLVED', settings: { enabled: true } })).toBe('Enabled here: on')
-        expect(packageEnabledLine({ status: 'NOT_FOUND', settings: null })).toBe('Enabled here: off')
-        expect(packageEnabledLine(null)).toBe('Enabled here: off')
+        expect(packageEnabledLine({ status: 'RESOLVED', settings: { state: 'ENABLED' } })).toBe('In use here: switched on')
+        expect(packageEnabledLine({ status: 'RESOLVED', settings: { state: 'DISABLED' } })).toBe('In use here: switched off')
+        expect(packageEnabledLine({ status: 'RESOLVED', settings: { enabled: true } })).toBe('In use here: switched on')
+        expect(packageEnabledLine({ status: 'NOT_FOUND', settings: null })).toBe('In use here: switched off')
+        expect(packageEnabledLine(null)).toBe('In use here: switched off')
     })
 })
 
@@ -240,16 +242,16 @@ describe('the Inherit mode (UI only, never sent)', () => {
     })
 
     it('the INHERIT source line names the parent, and the confirmation names the scope and its parents', () => {
-        expect(packageSourceLine(view(TEST_PARTS), {}, 'INHERIT')).toBe('Inherited from organization, revision 3')
+        expect(packageSourceLine(view(TEST_PARTS), {}, 'INHERIT')).toBe('Inherited from organization settings, revision 3')
         expect(packageSourceLine(view(TEST_PARTS, { parent: { status: 'RESOLVED', source: 'PERSPECTIVE', sourceObject: 'p1',
-            settings: { revision: 4 } } }), { p1: 'Payments' }, 'INHERIT')).toBe('Inherited from perspective Payments, revision 4')
+            settings: { revision: 4 } } }), { p1: 'Payments' }, 'INHERIT')).toBe('Inherited from settings of perspective Payments, revision 4')
         expect(packageSourceLine(view(TEST_PARTS, { parent: { status: 'NOT_FOUND', settings: null } }), {}, 'INHERIT'))
             .toBe('Inherited from built-in defaults')
         expect(packageSourceLine(view(TEST_PARTS, { stored: { uuid: 'x' } }), {}, 'INHERIT'))
-            .toBe('Inherited from organization, revision 3: Save removes the stored settings')
+            .toBe('Inherited from organization settings, revision 3: Save removes the settings saved here')
         expect(packageSourceLine(view(TEST_PARTS, { parent: { status: 'CONFLICT', conflictingPerspectives: [{ uuid: 'p1', name: 'Payments' }] } }),
             {}, 'INHERIT')).toContain('Conflict: the perspectives Payments')
-        expect(packageSourceLine(view(TEST_PARTS), {}, 'OVERRIDE')).toBe('No override: pre-filled from organization, revision 3')
+        expect(packageSourceLine(view(TEST_PARTS), {}, 'OVERRIDE')).toBe('Nothing saved for this component: pre-filled from organization settings, revision 3')
         expect(packageInheritConfirm('COMPONENT', 'component')).toEqual({ title: 'Inherit again?',
             content: "Remove this component's override and inherit the perspective or organization settings again?" })
         expect(packageInheritConfirm('PERSPECTIVE', 'perspective').content)
@@ -272,5 +274,94 @@ describe('the INHERIT conflict hint', () => {
         expect(packageInheritConflictHint('PERSPECTIVE', PACKAGE_INHERIT, 2, resolved, 'FDA_PREMARKET')).toBeNull()
         expect(packageInheritConflictHint('COMPONENT', PACKAGE_INHERIT, 0, resolved, 'FDA_PREMARKET')).toBeNull()
         expect(packageInheritConflictHint('COMPONENT', PACKAGE_INHERIT, 2, { parent: { status: 'CONFLICT' } }, 'FDA_PREMARKET')).toBeNull()
+    })
+})
+
+/** FDAW-78 row 14 (REQ-67): the editor's lines, switch help and field help, in words; nothing says `scope`. */
+describe('the Regulatory pane in words (FDAW-78 row 14)', () => {
+    const UUID = '3bef7cde-2edb-47cb-aa4e-94487c2cdced'
+    const C3_ORG_OFF = 'Off: FDA premarket is not offered by default. A product offers it once it is switched on for that product'
+        + ' (the product\'s Settings > Medical device, question 2); products already switched on there keep working.'
+        + ' Existing submissions stay readable and can be cancelled.'
+    const C3_ORG_ON = 'On: every product and component without its own setting offers FDA premarket and can be submitted.'
+
+    it('packageSourceLine: saved, nothing saved, and pre-filled from a parent, per scope word', () => {
+        for (const w of ['organization', 'product', 'component', 'perspective']) {
+            expect(packageSourceLine({ stored: { uuid: 'x' } }, {}, null, w)).toBe('Saved for this ' + w)
+        }
+        expect(packageSourceLine({ stored: null, parent: null }, {}, null, 'product'))
+            .toBe('Nothing saved for this product or above it: pre-filled from the built-in defaults')
+        expect(packageSourceLine({ stored: null, parent: { status: 'RESOLVED', source: 'ORGANIZATION', settings: { revision: 3 } } },
+            {}, null, 'product')).toBe('Nothing saved for this product: pre-filled from organization settings, revision 3')
+        const inheritView = { stored: { uuid: 'x' }, parent: { status: 'RESOLVED', source: 'ORGANIZATION', settings: { revision: 1 } } }
+        expect(packageSourceLine(inheritView, {}, PACKAGE_INHERIT, 'product'))
+            .toBe('Inherited from organization settings, revision 1: Save removes the settings saved here')
+        expect(packageSourceLine({ ...inheritView, stored: null }, {}, PACKAGE_INHERIT, 'product'))
+            .toBe('Inherited from organization settings, revision 1')
+    })
+
+    it('packageEffectiveLine: where the settings in use come from, never a uuid', () => {
+        const r = (source: string, revision: number | null, sourceObject: string | null = null) =>
+            ({ status: 'RESOLVED', source, sourceObject, settings: { revision } })
+        expect(packageEffectiveLine(r('ORGANIZATION', 0), {}, 'organization')).toBe('In use here: organization settings, revision 0')
+        expect(packageEffectiveLine(r('COMPONENT', 2), {}, 'product')).toBe('In use here: this product\'s own settings, revision 2')
+        expect(packageEffectiveLine(r('COMPONENT', 2), {}, 'component')).toBe('In use here: this component\'s own settings, revision 2')
+        expect(packageEffectiveLine(r('PERSPECTIVE', 1, 'p1'), { p1: 'Payments' }, 'perspective'))
+            .toBe('In use here: settings of perspective Payments, revision 1')
+        const nameless = packageEffectiveLine(r('PERSPECTIVE', 1, UUID), {}, 'product')
+        expect(nameless).toBe('In use here: settings of a perspective, revision 1')
+        expect(nameless).not.toMatch(UUID_RE)
+        expect(UUID).toMatch(UUID_RE)
+        expect(packageEffectiveLine(r('DEFAULT', null), {}, 'product')).toBe('In use here: built-in defaults')
+        expect(packageEffectiveLine(r('REGION', 4), {}, 'product')).toBe('In use here: built-in defaults')
+        expect(packageEffectiveLine({ status: 'CONFLICT', conflictingPerspectives: [{ uuid: UUID }] }, {}, 'product'))
+            .toBe('In use here: conflict between perspectives a perspective; a submission is refused')
+        expect(packageEffectiveLine({ status: 'NOT_FOUND' }, {}, 'product').startsWith('In use here: ')).toBe(true)
+        expect(packageEffectiveLine(null)).toBe('')
+    })
+
+    it('packageEnabledHelp and the switch label: the C3 texts, character for character', () => {
+        expect(packageEnabledLabel('ORGANIZATION')).toBe('On by default')
+        expect(packageEnabledLabel('COMPONENT')).toBe('Enabled')
+        expect(packageEnabledLabel('PERSPECTIVE')).toBe('Enabled')
+        expect(packageEnabledHelp('FDA_PREMARKET', false, 'ORGANIZATION', 'organization')).toBe(C3_ORG_OFF)
+        expect(packageEnabledHelp('FDA_PREMARKET', true, 'ORGANIZATION', 'organization')).toBe(C3_ORG_ON)
+        expect(packageEnabledHelp('FDA_PREMARKET', false, 'COMPONENT', 'product')).toBe('Off: releases of this product do not offer'
+            + ' FDA premarket and no new submission can be made; existing submissions stay readable and can be cancelled.'
+            + ' On the Medical device tab this is question 2.')
+        expect(packageEnabledHelp('FDA_PREMARKET', true, 'COMPONENT', 'product'))
+            .toBe('On: releases of this product offer FDA premarket and can be submitted. On the Medical device tab this is question 2.')
+        expect(packageEnabledHelp('FDA_PREMARKET', null, 'PERSPECTIVE', 'perspective')).toBe('Off: releases of this perspective do not'
+            + ' offer FDA premarket and no new submission can be made; existing submissions stay readable and can be cancelled.')
+    })
+
+    it('the field help and the raw-artifacts texts read in words; no help says scope', () => {
+        expect(PACKAGE_FIELD_HELP.mode).toBe('Inherit saves nothing here; Override defines the settings here; Follow takes one perspective\'s settings.')
+        expect(PACKAGE_FIELD_HELP.sbomProfile).toBe('The SBOM profile the aggregate SBOM part is generated under; one name, as it is in use here')
+        expect(PACKAGE_FIELD_HELP.selection).toBe('Whether the part is in the package; a required part is always included.')
+        expect(PACKAGE_FIELD_HELP.artifactTypes)
+            .toBe('Attached release artifacts of these types are added to the package as raw artifacts; at least one type when included')
+        for (const [k, v] of Object.entries(PACKAGE_FIELD_HELP)) {
+            expect(v, k).not.toMatch(/scope/i)
+            expect(v, k).not.toMatch(ENUM_RE)
+        }
+        // control: the old artifactTypes help carries an enum name
+        expect('Attached release artifacts of these types ride along as RAW_ARTIFACTS; at least one type when included').toMatch(ENUM_RE)
+        expect(PACKAGE_ARTIFACT_TYPE_OPTIONS.map(o => o.label)).toEqual(['BOM', 'Attestation', 'VDR', 'BOV', 'VEX', 'User document',
+            'Development document', 'Project document', 'Marketing document', 'Test report', 'Code scanning result', 'SARIF',
+            'Build metadata', 'Certification', 'Formulation', 'License', 'Release notes', 'security.txt', 'Threat model', 'Signature',
+            'Signed payload', 'Public key', 'X.509 certificate', 'PGP certificate', 'Risk assessment', 'Agentic report',
+            'Regulatory document', 'Uncategorized'])
+    })
+
+    it('the lines pass the sweep, with its control', () => {
+        const lines = [
+            packageSourceLine({ stored: { uuid: 'x' } }, {}, null, 'organization'),
+            packageEffectiveLine({ status: 'RESOLVED', source: 'PERSPECTIVE', sourceObject: UUID, settings: { revision: 1 } }, {}, 'product'),
+            packageEnabledLine({ settings: { state: 'ENABLED' } }),
+            packageEnabledHelp('FDA_PREMARKET', false, 'ORGANIZATION', 'organization'),
+            ...Object.values(PACKAGE_FIELD_HELP),
+        ]
+        expectSwept(lines.join('\n'))
     })
 })

@@ -82,8 +82,8 @@ describe('SbomProfileOverrides', () => {
         expect(rowOf(w, 'top').find('[data-testid="sbom-override-tag"]').exists()).toBe(false)
         expect(rowOf(w, 'top').find('[data-testid="sbom-conflict-tag"]').exists()).toBe(true)
         expect(rowOf(w, 'default').find('[data-testid="sbom-conflict-tag"]').exists()).toBe(false)
-        expect(rowOf(w, 'default').text()).toContain('Effective here: organization, revision 2')
-        expect(rowOf(w, 'mine').text()).toContain('Effective here: component, revision 0')
+        expect(rowOf(w, 'default').text()).toContain('In use here: organization, revision 2')
+        expect(rowOf(w, 'mine').text()).toContain('In use here: component, revision 0')
         expect(rowOf(w, 'top').text()).toContain('conflict between perspectives Payments, Retail')
         expect(rowOf(w, 'top').text()).toContain('Choose Override here, or Follow')
         expect(rowOf(w, 'mine').find('[data-testid="sbom-remove-override"]').exists()).toBe(true)
@@ -91,12 +91,12 @@ describe('SbomProfileOverrides', () => {
         w.unmount()
     })
 
-    it('FDAW-46 row 23: an fda resolved from the built-in reads Effective here: built-in', async () => {
+    it('FDAW-46 row 23: an fda resolved from the built-in reads In use here: built-in', async () => {
         answers([...CATALOG, { name: 'fda', resolution: { status: 'RESOLVED', source: 'DEFAULT', sourceObject: null,
             profile: { name: 'fda', revision: 0 }, conflictingPerspectives: [] } }])
         const { w } = await mountOverrides()
-        expect(rowOf(w, 'fda').findAll('td')[1].text()).toBe('Effective here: built-in')
-        expect(rowOf(w, 'default').findAll('td')[1].text()).toBe('Effective here: organization, revision 2')
+        expect(rowOf(w, 'fda').findAll('td')[1].text()).toBe('In use here: built-in')
+        expect(rowOf(w, 'default').findAll('td')[1].text()).toBe('In use here: organization, revision 2')
         w.unmount()
     })
 

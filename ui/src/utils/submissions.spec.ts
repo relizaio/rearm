@@ -11,8 +11,10 @@ const {
     submissionResubmitConfirm, submissionVersionRows, submissionWithdrawConfirm, submissionStateText,
     submissionStateTagType, submissionCancelNote, submissionDateText, SUBMISSION_STATE_LABELS, SUBMISSION_ACT_LABELS,
     submissionActorText, submissionKindDisabledText, submissionProfileLabel, submissionInStateFilter,
-    SUBMISSION_FILTERED_OUT_TEXT,
+    SUBMISSION_FILTERED_OUT_TEXT, submissionRefLabel, submissionWrittenText, CREATE_LIFECYCLE_REASON,
 } = await import('./submissions')
+const { historyActionLabel } = await import('./fdaLabels')
+const { expectSwept, UUID_RE } = await import('./__fixtures__/fdaSweep')
 const { TEA_ACT_GATEWAY_TEXT } = await import('./teaPublication')
 
 const A1 = '11111111-1111-4111-8111-111111111111'
@@ -86,7 +88,7 @@ describe('the version and part rows (row 30)', () => {
         const rows = submissionVersionRows({ versions: [version(1), version(2, { reason: 'second' })] })
         expect(rows.map(r => r.version)).toEqual([2, 1])
         expect(rows[0].reason).toBe('second')
-        expect(rows[0].settingsLabel).toBe('organization, r3')
+        expect(rows[0].settingsLabel).toBe('Organization settings, revision 3')
         expect(rows[0].profileLabel).toBe('default (built-in defaults)')
         expect([rows[0].partCount, rows[0].producedCount, rows[0].skippedCount]).toEqual([3, 2, 1])
         expect(rows[0].manifestSha256Short).toBe('a'.repeat(12))
@@ -116,7 +118,7 @@ describe('the profile label of a named built-in (FDAW-46 row 23)', () => {
         expect(submissionProfileLabel({ name: 'fda', row: 'p1', revision: 2, source: null })).toBe('fda (built-in)')
         expect(submissionProfileLabel({ name: 'fda', row: 'p1', revision: 2, source: 'DEFAULT' })).toBe('fda (built-in)')
         expect(submissionProfileLabel({ name: 'fda', row: 'p1', revision: 3, source: 'ORGANIZATION' }))
-            .toBe('fda (organization, r3)')
+            .toBe('fda (organization settings, revision 3)')
         expect(submissionProfileLabel({ name: 'default', row: null, revision: 0, source: 'DEFAULT' }))
             .toBe('default (built-in defaults)')
         expect(submissionProfileLabel({ name: null, row: null, source: 'DEFAULT' })).toBe(' (built-in defaults)')
@@ -132,7 +134,7 @@ describe('the profile label of a named built-in (FDAW-46 row 23)', () => {
         const rows = submissionVersionRows({ versions: [version(1, { sbomProfile: { name: 'fda', row: null, revision: 0,
             source: 'DEFAULT', sourceObject: null } })] })
         expect(rows[0].profileLabel).toBe('fda (built-in)')
-        expect(rows[0].settingsLabel).toBe('organization, r3')
+        expect(rows[0].settingsLabel).toBe('Organization settings, revision 3')
     })
 })
 
@@ -159,7 +161,7 @@ describe('the confirmations and the act error text (row 31)', () => {
         expect(c.title).toBe('Create submission?')
         expect(c.confirmButtonText).toBe('Create v3')
         expect(c.text).toBe('Writes v3 of the FDA premarket submission of <b>x</b> 1.2.0. Parts: Aggregate SBOM included, '
-            + 'VEX excluded; SBOM profile top (organization, r1); settings organization, r3.')
+            + 'VEX excluded; SBOM profile top (organization settings, revision 1); settings: organization settings, revision 3.')
         const r = submissionResubmitConfirm(preview, 'FDA_PREMARKET', names)
         expect(r.title).toBe('Resubmit?')
         expect(r.text).toContain('<b>x</b> 1.2.0')
@@ -193,17 +195,86 @@ describe('the confirmations and the act error text (row 31)', () => {
 })
 
 describe('the History text (row 35)', () => {
-    it('renders the four shapes the server writes, and the objectId when both values are blank', () => {
-        expect(submissionHistoryText({ oldValue: null, newValue: 'FDA_PREMARKET v1' })).toBe('Submission FDA_PREMARKET v1')
-        expect(submissionHistoryText({ oldValue: 'FDA_PREMARKET v1', newValue: 'FDA_PREMARKET v2' }))
-            .toBe('Submission FDA_PREMARKET v1 -> FDA_PREMARKET v2')
-        expect(submissionHistoryText({ oldValue: 'WITHDRAWN', newValue: 'ACTIVE v3' })).toBe('Submission WITHDRAWN -> ACTIVE v3')
-        expect(submissionHistoryText({ oldValue: 'ACTIVE v2', newValue: 'WITHDRAWN' })).toBe('Submission ACTIVE v2 -> WITHDRAWN')
-        // FDAW-8: the shapes written since FINAL and CANCELLED; the rows above stay in older release histories
-        expect(submissionHistoryText({ oldValue: 'CANCELLED', newValue: 'FINAL v3' })).toBe('Submission CANCELLED -> FINAL v3')
-        expect(submissionHistoryText({ oldValue: 'FINAL v2', newValue: 'CANCELLED' })).toBe('Submission FINAL v2 -> CANCELLED')
-        expect(submissionHistoryText({ oldValue: null, newValue: null, objectId: 'x' })).toBe('x')
-        expect(submissionHistoryText({ oldValue: '', newValue: 'FDA_PREMARKET v1' })).toBe('Submission FDA_PREMARKET v1')
+    // FDAW-78 row 12 (REQ-66): the Action word and the details in words, from the unchanged stored values.
+    const row = (rua: string | null, oldValue: string | null, newValue: string | null, objectId = A1) =>
+        ({ rus: 'SUBMISSION', rua, oldValue, newValue, objectId })
+    const both = (r: any) => [historyActionLabel(r), submissionHistoryText(r)]
+
+    it('the eight shapes of the table in 3.4, in order', () => {
+        const outs = [
+            both(row('ADDED', null, 'FDA_PREMARKET v1')),
+            both(row('CHANGED', 'FDA_PREMARKET v1', 'FDA_PREMARKET v2')),
+            both(row('CHANGED', 'CANCELLED', 'FINAL v3')),
+            both(row('REMOVED', 'FINAL v2', 'CANCELLED')),
+            both(row('REMOVED', 'ACTIVE v1', 'WITHDRAWN')),
+            both(row('ADDED', null, 'FDA_PREMARKET draft')),
+            both(row('REMOVED', 'FDA_PREMARKET draft', null)),
+            both(row('CHANGED', 'x y z', 'q')),
+        ]
+        expect(outs).toEqual([
+            ['Created', 'FDA premarket submission: version 1 created'],
+            ['Resubmitted', 'FDA premarket submission: version 2 created, replacing version 1'],
+            ['Created', 'Regulatory submission: version 3 created after a cancellation'],
+            ['Cancelled', 'Regulatory submission: version 2 cancelled'],
+            ['Withdrawn', 'Regulatory submission: version 1 withdrawn'],
+            ['Draft started', 'FDA premarket submission: draft started'],
+            ['Draft discarded', 'FDA premarket submission: draft discarded'],
+            ['Changed', 'Regulatory submission updated'],
+        ])
+        expectSwept(outs.flat().join('\n'))
+    })
+
+    it('an unknown kind humanized; an empty value never the uuid; null rows do not throw', () => {
+        expect(submissionHistoryText(row('ADDED', null, 'EU_MDR v1'))).toBe('Eu mdr submission: version 1 created')
+        const empty = row('ADDED', null, '', '3bef7cde-2edb-47cb-aa4e-94487c2cdced')
+        expect(both(empty)).toEqual(['Added', 'Regulatory submission updated'])
+        expect(submissionHistoryText({ rua: 'CHANGED', oldValue: 'x y z', newValue: 'q' })).toBe('Regulatory submission updated')
+        expect(historyActionLabel(null)).toBe('')
+        expect(historyActionLabel(undefined)).toBe('')
+        expect(submissionHistoryText(null)).toBe('Regulatory submission updated')
+        expect(submissionHistoryText(undefined)).toBe('Regulatory submission updated')
+        expect(submissionHistoryText(empty)).not.toMatch(UUID_RE)
+        expect(empty.objectId).toMatch(UUID_RE)
+    })
+
+    it('other scopes: the action label, an unknown action humanized', () => {
+        expect(historyActionLabel({ rus: 'LIFECYCLE', rua: 'CHANGED' })).toBe('Changed')
+        expect(historyActionLabel({ rus: 'ARTIFACT', rua: 'UPDATED' })).toBe('Updated')
+        expect(historyActionLabel({ rus: 'NOTES', rua: 'ARCHIVED' })).toBe('Archived')
+        expectSwept(['Changed', 'Updated', 'Archived', submissionHistoryText(row('ADDED', null, 'EU_MDR v1'))].join('\n'))
+    })
+})
+
+/** FDAW-78 row 14 (REQ-67): the settings reference, the act result and the lifecycle reason in words. */
+describe('the Create dialogs in words (FDAW-78 row 14)', () => {
+    it('submissionRefLabel names the source and the revision in words', () => {
+        expect(submissionRefLabel({ source: 'COMPONENT', row: 'x', revision: 0 }, {}, 'product')).toBe('this product\'s own settings, revision 0')
+        expect(submissionRefLabel(null)).toBe('built-in defaults')
+        expect(submissionProfileLabel({ name: 'fda', row: 'p1', revision: 2, source: 'ORGANIZATION' })).toBe('fda (organization settings, revision 2)')
+    })
+
+    it('the create confirmation ends with the settings in words, no r<n>, no settings component', () => {
+        const preview = { nextVersion: 1, plan: [{ part: 'NARRATIVE', selection: 'INCLUDE' }],
+            sbomProfile: { name: 'fda', row: null, revision: 0, source: 'DEFAULT' },
+            settings: { row: 'set1', revision: 0, source: 'COMPONENT' } }
+        const c = submissionCreateConfirm(preview, 'FDA_PREMARKET', { componentName: 'GlucoView', releaseVersion: '2.4.1',
+            componentType: 'PRODUCT' })
+        expect(c.text.endsWith('; SBOM profile fda (built-in); settings: this product\'s own settings, revision 0.')).toBe(true)
+        expect(c.text).not.toMatch(/, r\d/)
+        expect(c.text).not.toMatch(/settings component/)
+        // control: the old literal matches both
+        expect('settings component, r0').toMatch(/, r\d/)
+        expect('settings component, r0').toMatch(/settings component/)
+    })
+
+    it('the act result, the lifecycle reason and the Settings cell', () => {
+        expect(submissionWrittenText({ version: { version: 1 }, outcome: 'CREATED' })).toBe('Version 1 created.')
+        expect(submissionWrittenText({ version: { version: 2 }, outcome: 'RESUBMITTED' })).toBe('Version 2 created.')
+        expect(submissionWrittenText({})).toBe('Submission created.')
+        expect(submissionWrittenText(null)).toBe('Submission created.')
+        expect(CREATE_LIFECYCLE_REASON).toBe('The release must be Assembled or later')
+        const rows = submissionVersionRows({ versions: [version(1, { settings: { row: 'r', revision: 0, source: 'COMPONENT' } })] }, {}, 'product')
+        expect(rows[0].settingsLabel).toBe('This product\'s own settings, revision 0')
     })
 })
 
@@ -222,7 +293,8 @@ describe('the head state texts (FDAW-8)', () => {
             .toBe('Cancelled (legacy: withdrawn ' + submissionDateText(d) + ')')
         expect(submissionStateText({ state: 'CANCELLED', legacyState: null })).toBe('Cancelled')
         expect(submissionStateText({ state: 'SUPERSEDED' })).toBe('Superseded')
-        expect(submissionStateText({ state: 'SOMETHING_NEW' })).toBe('SOMETHING_NEW')
+        // FDAW-78 X1: an unknown state reads humanized
+        expect(submissionStateText({ state: 'SOMETHING_NEW' })).toBe('Something new')
     })
 
     it('colours FINAL and SENT green, CANCELLED and WITHDRAWN amber, the rest plain', () => {

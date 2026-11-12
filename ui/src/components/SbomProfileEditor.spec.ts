@@ -87,7 +87,7 @@ describe('SbomProfileEditor', () => {
         expect(select(w, 'sbom-dependency-depth').props('value')).toBe('TOP_LEVEL_ONLY')
         expect(select(w, 'sbom-structure').props('value')).toBe('HIERARCHICAL')
         expect(w.find('[data-testid="sbom-source"]').text()).toContain('pre-filled from organization, revision 2')
-        expect(w.find('[data-testid="sbom-effective"]').text()).toBe('Effective here: organization, revision 2')
+        expect(w.find('[data-testid="sbom-effective"]').text()).toBe('In use here: organization, revision 2')
         expect(w.find('[data-testid="sbom-delete"]').exists()).toBe(false)
         const labels = w.findAllComponents(FieldLabel)
         for (const f of SBOM_PROFILE_FIELDS) {
@@ -384,8 +384,8 @@ describe('SbomProfileEditor: the four knobs and the built-in fda (FDAW-46 row 22
         const parent = resolved('DEFAULT', FDA)
         const w = await mountWith(view({ stored: null, parent, effective: parent }), { ...ORG, name: 'fda' })
         expect(select(w, 'sbom-component-scope').props('value')).toBe('RUNTIME_ONLY')
-        expect(w.find('[data-testid="sbom-source"]').text()).toBe('No override: pre-filled from built-in')
-        expect(w.find('[data-testid="sbom-effective"]').text()).toBe('Effective here: built-in')
+        expect(w.find('[data-testid="sbom-source"]').text()).toBe('Nothing saved for this organization: pre-filled from built-in')
+        expect(w.find('[data-testid="sbom-effective"]').text()).toBe('In use here: built-in')
         expect(w.find('[data-testid="sbom-reset"]').text()).toBe('Reset to the built-in fda recipe')
 
         await select(w, 'sbom-component-scope').vm.$emit('update:value', 'ALL')

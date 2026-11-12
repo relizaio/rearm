@@ -144,7 +144,8 @@ const modeOptions = computed(() => !createMode.value || definingPerspectives.val
 const followOptions = computed((): Option[] => !createMode.value ? props.perspectiveOptions
     : definingPerspectives.value.map(p => ({ value: p.uuid, label: allNames.value[p.uuid] || p.name || p.uuid })))
 const injectionOff = computed(() => view.value?.supportInjection === 'DISABLED')
-const sourceLine = computed(() => sbomSourceLine(view.value, allNames.value, effectiveName.value || SBOM_DEFAULT_NAME))
+const sourceLine = computed(() => sbomSourceLine(view.value, allNames.value, effectiveName.value || SBOM_DEFAULT_NAME,
+    scopeWord.value))
 const effectiveLine = computed(() => sbomEffectiveLine(view.value?.effective, allNames.value, effectiveName.value))
 const scopeWord = computed(() => sbomScopeWord(props.scope, props.objectIsProduct))
 const saveDisabled = computed(() => Boolean(nameError.value) || !effectiveName.value)

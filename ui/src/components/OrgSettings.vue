@@ -1124,7 +1124,7 @@
                                      wrote going out over their name is the failure the whole
                                      feature exists to avoid. -->
                                 <n-divider />
-                                <h6 style="display: inline-flex; align-items: center;">
+                                <h6 id="submission-labeling-text" style="display: inline-flex; align-items: center;">
                                     Submission and labeling text
                                     <!-- The heading no longer says FDA; the tooltip does. "FDA" on
                                          the heading made a general-purpose settings section look
@@ -1509,7 +1509,7 @@
   
 <script lang="ts" setup>
 import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag, NCollapse, NCollapseItem, NEmpty } from 'naive-ui'
-import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from 'vue'
+import { ComputedRef, h, ref, Ref, computed, nextTick, onMounted, reactive, watch } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
@@ -4261,6 +4261,17 @@ async function loadOrgSettings() {
     for (const f of FDA_PROSE_FIELDS) {
         orgSettings[f] = seeded[f]
         proseBaseline[f] = seeded[f]
+    }
+    scrollToLabelingTextOnce()
+}
+
+// FDAW-78 3.6 (C5): the Medical device tab links here with this hash; once the settings have loaded,
+// the Submission and labeling text heading is scrolled into view, once per page visit.
+let labelingTextScrolled = false
+function scrollToLabelingTextOnce () {
+    if (!labelingTextScrolled && route.hash === '#submission-labeling-text') {
+        labelingTextScrolled = true
+        nextTick(() => document.getElementById('submission-labeling-text')?.scrollIntoView())
     }
 }
 
