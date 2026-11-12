@@ -740,6 +740,9 @@
                                                     <n-button text type="primary" size="small" @click="componentSettingsTab = 'regulatory'">Customize</n-button>
                                                 </template>
                                             </div>
+                                            <!-- FDAW-81: what Yes does with the device support statement on this product -->
+                                            <DeviceStatementSetupLine :status="setupStatus" :answer="fdaPremarketEdit" :component-type="componentData?.type"
+                                                @edit="componentSettingsTab = 'regulatory'" />
                                             <!-- FDAW-78 3.6: the FDA texts block, the intro, the organization steps, the
                                                  must-fix alert and the step notes, in their own component. -->
                                             <MedicalDeviceSetupStatus :status="setupStatus" :step-notes="setupStepNotes"
@@ -816,7 +819,9 @@
                                             :is-writable="isAdmin"
                                             :perspective-options="teaPerspectiveOptions"
                                             :installation-type="myUser.installationType"
-                                            :names="teaPerspectiveNames()" />
+                                            :names="teaPerspectiveNames()"
+                                            @saved="loadSetupStatus"
+                                            @removed="loadSetupStatus" />
                                     </n-tab-pane>
                                     <n-tab-pane name="outputTriggers" tab="Actions" v-if="myUser.installationType !== 'OSS' && !isDocument">
                                         <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Actions</h4>
@@ -1557,6 +1562,7 @@ import ActionGuards from './ActionGuards.vue'
 import TeaProfileEditor from './TeaProfileEditor.vue'
 import SbomProfileOverrides from './SbomProfileOverrides.vue'
 import PackageSettingsEditor from './PackageSettingsEditor.vue'
+import DeviceStatementSetupLine from './DeviceStatementSetupLine.vue'
 import MedicalDeviceSetupStatus from './MedicalDeviceSetupStatus.vue'
 import ProductSubmissionsPanel from './ProductSubmissionsPanel.vue'
 import { regulatoryPackagesAvailable } from '@/utils/packageSettings'

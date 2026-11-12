@@ -128,12 +128,54 @@ export function medicalProfileInput (p: DeviceProfileForm): Record<string, unkno
 
 // ---- Question 2 and the product's row (F-1, F-2) --------------------------------------------------
 
-/** F-2: a product row reads "Customized" when it names another profile than default and the org's, or carries parts. */
+/**
+ * F-2: a product row reads "Customized" when it names another profile than default and the org's, or carries
+ * parts other than the one the setup writes itself (FDAW-81: exactly DEVICE_SUPPORT_STATEMENT INCLUDE).
+ */
 export function isCustomized (row: any, orgPackageProfile: string | null | undefined): boolean {
     if (!row || row.mode === 'FOLLOW_PERSPECTIVE') return false
-    if (Array.isArray(row.parts) && row.parts.length > 0) return true
+    if (Array.isArray(row.parts) && row.parts.length > 0 && !onlyStatementIncluded(row.parts)) return true
     const name = row.sbomProfile
     return !!name && name !== 'default' && name !== orgPackageProfile
+}
+
+function onlyStatementIncluded (parts: any[]): boolean {
+    return parts.length === 1 && parts[0]?.part === 'DEVICE_SUPPORT_STATEMENT'
+        && parts[0]?.options?.selection === 'INCLUDE'
+}
+
+// ---- The device support statement (FDAW-81, WRITEUP 6.2) ------------------------------------------
+
+export type StatementSetupState = 'INCLUDED' | 'NOT_YET' | 'EXCLUDED'
+
+/**
+ * The selection the product's own row stores for DEVICE_SUPPORT_STATEMENT, as the setup save reads it
+ * (mirrors MedicalDeviceSetupService.storedStatementSelection): no own row, a FOLLOW_PERSPECTIVE row or no
+ * stored selection is NOT_YET.
+ */
+export function statementSetupState (status: any): StatementSetupState | null {
+    if (status === null || status === undefined) return null
+    const row = status.productPackage
+    if (!row || row.mode === 'FOLLOW_PERSPECTIVE') return 'NOT_YET'
+    const entry = Array.isArray(row.parts) ? row.parts.find((p: any) => p?.part === 'DEVICE_SUPPORT_STATEMENT') : undefined
+    const sel = entry?.options?.selection
+    if (sel === 'INCLUDE') return 'INCLUDED'
+    if (sel === 'EXCLUDE') return 'EXCLUDED'
+    return 'NOT_YET'
+}
+
+export const STATEMENT_INCLUDED_TEXT = 'Device support statement: included in this product\'s FDA premarket packages. '
+    + 'Its text comes from the organization\'s three labeling statements; until they are written, a package that '
+    + 'includes it is refused.'
+export const STATEMENT_NOT_YET_TEXT = 'Device support statement: not set for this product yet. Save with Yes includes '
+    + 'it in this product\'s FDA premarket packages; that step needs a product administrator.'
+export const STATEMENT_EXCLUDED_TEXT = 'Device support statement: excluded for this product under Settings > Regulatory. '
+    + 'Save does not change that choice.'
+
+export function statementSetupLine (state: StatementSetupState): string {
+    if (state === 'INCLUDED') return STATEMENT_INCLUDED_TEXT
+    if (state === 'EXCLUDED') return STATEMENT_EXCLUDED_TEXT
+    return STATEMENT_NOT_YET_TEXT
 }
 
 /** F-1: question 2's baseline: the product's own row's state, ENABLED (Yes) when it has none. */
@@ -245,7 +287,7 @@ export function setupStatusLines (status: any): SetupStatusLine[] {
 
 // ---- The documents --------------------------------------------------------------------------------
 
-const STATUS_FIELDS = 'supportExport fdaProfile orgPackageProfile productPackage { mode state enabled sbomProfile parts { part } } '
+const STATUS_FIELDS = 'supportExport fdaProfile orgPackageProfile productPackage { mode state enabled sbomProfile parts { part options { selection } } } '
     + 'productState mustFix pending pendingForCaller'
 
 /**
