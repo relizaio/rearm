@@ -1336,20 +1336,37 @@ public class ReleaseService {
 	/** {@link #collectOwnBomIds}, keeping the RELEASE block apart as well (SCORE-62 ADR-2, ADR-4). */
 	OwnBomIds gatherOwnBomIds(ReleaseData rd, ComponentType type, Set<ArtifactBelongsTo> sources,
 			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
-		LinkedHashSet<UUID> bomIds = new LinkedHashSet<>();
+		OwnBomArtifacts own = gatherOwnBomArtifacts(rd, type, sources, excludeCoverageTypes);
+		return new OwnBomIds(idsOf(own.all()), idsOf(own.releaseAttached()), idsOf(own.attached()));
+	}
+
+	private static List<UUID> idsOf(List<ArtifactData> artifacts) {
+		return artifacts.stream().map(a -> a.getInternalBom().id()).toList();
+	}
+
+	/**
+	 * {@link OwnBomIds} as the artifact rows the ids were read from (FDAW-30 3.5 step 6, F-11): each list
+	 * distinct by internal BOM id, in gather order, exactly as the id lists.
+	 */
+	record OwnBomArtifacts(List<ArtifactData> all, List<ArtifactData> releaseAttached, List<ArtifactData> attached) {}
+
+	/** The one gather of a release's own SBOM artifacts, which {@link #gatherOwnBomIds} maps to ids. */
+	OwnBomArtifacts gatherOwnBomArtifacts(ReleaseData rd, ComponentType type, Set<ArtifactBelongsTo> sources,
+			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
+		LinkedHashMap<UUID, ArtifactData> boms = new LinkedHashMap<>();
 		// SCORE-63 ADR-5: the uploads attached to the release's own source code entry and to the
 		// outbound deliverables of its base variant; never an inbound deliverable's
-		LinkedHashSet<UUID> attached = new LinkedHashSet<>();
-		List<UUID> releaseAttached = List.of();
+		LinkedHashMap<UUID, ArtifactData> attached = new LinkedHashMap<>();
+		List<ArtifactData> releaseAttached = List.of();
 
 		if (type == ComponentType.COMPONENT && sources.contains(ArtifactBelongsTo.DELIVERABLE)) {
 			List<DeliverableData> deliverables = getAllDeliverableDataFromRelease(rd);
-			bomIds.addAll(bomIdsOf(rd, deliverables.stream()
+			putAllByBomId(boms, bomArtifactsOf(rd, deliverables.stream()
 					.map(d -> d.getArtifacts())
 					.flatMap(x -> x.stream()), excludeCoverageTypes));
 			Set<UUID> outbound = Optional.ofNullable(variantService.getBaseVariantForRelease(rd))
 					.map(VariantData::getOutboundDeliverables).orElse(Set.of());
-			attached.addAll(bomIdsOf(rd, deliverables.stream()
+			putAllByBomId(attached, bomArtifactsOf(rd, deliverables.stream()
 					.filter(d -> outbound.contains(d.getUuid()))
 					.map(d -> d.getArtifacts())
 					.flatMap(x -> x.stream()), excludeCoverageTypes));
@@ -1360,36 +1377,57 @@ public class ReleaseService {
 			var sceData = null == rd.getSourceCodeEntry() ? Optional.<SourceCodeEntryData>empty()
 					: getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
 			if (sceData.isPresent()) {
-				List<UUID> sceIds = bomIdsOf(rd, sceData.get().getArtifacts().stream()
+				List<ArtifactData> sceArtifacts = bomArtifactsOf(rd, sceData.get().getArtifacts().stream()
 						.filter(scea -> rd.getComponent().equals(scea.componentUuid()))
 						.map(scea -> scea.artifactUuid()), excludeCoverageTypes);
-				bomIds.addAll(sceIds);
-				attached.addAll(sceIds);
+				putAllByBomId(boms, sceArtifacts);
+				putAllByBomId(attached, sceArtifacts);
 			}
 		}
 
 		if (sources.contains(ArtifactBelongsTo.RELEASE)) {
-			releaseAttached = bomIdsOf(rd, rd.getArtifacts().stream(), excludeCoverageTypes);
-			bomIds.addAll(releaseAttached);
+			releaseAttached = bomArtifactsOf(rd, rd.getArtifacts().stream(), excludeCoverageTypes);
+			putAllByBomId(boms, releaseAttached);
 		}
-		return new OwnBomIds(new ArrayList<>(bomIds), releaseAttached, new ArrayList<>(attached));
+		return new OwnBomArtifacts(new ArrayList<>(boms.values()), releaseAttached, new ArrayList<>(attached.values()));
+	}
+
+	/** Adds each row under its internal BOM id unless the id is already there: first in gather order wins. */
+	private static void putAllByBomId(Map<UUID, ArtifactData> into, List<ArtifactData> artifacts) {
+		artifacts.forEach(a -> into.putIfAbsent(a.getInternalBom().id(), a));
 	}
 
 	/**
-	 * The internal BOM ids of the given inventory artifacts. A SYNTHETIC internal BOM (a document
-	 * ReARM generated, which belongs in {@code ReleaseData.syntheticArtifacts} only) is never a
-	 * merge source: should one sit in an inventory list, it is dropped with a WARN rather than
-	 * merged into its own successor.
+	 * The release's own SBOM artifacts the publication merge reads (FDAW-30 3.5 step 6, F-11): the
+	 * release's component type picks the gather as the merge does, and null or empty {@code requestedSources}
+	 * means all three sources, as {@link #generateMergedBomForPublication} reads them.
 	 */
-	private List<UUID> bomIdsOf(ReleaseData rd, java.util.stream.Stream<UUID> artifactUuids,
+	public List<ArtifactData> ownBomArtifactsOf(ReleaseData rd, Set<ArtifactBelongsTo> requestedSources,
 			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
+		ComponentType type = getComponentService.getComponentData(rd.getComponent())
+				.map(cd -> cd.getType() == ComponentType.COMPONENT ? ComponentType.COMPONENT : ComponentType.PRODUCT)
+				.orElse(ComponentType.PRODUCT);
+		Set<ArtifactBelongsTo> sources = null == requestedSources || requestedSources.isEmpty() ? sourcesOf(null)
+				: requestedSources;
+		return gatherOwnBomArtifacts(rd, type, sources, excludeCoverageTypes).all();
+	}
+
+	/**
+	 * The inventory artifacts with an internal BOM, distinct by that BOM's id. A SYNTHETIC internal BOM
+	 * (a document ReARM generated, which belongs in {@code ReleaseData.syntheticArtifacts} only) is never
+	 * a merge source: should one sit in an inventory list, it is dropped with a WARN rather than merged
+	 * into its own successor.
+	 */
+	private List<ArtifactData> bomArtifactsOf(ReleaseData rd, Stream<UUID> artifactUuids,
+			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
+		Set<UUID> ids = new HashSet<>();
 		return artifactUuids
 				.map(a -> artifactService.getArtifactData(a))
 				.filter(art -> art.isPresent() && null != art.get().getInternalBom())
 				.filter(art -> !isSyntheticInInventory(rd, art.get()))
 				.filter(art -> !isArtifactExcludedByCoverageType(art.get(), excludeCoverageTypes))
-				.map(a -> a.get().getInternalBom().id())
-				.distinct()
+				.map(Optional::get)
+				.filter(a -> ids.add(a.getInternalBom().id()))
 				.toList();
 	}
 

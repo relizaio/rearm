@@ -175,6 +175,17 @@ class SchemaParsesTest {
 		}
 	}
 
+	/** FDAW-30 row 19: the change read of a draft is two computed fields of the shared draft type. */
+	@Test
+	void theChangesSinceABuildAreTwoFieldsOfTheDraft() {
+		Document shared = parse(readResource("/schema/schema.graphqls"), "schema.graphqls");
+		Map<String, String> draft = fieldsOf(shared, "SubmissionDraft");
+		assertEquals("ChangesSinceBuild!", draft.get("changesSinceBuild"));
+		assertEquals("Boolean!", draft.get("inputsUnchanged"));
+		assertEquals(Map.of("count", "Int!", "fingerprintEqual", "Boolean!", "movedLines", "[String!]!"),
+				fieldsOf(shared, "ChangesSinceBuild"));
+	}
+
 	/** A type's fields as written: name to type. */
 	private static Map<String, String> fieldsOf(Document doc, String type) {
 		for (var def : doc.getDefinitions()) {

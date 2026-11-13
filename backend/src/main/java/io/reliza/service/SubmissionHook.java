@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import io.reliza.exceptions.SubmissionRefusedException;
+import io.reliza.model.ChangesSinceBuild;
 import io.reliza.model.ComponentData;
 import io.reliza.model.NewVersionReason;
 import io.reliza.model.PackageKind;
@@ -50,6 +51,12 @@ public interface SubmissionHook {
 
 	SubmissionActResult returnDraftToEditing(UUID draft, String reason, WhoUpdated wu)
 			throws SubmissionRefusedException;
+
+	/**
+	 * What moved since the draft's build, recomputed from its recorded inputs now (FDAW-30 3.6); the
+	 * fetcher authorized the draft that holds it.
+	 */
+	ChangesSinceBuild changesSince(SubmissionDraftData draft);
 
 	/** A FINAL head only; anything else is refused NOT_FINAL. */
 	SubmissionActResult cancelSubmission(UUID org, UUID submission, String reason, WhoUpdated wu)
