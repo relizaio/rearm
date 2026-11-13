@@ -4,7 +4,7 @@
 // ReleaseView.vue, with no Vue import, so teaPublication.spec.ts runs it.
 
 import { graphqlErrorEntries, graphqlRefusalText, NULL_PROPAGATION_CLASSIFICATION } from './graphqlErrorText'
-import { LISTED_NAMES, teaPublicConfirmText, teaSourceLabel } from './teaProfile'
+import { listedNames, teaPublicConfirmText, teaSourceLabel } from './teaProfile'
 import { artifactDownloadRef, type ArtifactDownloadRef } from './artifactDownload'
 import { labelOrLower, lowerEnum } from './fdaLabels'
 import { labelOf, SUBMISSION_STATE_LABELS } from './submissions'
@@ -662,8 +662,7 @@ export function teaPartialOfferText (offer: any[]): string {
         const name = teaOneLine(c?.componentName) || teaChildName(c)
         if (!names.includes(name)) names.push(name)
     }
-    const listed = names.slice(0, LISTED_NAMES).join(', ')
-    return TEA_PARTIAL_OFFER(names.length > LISTED_NAMES ? listed + ', and ' + (names.length - LISTED_NAMES) + ' more' : listed)
+    return TEA_PARTIAL_OFFER(listedNames(names))
 }
 
 export const TEA_SHARE_BUTTON = 'Share with customers'

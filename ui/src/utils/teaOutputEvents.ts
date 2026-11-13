@@ -5,7 +5,7 @@
 // .vue files so the specs pin them.
 
 import { isProEdition } from './editionCapabilities'
-import { LISTED_NAMES, Option, TEA_DOCUMENT_KINDS, TeaConfirm, teaSourceLabel } from './teaProfile'
+import { isCounted, listedNames, Option, TEA_DOCUMENT_KINDS, TeaConfirm, teaSourceLabel } from './teaProfile'
 
 /** A resolved TEA profile as teaProfileEditorView answers it (TEA_RESOLVED_PROFILE_GQL). */
 export interface TeaResolvedView {
@@ -177,11 +177,6 @@ export function teaActionNames (added: string[], outputTriggers: any[], globals:
 const AUTO_PUBLISH_TITLE = 'Publish automatically to the public?'
 const AUTO_PUBLISH_BUTTON = 'Publish publicly'
 
-function listedNames (names: string[]): string {
-    const listed = names.slice(0, LISTED_NAMES).join(', ')
-    return names.length > LISTED_NAMES ? listed + ', and ' + (names.length - LISTED_NAMES) + ' more' : listed
-}
-
 /** The component clause with the collection version count (FDAW-39 3.6), with its leading space. */
 export function TEA_ACTION_COUNTED (releases: number, versions: number): string {
     return ' ' + releases + ' release(s), with all ' + versions + ' of their collection versions and every document in them '
@@ -202,8 +197,6 @@ export function TEA_GLOBAL_ACTION_COUNTED (releases: number, versions: number): 
 /** The organization clause where the count is served and nothing is published yet; it continues a sentence. */
 export const TEA_GLOBAL_ACTION_NONE_YET = 'no release is published under the organization profile yet, and every release '
     + 'the action publishes will be public, with every document in it ' + TEA_DOCUMENT_KINDS + '. '
-
-const isCounted = (n: unknown): boolean => typeof n === 'number' && n > 0
 
 function sourceOf (view: TeaEditorView, names: Record<string, string>): string {
     return teaSourceLabel(view.effective?.source, view.effective?.sourceObject, names)

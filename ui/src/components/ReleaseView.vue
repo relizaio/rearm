@@ -2827,6 +2827,7 @@ import { teaProfilesAvailable, teaSourceLabel } from '@/utils/teaProfile'
 import { teaActLabel, teaActProgress, type TeaAct, teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText, teaActErrorText } from '@/utils/teaPublication'
 import { runTeaPublishFlow } from '@/utils/teaPublishFlow'
+import type { TeaShare } from '@/utils/teaPublication'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
@@ -4941,7 +4942,7 @@ async function onSubmissionNarrativeSaved () {
  * Publish, Re-publish and Share with customers (FDAW-39 3.7): the dialogs, the partial-publish list and
  * "Turn on for both" live in runTeaPublishFlow; the act still runs through withTeaProgress.
  */
-async function runTeaPublish (mutation: any, field: string, share: any = null) {
+async function runTeaPublish (mutation: any, field: string, share: TeaShare | null = null) {
     await runTeaPublishFlow({
         client: graphqlClient,
         fire: (...a: any[]) => (Swal.fire as any)(...a),
@@ -4959,7 +4960,7 @@ async function runTeaPublish (mutation: any, field: string, share: any = null) {
 }
 
 /** Share with customers from a package head (FDAW-39 3.8): the TEA publish, or the re-publish of a published release. */
-function shareWithCustomers (share: any) {
+function shareWithCustomers (share: TeaShare) {
     if (teaView.value?.publication) return runTeaPublish(graphqlQueries.RepublishReleaseOnTeaGql, 'republishReleaseOnTea', share)
     return runTeaPublish(graphqlQueries.PublishReleaseOnTeaGql, 'publishReleaseOnTea', share)
 }

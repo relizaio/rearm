@@ -367,7 +367,8 @@ export const TEA_PUBLIC_CONFIRM_NONE_YET = 'No release is published under this p
     + 'under it will be public. Every version published under it later will be public, with every document in it '
     + TEA_DOCUMENT_KINDS + '.'
 
-const isCounted = (n: unknown): boolean => typeof n === 'number' && n > 0
+/** Whether a collection version count was served and is above zero (FDAW-39 3.6). */
+export const isCounted = (n: unknown): boolean => typeof n === 'number' && n > 0
 
 /**
  * The confirmation before a save makes a profile PUBLIC. With the collection version count (FDAW-39
@@ -452,7 +453,7 @@ export function teaConfirmBeforeSave (exposure: TeaExposureChange | null | undef
 export const LISTED_NAMES = 5
 
 /** The first LISTED_NAMES names, then ", and <n> more". */
-function listedNames (names: string[]): string {
+export function listedNames (names: string[]): string {
     const listed = names.slice(0, LISTED_NAMES).join(', ')
     return names.length > LISTED_NAMES ? listed + ', and ' + (names.length - LISTED_NAMES) + ' more' : listed
 }
