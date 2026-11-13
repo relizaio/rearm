@@ -142,7 +142,7 @@ describe('the statement Export button respects the product gate', () => {
      */
     it('leaves the data-dependent refusals as modals, and keeps blocked distinct from failed', () => {
         expect(source).toMatch(
-            /Swal\.fire\('Statement not generated', outcome\.message, outcome\.kind === 'BLOCKED' \? 'warning' : 'error'\)/)
+            /Swal\.fire\(\{ titleText: 'Statement not generated', text: outcome\.message, icon: outcome\.kind === 'BLOCKED' \? 'warning' : 'error' \}\)/)
     })
 })
 

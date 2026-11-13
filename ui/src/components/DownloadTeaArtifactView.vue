@@ -81,11 +81,7 @@ async function postDownloadNotification () {
 }
 
 async function errorNotification () {
-    Swal.fire(
-        'Error on Downloading',
-        `Your artifact could not be donwloaded. Please contact your administrator or ${brandingState.supportName}.`,
-        'error'
-    )
+    Swal.fire({ titleText: 'Error on Downloading', text: `Your artifact could not be donwloaded. Please contact your administrator or ${brandingState.supportName}.`, icon: 'error' })
 }
 
 onMounted(async () => {

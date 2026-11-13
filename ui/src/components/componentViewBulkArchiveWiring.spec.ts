@@ -181,7 +181,7 @@ describe('ComponentView: the bulk archive selection mode (script)', () => {
                 componentUuid: componentUuid,
             })
         } catch (err: any) {
-            Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
         }
     }
     const swalData: SwalData = {

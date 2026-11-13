@@ -271,11 +271,7 @@ async function onSubmitSuccess () {
             fetchPolicy: 'no-cache'
         })
     } catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     }
     emit('addDeliverable')
 }

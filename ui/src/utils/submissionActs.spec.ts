@@ -40,7 +40,7 @@ function everyCallIsOneObject () {
     expect(fire.mock.calls.every(c => c.length === 1 && typeof c[0] === 'object' && c[0] !== null)).toBe(true)
     for (const c of fire.mock.calls) {
         expect(c[0]).not.toHaveProperty('html')
-        expect(TITLES).toContain(c[0].title)
+        expect(TITLES).toContain(c[0].title ?? c[0].titleText)
     }
 }
 
@@ -66,7 +66,7 @@ describe('useSubmissionActs', () => {
         expect(operation(query.mock.calls[0][0])).toBe('SubmissionPreview')
         expect(query.mock.calls[0][0].variables).toEqual({ release: 'r1', kind: 'FDA_PREMARKET' })
         expect(fire).toHaveBeenCalledTimes(1)
-        expect(fire.mock.calls[0]).toEqual([{ title: 'Cannot create this submission', text: message, icon: 'error' }])
+        expect(fire.mock.calls[0]).toEqual([{ titleText: 'Cannot create this submission', text: message, icon: 'error' }])
         expect(mutate).not.toHaveBeenCalled()
         everyCallIsOneObject()
     })
@@ -80,7 +80,7 @@ describe('useSubmissionActs', () => {
         expect(operation(query.mock.calls[0][0])).toBe('SubmissionPreview')
         expect(query.mock.calls[0][0].variables).toEqual({ release: 'r1', kind: 'FDA_PREMARKET' })
         expect(fire).toHaveBeenCalledTimes(1)
-        expect(fire.mock.calls[0]).toEqual([{ title: 'Cannot resubmit this submission', text: message, icon: 'error' }])
+        expect(fire.mock.calls[0]).toEqual([{ titleText: 'Cannot resubmit this submission', text: message, icon: 'error' }])
         expect(mutate).not.toHaveBeenCalled()
         everyCallIsOneObject()
     })
@@ -89,7 +89,7 @@ describe('useSubmissionActs', () => {
     it('a KIND_DISABLED preview on create shows the client sentence, not the server text, and reloads', async () => {
         preview = { ...PREVIEW, canSubmit: false, refusal: 'KIND_DISABLED', message: 'Release widget 1.2.0: server text' }
         await acts().create('r1', 'FDA_PREMARKET', { ...NAMES, componentType: 'PRODUCT' })
-        expect(fire.mock.calls).toEqual([[{ title: 'Cannot create this submission',
+        expect(fire.mock.calls).toEqual([[{ titleText: 'Cannot create this submission',
             text: 'FDA premarket is switched off for this product; switch it on under Settings > Regulatory and try again.',
             icon: 'error' }]])
         expect(reload).toHaveBeenCalledTimes(1)
@@ -100,7 +100,7 @@ describe('useSubmissionActs', () => {
     it('a KIND_DISABLED preview on resubmit words the head\'s component type and reloads', async () => {
         preview = { ...PREVIEW, canSubmit: false, refusal: 'KIND_DISABLED', message: 'server text', head: HEAD }
         await acts().resubmit({ ...HEAD, componentType: 'COMPONENT' }, NAMES)
-        expect(fire.mock.calls).toEqual([[{ title: 'Cannot resubmit this submission',
+        expect(fire.mock.calls).toEqual([[{ titleText: 'Cannot resubmit this submission',
             text: 'FDA premarket is switched off for this component; switch it on under Settings > Regulatory and try again.',
             icon: 'error' }]])
         expect(reload).toHaveBeenCalledTimes(1)

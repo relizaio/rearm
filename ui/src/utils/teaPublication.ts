@@ -19,7 +19,8 @@ export interface TeaPublishNames {
 
 /** The Swal options of a confirmation; showCancelButton is always set, so Cancel sends nothing. */
 export interface TeaConfirm {
-    title: string
+    title?: string
+    titleText?: string
     text: string
     icon?: 'warning'
     showCancelButton: true
@@ -116,7 +117,7 @@ export function teaPublishConfirm (view: any, names: TeaPublishNames, partial?: 
     const cascade = cascadePart(view, partial)
     if (cascade) parts.push(cascade.text)
     const confirm: TeaConfirm = {
-        title: verb + ' ' + (names?.component ?? '') + ' ' + (names?.version ?? '') + ' on TEA?',
+        titleText: verb + ' ' + teaOneLine(names?.component) + ' ' + teaOneLine(names?.version) + ' on TEA?',
         text: parts.join(' '),
         showCancelButton: true,
         confirmButtonText: verb,

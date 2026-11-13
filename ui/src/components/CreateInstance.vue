@@ -276,11 +276,7 @@ const createInstanceFromDto =  async function (instanceProps: any) {
         })
         return data.data.createInstanceFromDto
     }   catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     }
 }
 
@@ -304,11 +300,7 @@ const onSubmitAuto = async function () {
                 emit('instanceCreated', inst, instanceTypeProp.value)
                 onResetAuto()
             } catch (error: any) {
-                Swal.fire(
-                    'Error!',
-                    commonFunctions.parseGraphQLError(error.message),
-                    'error'
-                )
+                Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(error.message), icon: 'error' })
             }
         }
     })

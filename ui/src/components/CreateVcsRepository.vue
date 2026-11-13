@@ -145,11 +145,7 @@ function onSubmit(){
             vcsrepo.value.type = response.type
             emit('createdVcsRepo', vcsuuid.value)
         }).catch((error: any) => {
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(error.message),
-                'error'
-            )
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(error.message), icon: 'error' })
         })
     })
 }
