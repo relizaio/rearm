@@ -286,7 +286,16 @@ The preview, `submissionPreview(release, kind)`, reports the plan and the first 
 
 ### Notifications and audit
 
-Notification subscriptions can listen for `RELEASE_SUBMISSION_CREATED` (a first version or a resubmission; the payload's `act` says `CREATED` or `RESUBMITTED`) and `RELEASE_SUBMISSION_WITHDRAWN`. The payload carries the release, the submission id, the kind, the state, the version and the act, and no free text: the reason is never rendered in Slack, Teams, e-mail, the inbox or Sentinel, and the e-mail subject is the headline alone, so a webhook consumer that needs the reason reads the version through the API. Every act is a History row and an audit record. See [Notifications](../configure/notifications).
+Notification subscriptions can listen for `RELEASE_SUBMISSION_CREATED` (a first version or a resubmission; the payload's `act` says `FINALIZE`; the version tells a first version from a later one) and `RELEASE_SUBMISSION_WITHDRAWN` (the act is `CANCEL`). The payload carries the release, the submission id, the kind, the state, the version and the act, and no free text: the reason is never rendered in Slack, Teams, e-mail, the inbox or Sentinel, and the e-mail subject is the headline alone, so a webhook consumer that needs the reason reads the version through the API. Every act is a History row and an audit record. See [Notifications](../configure/notifications).
+
+Package notifications now name the act as `FINALIZE` or `CANCEL`. The values `CREATED`, `RESUBMITTED`, `WITHDRAWN` and `CANCELLED` are no longer sent: not in `event.submissionAct` of a subscription filter, not in `act` of a webhook body's payload, not in the Sentinel column `SubmissionAct`. A filter that waits for one of the old values no longer fires. A filter that excludes one of the old values (`!=`, or `!(... in [...])`) now matches every package notification, cancellations included, so a channel that was set up to leave them out starts to receive them: rewrite every filter that names `submissionAct`, and every rule of your own in a webhook receiver or a Sentinel workspace that reads the act; the upgrade's database migration log lists the subscriptions by id. The same two directions apply to `event.submissionState`, whose values became `FINAL` and `CANCELLED` (were `ACTIVE` and `WITHDRAWN`).
+
+| A filter that meant | Write |
+|---|---|
+| a first version only (was `event.submissionAct == "CREATED"`) | `event.submissionAct == "FINALIZE" && event.submissionVersion == 1` |
+| a later version only (was `event.submissionAct == "RESUBMITTED"`) | `event.submissionAct == "FINALIZE" && event.submissionVersion != 1` |
+| a cancellation (was `== "WITHDRAWN"` or `== "CANCELLED"`) | `event.submissionAct == "CANCEL"` |
+| everything but cancellations (was `!= "WITHDRAWN"`, `!= "CANCELLED"` or `!(event.submissionAct in ["CANCELLED", "WITHDRAWN"])`) | `event.submissionAct == "FINALIZE"` |
 
 ### Never public
 
