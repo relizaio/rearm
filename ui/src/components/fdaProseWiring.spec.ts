@@ -201,3 +201,24 @@ describe('the export injection toggle is wired into OrgSettings', () => {
         expect(q).toContain('ORGANIZATIONS_FULL')
     })
 })
+
+// FDAW-32 row 10 (f): the second-confirmer switch is its own component in the Regulatory tab, and the
+// settings save never names its field; the release page hands the panel the signed-in user's uuid.
+describe('the second-confirmer switch and the panel user are wired (FDAW-32 row 10 (f))', () => {
+    it('mounts the switch once in the regulatory block, keeps the field out of OrgSettings, and binds currentUser', () => {
+        const tag = '<SubmissionSecondConfirmerSetting'
+        expect(orgSettings.split(tag).length - 1).toBe(1)
+        const at = orgSettings.indexOf(tag)
+        const block = orgSettings.indexOf('data-testid="org-regulatory-block"')
+        expect(block).toBeGreaterThan(-1)
+        expect(at).toBeGreaterThan(block)
+        expect(at).toBeLessThan(orgSettings.indexOf('</n-tab-pane>', block))
+        const element = orgSettings.slice(at, orgSettings.indexOf('/>', at))
+        expect(element).toContain(':org-uuid="orgResolved"')
+        expect(element).toContain(':is-writable="isOrgAdmin"')
+        expect(orgSettings).not.toContain('submissionSecondConfirmer')
+        const p = releaseView.indexOf('<ReleaseSubmissionsPanel')
+        expect(p).toBeGreaterThan(-1)
+        expect(releaseView.slice(p, releaseView.indexOf('/>', p))).toContain(':current-user="myUser?.uuid"')
+    })
+})

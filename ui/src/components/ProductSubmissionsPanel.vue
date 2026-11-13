@@ -19,7 +19,7 @@
                 canConfigure ? '' : ' ' + ADMIN_DOES_THIS }}
         </p>
         <p v-else-if="!loadFailed && loaded && !heads.length" data-testid="submissions-none" class="text-muted">
-            No submission yet; create one from a release that is Assembled or later
+            No submission yet; start a draft on a release that is Assembled or later
         </p>
         <n-data-table data-testid="submissions-release-rows" :columns="columns" :data="rows" :row-key="rowKey"
             :pagination="false" :bordered="false" size="small" />
@@ -34,8 +34,8 @@
 <script setup lang="ts">
 // The product page's Submissions tab (task TEA-30, design 3.5.3), Pro only: the main entry point of
 // regulatory submissions. One row per release of the selected feature set (50 newest) with each
-// kind's head, and below it the heads on releases of other feature sets. The acts run through
-// useSubmissionActs and the panel reads again afterwards.
+// kind's head, and below it the heads on releases of other feature sets. It does not act (FDAW-32 3.8): a
+// release without a version of a kind links to its release page, where the draft is started.
 import { computed, h, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { NButton, NDataTable, NSelect, NSpace, NTag, useNotification } from 'naive-ui'
@@ -50,10 +50,10 @@ import {
     submissionsNotSetUpCell, submissionsNotSetUpLead
 } from '@/utils/medicalDeviceSetup'
 import {
-    CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, SUBMISSION_FILTERED_OUT_TEXT, SUBMISSION_STATE_LABELS, canCreateSubmission,
-    labelOf, submissionInStateFilter, submissionOtherRows, submissionReleaseRows, submissionStateTagType, submissionStateText,
+    CREATE_LIFECYCLE_REASON, SUBMISSION_FILTERED_OUT_TEXT, SUBMISSION_STATE_LABELS, canCreateSubmission,
+    labelOf, submissionInStateFilter, submissionLastActWord, submissionOtherRows, submissionReleaseRows, submissionStateTagType,
+    submissionStateText,
 } from '@/utils/submissions'
-import { useSubmissionActs } from '@/utils/submissionActs'
 
 const props = withDefaults(defineProps<{
     orgUuid: string
@@ -98,8 +98,6 @@ const setupRoute = computed(() => ({ path: route?.path, query: { ...(route?.quer
     componentSettingsView: 'true', componentSettingsTab: 'device' } }))
 const noKindOn = computed(() => enabledKinds.value !== null && enabledKinds.value.length === 0)
 
-const acts = useSubmissionActs({ client: graphqlClient, reload: () => read() })
-
 const branchOptions = computed(() => (props.branches ?? []).map((b: any) => ({ label: b.name, value: b.uuid })))
 const kindFilterOptions = computed(() => [{ label: 'All kinds', value: '' },
     ...kinds.value.map((k: any) => ({ label: packageKindLabel(k.kind), value: k.kind }))])
@@ -130,35 +128,27 @@ function notSetUpCell (kind: string) {
     return h('div', { class: 'text-muted', 'data-testid': 'submission-not-set-up-' + kind }, children)
 }
 
+/** A release with no version of a kind: its draft is started on the release page (FDAW-32 3.8). */
+const DRAFT_LINK_TEXT = 'Draft on the release page'
+
 function kindCell (row: any, kind: string) {
     const head = row.byKind[kind]
-    const names = { componentName: props.componentName, releaseVersion: row.version, componentType: 'PRODUCT' }
-    const busy = acts.busy.value
     if (head && !submissionInStateFilter(head, stateFilter.value)) {
         return h('span', { class: 'text-muted', 'data-testid': 'submission-filtered-' + kind }, SUBMISSION_FILTERED_OUT_TEXT)
     }
     if (!head) {
         if (!props.isWritable) return h('span', { class: 'text-muted' }, 'No submission')
         if (enabledKinds.value !== null && !enabledKinds.value.includes(kind)) return notSetUpCell(kind)
-        const allowed = canCreateSubmission(row.lifecycle)
-        return h(NButton, { size: 'tiny', 'data-testid': 'submission-create', disabled: !allowed || busy, loading: busy,
-            title: allowed ? '' : CREATE_LIFECYCLE_REASON, onClick: () => acts.create(row.release, kind, names) }, () => 'Create')
+        if (!canCreateSubmission(row.lifecycle)) return h('span', { class: 'text-muted' }, CREATE_LIFECYCLE_REASON)
+        return h(RouterLink, { to: { name: 'ReleaseView', params: { uuid: row.release } }, 'data-testid': 'submission-draft-link' },
+            () => DRAFT_LINK_TEXT)
     }
-    const children: any[] = [
+    return h('div', { 'data-testid': 'submission-cell-' + kind }, [
         h(NTag, { size: 'small', type: submissionStateTagType(head.state), 'data-testid': 'submission-state' },
             () => submissionStateText(head)),
         ' v' + head.latestVersion,
-        h('div', { class: 'text-muted' }, labelOf(SUBMISSION_ACT_LABELS, head.lastActKind) + ' ' + dateText(head.lastActDate)),
-    ]
-    if (props.isWritable) {
-        children.push(h(NButton, { size: 'tiny', 'data-testid': 'submission-resubmit', disabled: busy, loading: busy,
-            onClick: () => acts.resubmit(head, names) }, () => 'Resubmit'))
-        if (head.state === 'FINAL') {
-            children.push(h(NButton, { size: 'tiny', type: 'error', style: 'margin-left: 6px;', 'data-testid': 'submission-withdraw',
-                disabled: busy, onClick: () => acts.withdraw(head, names) }, () => 'Cancel'))
-        }
-    }
-    return h('div', { 'data-testid': 'submission-cell-' + kind }, children)
+        h('div', { class: 'text-muted' }, submissionLastActWord(head) + ' ' + dateText(head.lastActDate)),
+    ])
 }
 
 const columns = computed(() => [

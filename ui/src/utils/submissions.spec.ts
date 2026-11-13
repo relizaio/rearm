@@ -6,13 +6,16 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 
 const {
-    canCreateSubmission, manifestDownloadRef, manifestFileName, submissionActErrorText, submissionCreateConfirm,
+    canCreateSubmission, manifestDownloadRef, manifestFileName, submissionActErrorText,
     submissionHistoryText, submissionOtherRows, submissionPartRows, submissionReasonError, submissionReleaseRows,
-    submissionResubmitConfirm, submissionVersionRows, submissionWithdrawConfirm, submissionStateText,
-    submissionStateTagType, submissionCancelNote, submissionDateText, SUBMISSION_STATE_LABELS, SUBMISSION_ACT_LABELS,
-    submissionActorText, submissionKindDisabledText, submissionProfileLabel, submissionInStateFilter,
+    submissionVersionRows, submissionStateText,
+    submissionStateTagType, submissionCancelNote, submissionDateText, SUBMISSION_STATE_LABELS,
+    submissionActorText, submissionProfileLabel, submissionInStateFilter,
     SUBMISSION_FILTERED_OUT_TEXT, submissionRefLabel, submissionWrittenText, CREATE_LIFECYCLE_REASON,
+    SUBMISSION_ACT_KIND_LABELS, NEW_VERSION_REASON_LABELS, DRAFT_STATE_LABELS, DRAFT_JOB_STATE_LABELS,
+    submissionLastActWord, submissionCancelConfirm, submissionReleaseLabel,
 } = await import('./submissions')
+const submissionsModule = await import('./submissions')
 const { historyActionLabel } = await import('./fdaLabels')
 const { expectSwept, UUID_RE } = await import('./__fixtures__/fdaSweep')
 const { TEA_ACT_GATEWAY_TEXT } = await import('./teaPublication')
@@ -156,24 +159,6 @@ describe('the confirmations and the act error text (row 31)', () => {
         settings: { row: 'set1', revision: 3, source: 'ORGANIZATION' } }
     const names = { componentName: '<b>x</b>', releaseVersion: '1.2.0' }
 
-    it('names the component, the version, the next version, the plan and the profile in text only', () => {
-        const c = submissionCreateConfirm(preview, 'FDA_PREMARKET', names)
-        expect(c.title).toBe('Create submission?')
-        expect(c.confirmButtonText).toBe('Create v3')
-        expect(c.text).toBe('Writes v3 of the FDA premarket submission of <b>x</b> 1.2.0. Parts: Aggregate SBOM included, '
-            + 'VEX excluded; SBOM profile top (organization settings, revision 1); settings: organization settings, revision 3.')
-        const r = submissionResubmitConfirm(preview, 'FDA_PREMARKET', names)
-        expect(r.title).toBe('Resubmit?')
-        expect(r.text).toContain('<b>x</b> 1.2.0')
-        expect(r.text).toContain('A resubmission always writes a new version, equal content or not.')
-        const w = submissionWithdrawConfirm({ kind: 'FDA_PREMARKET', latestVersion: 2 }, names)
-        expect(w.title).toBe('Cancel submission?')
-        expect(w.confirmButtonText).toBe('Cancel submission')
-        expect(w.text).toContain('Cancels the FDA premarket submission of <b>x</b> 1.2.0 at v2.')
-        expect(w.text).toContain('Every version and document is kept; the version is marked cancelled and a resubmission writes a new version.')
-        for (const t of [c.title, r.title, w.title]) expect(t).not.toContain('<b>')
-    })
-
     it('answers the gateway sentence for a 503 and the parsed message otherwise', () => {
         expect(submissionActErrorText({ networkError: { statusCode: 503 }, message: 'x' })).toBe(TEA_ACT_GATEWAY_TEXT)
         expect(submissionActErrorText(new Error('Release widget 1.2.0 (u): the submission is at v3, not v2; reload it before resubmitting')))
@@ -182,13 +167,13 @@ describe('the confirmations and the act error text (row 31)', () => {
 
     it('answers the refusal alone for the two-entry rejection of a non-null act (round 4, 3.7.1)', () => {
         const refusal = 'Release widget 1.2.0 (u): the submission is at v3, not v2; reload it before resubmitting'
-        const NULL_TEXT = "The field at path '/resubmitSubmission' was declared as a non null type, but the code involved "
+        const NULL_TEXT = "The field at path '/finalizeDraft' was declared as a non null type, but the code involved "
             + 'in retrieving data has wrongly returned a null value.  The graphql specification requires that the parent '
             + 'field be set to null, or if that is non nullable that it bubble up null to its parent and so on. The '
             + "non-nullable type is 'SubmissionActResult' within parent type 'Mutation'"
         const err = Object.assign(new Error(refusal + '\n' + NULL_TEXT), { errors: [
             { message: refusal, extensions: { classification: 'BAD_REQUEST' } },
-            { message: NULL_TEXT, path: ['resubmitSubmission'], extensions: { classification: 'NullValueInNonNullableField' } },
+            { message: NULL_TEXT, path: ['finalizeDraft'], extensions: { classification: 'NullValueInNonNullableField' } },
         ] })
         expect(submissionActErrorText(err)).toBe(refusal)
     })
@@ -213,7 +198,7 @@ describe('the History text (row 35)', () => {
         ]
         expect(outs).toEqual([
             ['Created', 'FDA premarket submission: version 1 created'],
-            ['Resubmitted', 'FDA premarket submission: version 2 created, replacing version 1'],
+            ['Created', 'FDA premarket submission: version 2 created, replacing version 1'],
             ['Created', 'Regulatory submission: version 3 created after a cancellation'],
             ['Cancelled', 'Regulatory submission: version 2 cancelled'],
             ['Withdrawn', 'Regulatory submission: version 1 withdrawn'],
@@ -253,20 +238,6 @@ describe('the Create dialogs in words (FDAW-78 row 14)', () => {
         expect(submissionProfileLabel({ name: 'fda', row: 'p1', revision: 2, source: 'ORGANIZATION' })).toBe('fda (organization settings, revision 2)')
     })
 
-    it('the create confirmation ends with the settings in words, no r<n>, no settings component', () => {
-        const preview = { nextVersion: 1, plan: [{ part: 'NARRATIVE', selection: 'INCLUDE' }],
-            sbomProfile: { name: 'fda', row: null, revision: 0, source: 'DEFAULT' },
-            settings: { row: 'set1', revision: 0, source: 'COMPONENT' } }
-        const c = submissionCreateConfirm(preview, 'FDA_PREMARKET', { componentName: 'GlucoView', releaseVersion: '2.4.1',
-            componentType: 'PRODUCT' })
-        expect(c.text.endsWith('; SBOM profile fda (built-in); settings: this product\'s own settings, revision 0.')).toBe(true)
-        expect(c.text).not.toMatch(/, r\d/)
-        expect(c.text).not.toMatch(/settings component/)
-        // control: the old literal matches both
-        expect('settings component, r0').toMatch(/, r\d/)
-        expect('settings component, r0').toMatch(/settings component/)
-    })
-
     it('the act result, the lifecycle reason and the Settings cell', () => {
         expect(submissionWrittenText({ version: { version: 1 }, outcome: 'CREATED' })).toBe('Version 1 created.')
         expect(submissionWrittenText({ version: { version: 2 }, outcome: 'RESUBMITTED' })).toBe('Version 2 created.')
@@ -282,7 +253,16 @@ describe('the head state texts (FDAW-8)', () => {
     it('labels the six states and the CANCELLED outcome', () => {
         expect(SUBMISSION_STATE_LABELS).toEqual({ FINAL: 'Final', SENT: 'Sent', AMENDED: 'Amended', SUPERSEDED: 'Superseded',
             WITHDRAWN: 'Withdrawn', CANCELLED: 'Cancelled' })
-        expect(SUBMISSION_ACT_LABELS.CANCELLED).toBe('Cancelled')
+        // FDAW-32 row 3 (a): the four label tables of the draft flow, as whole objects
+        expect(SUBMISSION_ACT_KIND_LABELS).toEqual({ START_DRAFT: 'Draft started', DISCARD_DRAFT: 'Draft discarded',
+            RETURN_TO_DRAFT: 'Returned to draft', CONFIRM: 'Confirmed', FINALIZE: 'Finalized', RECORD_SENT: 'Recorded as sent',
+            FDA_NUMBER_ADDED: 'FDA number added', TIMELINE_ENTRY: 'Timeline entry', AMENDED: 'Amended', SUPERSEDED: 'Superseded',
+            WITHDRAW: 'Withdrawn', CANCEL: 'Cancelled', MIGRATED: 'Migrated' })
+        expect(NEW_VERSION_REASON_LABELS).toEqual({ FIRST_VERSION: 'First version', FDA_REQUEST_RESPONSE: 'Response to an FDA request',
+            CORRECTION: 'Correction', OTHER: 'Other' })
+        expect(DRAFT_STATE_LABELS).toEqual({ EDITING: 'Editing', AWAITING_CONFIRMATION: 'Awaiting second confirmation' })
+        expect(DRAFT_JOB_STATE_LABELS).toEqual({ NONE: 'Not built yet', REQUESTED: 'Rebuild requested', RUNNING: 'Rebuilding',
+            BUILT: 'Built', FAILED: 'Rebuild failed' })
     })
 
     it('reads FINAL without a confirmation record, a migrated head as legacy, and any other state as its label', () => {
@@ -295,6 +275,16 @@ describe('the head state texts (FDAW-8)', () => {
         expect(submissionStateText({ state: 'SUPERSEDED' })).toBe('Superseded')
         // FDAW-78 X1: an unknown state reads humanized
         expect(submissionStateText({ state: 'SOMETHING_NEW' })).toBe('Something new')
+        // FDAW-32 row 3 (b): Final - not sent from the newest version's confirmations only
+        expect(submissionStateText({ state: 'FINAL', latestVersion: 2, versions: [{ version: 1, confirmations: [] },
+            { version: 2, confirmations: [{ confirmedAt: 'x' }] }] })).toBe('Final - not sent')
+        expect(submissionStateText({ state: 'FINAL', latestVersion: 2, versions: [{ version: 1, confirmations: [{ confirmedAt: 'x' }] },
+            { version: 2, confirmations: [] }] })).toBe('Final (no confirmation record) - not sent')
+        const latest = { version: 2, confirmations: [{ confirmedAt: 'x' }] }
+        expect(submissionStateText({ state: 'FINAL', latestVersion: 2, latest })).toBe('Final - not sent')
+        expect(submissionStateText({ state: 'FINAL', latestVersion: 2, legacyState: 'ACTIVE', latest })).toBe('Final - not sent')
+        expect(submissionStateText({ state: 'FINAL', latestVersion: 2, legacyState: 'ACTIVE', latest: { version: 2, confirmations: [] } }))
+            .toBe('Final (legacy, no confirmation record) - not sent')
     })
 
     it('colours FINAL and SENT green, CANCELLED and WITHDRAWN amber, the rest plain', () => {
@@ -331,13 +321,6 @@ describe('the actor text and the switched-off kind sentence (FDAW-4)', () => {
         expect(submissionActorText(undefined, undefined)).toBe('')
     })
 
-    it('submissionKindDisabledText names the kind, product or component, and the setting', () => {
-        expect(submissionKindDisabledText('FDA_PREMARKET', 'PRODUCT'))
-            .toBe('FDA premarket is switched off for this product; switch it on under Settings > Regulatory and try again.')
-        expect(submissionKindDisabledText('FDA_PREMARKET', 'COMPONENT'))
-            .toBe('FDA premarket is switched off for this component; switch it on under Settings > Regulatory and try again.')
-    })
-
     // Round 4 (D8, T5) and functional F-3: the cancelled block names the canceller by the same rule.
     it('submissionCancelNote names the canceller through submissionActorText, never the uuid', () => {
         const at = '2026-10-03T00:00:00Z'
@@ -367,5 +350,36 @@ describe('the actor text and the switched-off kind sentence (FDAW-4)', () => {
             version(2, { createdBy: U })] })
         expect(rows.map(r => r.createdByName)).toEqual([null, 'Ada Lovelace'])
         expect(rows.map(r => r.createdBy)).toEqual([U, U])
+    })
+})
+
+// FDAW-32 row 3 (c) to (e): the last act's word, the Cancel dialog and the release label with every name on
+// one line, and the one-click names gone from the module.
+describe('the draft flow words (FDAW-32 row 3)', () => {
+    const NAMES = { componentName: 'Pump', releaseVersion: '1.2.0' }
+    const BAD = { componentName: 'Pu\nmp\u202E', releaseVersion: ' 1.2.0\t' }
+
+    it('(c) submissionLastActWord from lastAct, Last act without one, an unknown kind humanized', () => {
+        expect(submissionLastActWord({ lastAct: { kind: 'FINALIZE' } })).toBe('Finalized')
+        expect(submissionLastActWord({ lastAct: { kind: 'CANCEL' } })).toBe('Cancelled')
+        expect(submissionLastActWord({ lastAct: null })).toBe('Last act')
+        expect(submissionLastActWord({})).toBe('Last act')
+        expect(submissionLastActWord({ lastAct: { kind: 'SOMETHING_NEW' } })).toBe('Something new')
+    })
+
+    it('(d) submissionCancelConfirm and submissionReleaseLabel, names on one line', () => {
+        expect(submissionCancelConfirm({ kind: 'FDA_PREMARKET', latestVersion: 2 }, NAMES)).toEqual({ titleText: 'Cancel submission?',
+            text: 'Cancels the FDA premarket submission of Pump 1.2.0 at v2. Every version and document is kept; the version is '
+                + 'marked cancelled, and a new draft writes the next version.', confirmButtonText: 'Cancel submission' })
+        expect(submissionCancelConfirm({ kind: 'FDA_PREMARKET', latestVersion: 2 }, BAD).text)
+            .toMatch(/^Cancels the FDA premarket submission of Pu mp 1\.2\.0 at v2\./)
+        expect(submissionReleaseLabel({ componentName: null, releaseVersion: '1.2.0' })).toBe('1.2.0')
+    })
+
+    it('(e) the one-click names are not exported', () => {
+        const keys = Object.keys(submissionsModule)
+        expect(keys).toContain('submissionCancelConfirm')
+        for (const k of ['SUBMISSION_ACT_LABELS', 'submissionCreateConfirm', 'submissionResubmitConfirm', 'submissionWithdrawConfirm',
+            'submissionKindDisabledText']) expect(keys, k).not.toContain(k)
     })
 })

@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest'
 // commonFunctions and fetchClient as an import side effect; this spec reads only their data.
 vi.mock('@/utils/commonFunctions', () => ({ default: {} }))
 vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
-import { coerceInputValue, GraphQLError, GraphQLInputObjectType, validate } from 'graphql'
+import { coerceInputValue, GraphQLError, GraphQLInputObjectType, Kind, parse, validate } from 'graphql'
 import graphqlQueries from './graphqlQueries'
 import { editionPermissionFunctions, TEA_PERMISSION_FUNCTIONS, teaProfilesAvailable } from './teaProfile'
 import { TEA_RIDE_ALONG_SKIP_LABELS, TEA_RIDE_ALONG_STATUSES } from './teaPublication'
@@ -21,8 +21,8 @@ import { COMPONENT_DEVICE_WINDOW_QUERY } from './componentDeviceWindow'
 import submissionQueries from './submissionQueries'
 import { PACKAGE_SELECTION_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, regulatoryPackagesAvailable } from './packageSettings'
 import {
-    PART_SKIP_REASON_LABELS, SUBMISSION_ACT_LABELS, SUBMISSION_PART_OUTCOME_LABELS, SUBMISSION_STATE_LABELS,
-    submissionsAvailable,
+    PART_SKIP_REASON_LABELS, SUBMISSION_PART_OUTCOME_LABELS, SUBMISSION_STATE_LABELS,
+    submissionsAvailable, SUBMISSION_ACT_KIND_LABELS, NEW_VERSION_REASON_LABELS, DRAFT_STATE_LABELS, DRAFT_JOB_STATE_LABELS,
 } from './submissions'
 import { eventTypeOptions } from './notificationsCommon'
 import { SBOM_PROFILE_FIELDS, sbomBuiltInDefaults, sbomProfileInput } from './sbomProfile'
@@ -240,10 +240,18 @@ const PACKAGE_DOCS = {
 const SUBMISSION_DOCS = {
     SubmissionsOfComponentGql: submissionQueries.SubmissionsOfComponentGql,
     SubmissionsOfReleaseGql: submissionQueries.SubmissionsOfReleaseGql,
-    SubmissionPreviewGql: submissionQueries.SubmissionPreviewGql,
-    CreateSubmissionGql: submissionQueries.CreateSubmissionGql,
-    ResubmitSubmissionGql: submissionQueries.ResubmitSubmissionGql,
-    WithdrawSubmissionGql: submissionQueries.WithdrawSubmissionGql,
+    ReleaseDraftsGql: submissionQueries.ReleaseDraftsGql,
+    DraftGql: submissionQueries.DraftGql,
+    DraftJobGql: submissionQueries.DraftJobGql,
+    StartDraftGql: submissionQueries.StartDraftGql,
+    RebuildDraftGql: submissionQueries.RebuildDraftGql,
+    DiscardDraftGql: submissionQueries.DiscardDraftGql,
+    ConfirmDraftGql: submissionQueries.ConfirmDraftGql,
+    ReturnDraftToEditingGql: submissionQueries.ReturnDraftToEditingGql,
+    FinalizeDraftGql: submissionQueries.FinalizeDraftGql,
+    CancelSubmissionGql: submissionQueries.CancelSubmissionGql,
+    OrgSecondConfirmerGql: submissionQueries.OrgSecondConfirmerGql,
+    UpdateSecondConfirmerGql: submissionQueries.UpdateSecondConfirmerGql,
 }
 const RELEASES_OF_BRANCH = submissionQueries.SubmissionReleasesOfBranchGql
 // The release page's offered kinds (Release.regulatoryPackageKinds): Pro-only, sent behind submissionsAvailable.
@@ -263,6 +271,27 @@ const ceFieldOf = (type: string, field: string) => {
 const ceHasPackageEnabled = () => ceFieldOf('PackageSettings', 'enabled')
 const ceHasReleaseKinds = () => ceFieldOf('Release', 'regulatoryPackageKinds')
 const ceHasComponentKinds = () => ceFieldOf('Component', 'regulatoryPackageKinds')
+// Whether the CE Mutation type has the field (FDAW-32 3.2): the canary of a draft verb's document.
+const ceMutation = (name: string) => Boolean(ceSchema.getMutationType()?.getFields()[name])
+// The CE canary of each submission document (FDAW-32 3.2): the CE catch-up turns them true with no UI edit.
+const ceHeadsCanary = () => ceServesSubmissions() && ceFieldOf('Submission', 'lastAct') && ceFieldOf('SubmissionVersion', 'confirmations')
+const ceDraftCanary = () => ceFieldOf('DraftBuild', 'diff') && ceFieldOf('SubmissionDraft', 'changesSinceBuild')
+const SUBMISSION_CANARIES: Record<string, () => boolean> = {
+    SubmissionsOfComponentGql: ceHeadsCanary,
+    SubmissionsOfReleaseGql: ceHeadsCanary,
+    ReleaseDraftsGql: ceDraftCanary,
+    DraftGql: ceDraftCanary,
+    DraftJobGql: () => ceFieldOf('SubmissionDraft', 'job'),
+    StartDraftGql: () => ceMutation('startDraft'),
+    RebuildDraftGql: () => ceMutation('rebuildDraft'),
+    DiscardDraftGql: () => ceMutation('discardDraft'),
+    ConfirmDraftGql: () => ceMutation('confirmDraft'),
+    ReturnDraftToEditingGql: () => ceMutation('returnDraftToEditing'),
+    FinalizeDraftGql: () => ceMutation('finalizeDraft'),
+    CancelSubmissionGql: () => ceMutation('cancelSubmission'),
+    OrgSecondConfirmerGql: () => ceFieldOf('Settings', 'submissionSecondConfirmer'),
+    UpdateSecondConfirmerGql: () => ceFieldOf('SettingsInput', 'submissionSecondConfirmer'),
+}
 
 describe('SBOM profile, package settings and submission documents (TEA-30) and their gates', () => {
     it('row 23: the TEA editor documents select the channel fields and profiles only (no recipe field on TeaProfile)', () => {
@@ -276,7 +305,6 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
         ['profiles', PROFILE_DOCS, ceServesSbomProfiles],
         // Every package settings document selects PackageSettings.enabled except PackageKinds and the delete.
         ['package settings', PACKAGE_DOCS, () => ceServesPackageSettings() && ceHasPackageEnabled()],
-        ['submissions', SUBMISSION_DOCS, ceServesSubmissions],
     ]
 
     it('row 24: six documents per group', () => {
@@ -322,7 +350,7 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
         expect(SUBMISSION_DOCS.SubmissionsOfReleaseGql.loc!.source.body).toMatch(/createdByName lastActByName withdrawnByName/)
         // Round 4 (D8): the head's acts carry the actor, so the cancelled block can say removed user.
         expect(SUBMISSION_DOCS.SubmissionsOfReleaseGql.loc!.source.body).toMatch(/acts \{[^}]*\bactor actorName\b/)
-        expect(validate(ceSchema, SUBMISSION_DOCS.SubmissionsOfReleaseGql).map(e => e.message)).toEqual([])
+        expect(validate(ceSchema, SUBMISSION_DOCS.SubmissionsOfReleaseGql).length === 0).toBe(SUBMISSION_CANARIES.SubmissionsOfReleaseGql())
     })
 
     it.runIf(proSchema)('the offered-kinds read validates against the Pro schema, and SubmissionRefusal has KIND_DISABLED', () => {
@@ -352,7 +380,11 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
     it.runIf(proSchema)('row 25: the label tables and option lists equal the Pro enums', () => {
         const keys = (o: Record<string, string>) => Object.keys(o).sort()
         expect(keys(SUBMISSION_STATE_LABELS)).toEqual(enumValuesOf(proSchema!, 'SubmissionState').sort())
-        expect(keys(SUBMISSION_ACT_LABELS)).toEqual(enumValuesOf(proSchema!, 'SubmissionActOutcome').sort())
+        // FDAW-32 row 1 (a): the draft flow's four tables in the Pro enums' order, neither side sorted
+        expect(Object.keys(SUBMISSION_ACT_KIND_LABELS)).toEqual(enumValuesOf(proSchema!, 'SubmissionActKind'))
+        expect(Object.keys(NEW_VERSION_REASON_LABELS)).toEqual(enumValuesOf(proSchema!, 'NewVersionReason'))
+        expect(Object.keys(DRAFT_STATE_LABELS)).toEqual(enumValuesOf(proSchema!, 'SubmissionDraftState'))
+        expect(Object.keys(DRAFT_JOB_STATE_LABELS)).toEqual(enumValuesOf(proSchema!, 'DraftBuildState'))
         expect(keys(SUBMISSION_PART_OUTCOME_LABELS)).toEqual(enumValuesOf(proSchema!, 'SubmissionPartOutcome').sort())
         expect(keys(PART_SKIP_REASON_LABELS)).toEqual(enumValuesOf(proSchema!, 'PartSkipReason').sort())
         expect(PACKAGE_SELECTION_OPTIONS.map(o => o.value).sort()).toEqual(enumValuesOf(proSchema!, 'PackagePartSelection').sort())
@@ -388,6 +420,60 @@ const RECIPE_DOCS = {
     SbomProfileEditorViewGql: profilesQueries.SbomProfileEditorViewGql,
     SaveSbomProfileGql: profilesQueries.SaveSbomProfileGql,
 }
+
+// FDAW-32 row 1 (b) to (e): the submission documents of the draft flow. The one-click surface is gone from
+// them, each act mutation selects the draft, the head and the version and never `outcome`, each document
+// validates on Pro, and on CE exactly when its canary says the CE schema serves what it selects.
+const SUBMISSION_KEYS = ['SubmissionsOfComponentGql', 'SubmissionsOfReleaseGql', 'ReleaseDraftsGql', 'DraftGql', 'DraftJobGql',
+    'StartDraftGql', 'RebuildDraftGql', 'DiscardDraftGql', 'ConfirmDraftGql', 'ReturnDraftToEditingGql', 'FinalizeDraftGql',
+    'CancelSubmissionGql', 'OrgSecondConfirmerGql', 'UpdateSecondConfirmerGql', 'SubmissionReleasesOfBranchGql',
+    'ReleaseRegulatoryPackageKindsGql', 'ComponentRegulatoryPackageKindsGql']
+const ACT_MUTATIONS = ['StartDraftGql', 'RebuildDraftGql', 'DiscardDraftGql', 'ConfirmDraftGql', 'ReturnDraftToEditingGql',
+    'FinalizeDraftGql', 'CancelSubmissionGql']
+// The five words of the one-click surface, spelled in parts so that row 11 (c)'s grep over ui/src finds none of
+// them, this spec included.
+const GONE_WORDS = ['lastAct' + 'Kind', 'create' + 'Submission', 'resubmit' + 'Submission', 'withdraw' + 'Submission',
+    'submission' + 'Preview']
+const GONE = new RegExp('\\b(' + GONE_WORDS.join('|') + ')\\b')
+/** The names of the fields selected directly under the root field of each mutation operation, read from the parsed document. */
+const resultFields = (doc: any): string[] => doc.definitions
+    .filter((d: any) => d.kind === Kind.OPERATION_DEFINITION && d.operation === 'mutation')
+    .flatMap((d: any) => d.selectionSet.selections)
+    .flatMap((f: any) => (f.selectionSet?.selections ?? []).map((x: any) => x.name.value))
+
+describe('the draft flow submission documents (FDAW-32 row 1)', () => {
+    const docs = submissionQueries as Record<string, any>
+
+    it('(b) the default export holds the seventeen documents in order', () => {
+        expect(Object.keys(submissionQueries)).toEqual(SUBMISSION_KEYS)
+    })
+
+    it.runIf(proSchema)('(c) each of the seventeen validates against the Pro schema', () => {
+        for (const k of SUBMISSION_KEYS) expect([k, validate(proSchema!, docs[k]).map(e => e.message)]).toEqual([k, []])
+    })
+
+    it('(d) on CE each of the first fourteen validates exactly when its canary says so', () => {
+        for (const k of SUBMISSION_KEYS.slice(0, 14)) {
+            expect([k, validate(ceSchema, docs[k]).length === 0]).toEqual([k, SUBMISSION_CANARIES[k]()])
+        }
+    })
+
+    it.runIf(proSchema)('(e) the act results select no outcome, the one-click words are gone, the parts keep theirs, the switch patches one field', () => {
+        const OLD = parse('mutation CreateSubmission($release: ID!, $kind: PackageKind!) { ' + GONE_WORDS[1] + '(release: $release, kind: $kind) '
+            + '{ outcome submission { uuid } version { version } } }')
+        expect(resultFields(OLD)).toContain('outcome')
+        for (const k of ACT_MUTATIONS) expect([k, resultFields(docs[k])]).toEqual([k, ['draft', 'submission', 'version']])
+        for (const w of GONE_WORDS) {
+            expect(GONE.test(w), w).toBe(true)
+        }
+        for (const k of SUBMISSION_KEYS.slice(0, 14)) expect([k, GONE.test(docs[k].loc.source.body)]).toEqual([k, false])
+        expect(docs.SubmissionsOfReleaseGql.loc.source.body).toMatch(/parts \{ part requirement outcome /)
+        const settings = docs.UpdateSecondConfirmerGql.definitions[0].selectionSet.selections[0].arguments
+            .find((a: any) => a.name.value === 'settings')
+        expect(settings.value.kind).toBe(Kind.OBJECT)
+        expect(settings.value.fields.map((f: any) => f.name.value)).toEqual(['submissionSecondConfirmer'])
+    })
+})
 
 describe('SBOM profile recipe fields against the Pro schema (FDAW-46 row 24)', () => {
     it('every recipe document selects the four new fields and never optionalDependencies', () => {

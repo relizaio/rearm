@@ -2340,6 +2340,7 @@
                             :kinds="regulatoryPackageKinds"
                             :is-writable="isWritable"
                             :installation-type="myUser?.installationType"
+                            :current-user="myUser?.uuid"
                             :names="teaPerspectiveNames()"
                             :component-type="updatedRelease?.componentDetails?.type"
                             :narrative-override="releaseNarrativeBaseline"

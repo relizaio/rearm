@@ -1,129 +1,147 @@
-// The three submission acts (task TEA-30, design 3.5.5), shared by the product page's Submissions
-// tab and the release page's section. One act at a time per page (`busy`); Create and Resubmit ask
-// the server's preview first and confirm on it; Resubmit and Withdraw require a reason; Resubmit
-// sends the version the page shows as expectedLatestVersion. Every dialog is the SweetAlert2 object
-// form with the message in `text`: preview messages and act refusals embed component and
-// perspective names other members wrote, and the positional second argument is HTML (design 3.8, D18).
+// The acts of the draft flow (task FDAW-32 3.5, after TEA-30 3.5.5), used by the release page's package
+// section: Start, Rebuild, Discard, Confirm, Return to draft, Finalize, and Cancel of a Final head. One act
+// at a time per page (`busy`). Confirm and Finalize send the revision of the card that was clicked, read
+// before the dialog opens, and require the statement to be ticked; Discard, Return to draft and Cancel
+// require a reason. Every dialog is one SweetAlert2 options object with a constant title in `titleText`
+// and the message in `text`: names reach it through teaOneLine, and a refused act shows the server's
+// sentence as text (FDAW-32 3.0). No success dialog and no further mutation follow a refusal.
 import { ref } from 'vue'
 import Swal from 'sweetalert2'
 import submissionQueries from './submissionQueries'
 import {
-    SubmissionNames, submissionActErrorText, submissionWrittenText, submissionCreateConfirm,
-    submissionKindDisabledText, submissionReasonError, submissionResubmitConfirm, submissionWithdrawConfirm,
+    SubmissionNames, submissionActErrorText, submissionCancelConfirm, submissionReasonError, submissionWrittenText,
 } from './submissions'
+import {
+    CONFIRMATION_STATEMENT, STATEMENT_REQUIRED, draftConfirmConfirm, draftDiscardConfirm, draftFinalizeConfirm, draftReturnConfirm,
+    draftStartVariables, type DraftStartForm,
+} from './submissionDrafts'
 
 export interface SubmissionActsDeps {
     client: { query: (o: any) => Promise<any>, mutate: (o: any) => Promise<any> }
     reload: () => unknown
-    names?: () => Record<string, string>
 }
 
-function reasonOf (value: unknown): string | null {
-    const r = typeof value === 'string' ? value.trim() : ''
-    return r || null
+function reasonOf (value: unknown): string {
+    return typeof value === 'string' ? value.trim() : ''
+}
+
+/** The reason textarea of Discard, Return to draft and Cancel. */
+function reasonInput (cancelButtonText: string) {
+    return { input: 'textarea' as const, inputLabel: 'Reason (required)', inputAttributes: { maxlength: '2048' },
+        inputValidator: (v: string) => submissionReasonError(v, true), showCancelButton: true, cancelButtonText,
+        confirmButtonColor: '#d33' }
+}
+
+/** The statement checkbox of Confirm and Finalize. */
+function statementInput () {
+    return { input: 'checkbox' as const, inputValue: 0, inputPlaceholder: CONFIRMATION_STATEMENT,
+        inputValidator: (v: any) => (v ? undefined : STATEMENT_REQUIRED), showCancelButton: true, cancelButtonText: 'Cancel' }
+}
+
+function errorDialog (err: any) {
+    console.error(err)
+    Swal.fire({ titleText: 'Error!', text: submissionActErrorText(err), icon: 'error' })
 }
 
 export function useSubmissionActs (deps: SubmissionActsDeps) {
     const busy = ref(false)
-    const perspectiveNames = () => deps.names?.() ?? {}
 
-    async function preview (release: string, kind: string): Promise<any | null> {
+    /** Sends one mutation; the act's result, or null after the error dialog. */
+    async function send (mutation: any, variables: Record<string, any>, field: string): Promise<any | null> {
         try {
-            const resp: any = await deps.client.query({ query: submissionQueries.SubmissionPreviewGql,
-                variables: { release, kind }, fetchPolicy: 'no-cache' })
-            return resp.data.submissionPreview
+            const resp: any = await deps.client.mutate({ mutation, variables })
+            return resp?.data?.[field] ?? {}
         } catch (err: any) {
-            console.error(err)
-            Swal.fire({ title: 'Error!', text: submissionActErrorText(err), icon: 'error' })
-            await deps.reload()
+            errorDialog(err)
             return null
         }
     }
 
-    // A preview that refuses: KIND_DISABLED (the kind was switched off between the page's read and the
-    // click) is explained with the client sentence and the page re-reads, so its cell turns to
-    // "Not set up"; every other refusal shows the server's message.
-    async function refusedPreview (title: string, p: any, kind: string, componentType: string | null | undefined) {
-        if (p.refusal === 'KIND_DISABLED') {
-            Swal.fire({ title, text: submissionKindDisabledText(kind, componentType), icon: 'error' })
+    /** One act at a time: a call while another runs sends nothing and answers undefined. */
+    async function oneAtATime<T> (run: () => Promise<T>): Promise<T | undefined> {
+        if (busy.value) return undefined
+        busy.value = true
+        try {
+            return await run()
+        } finally {
+            busy.value = false
+        }
+    }
+
+    /** Start a draft from the panel's form, then request its first rebuild; true when startDraft succeeded. */
+    async function start (release: string, kind: string, form: DraftStartForm): Promise<boolean> {
+        const answered = await oneAtATime(async () => {
+            const started = await send(submissionQueries.StartDraftGql, draftStartVariables(release, kind, form), 'startDraft')
+            if (started) {
+                const draft = started?.draft?.uuid
+                if (draft) await send(submissionQueries.RebuildDraftGql, { draft }, 'rebuildDraft')
+            }
             await deps.reload()
-            return
-        }
-        Swal.fire({ title, text: p.message ?? '', icon: 'error' })
+            return Boolean(started)
+        })
+        return answered === true
     }
 
-    async function act (mutation: any, variables: Record<string, any>, field: string, success: (r: any) => string) {
-        try {
-            const resp: any = await deps.client.mutate({ mutation, variables })
-            const result = resp.data[field]
-            Swal.fire({ title: 'Submission', text: success(result), icon: 'success' })
-        } catch (err: any) {
-            console.error(err)
-            Swal.fire({ title: 'Error!', text: submissionActErrorText(err), icon: 'error' })
-        }
-        await deps.reload()
+    async function rebuild (draft: any) {
+        await oneAtATime(async () => {
+            await send(submissionQueries.RebuildDraftGql, { draft: draft.uuid }, 'rebuildDraft')
+            await deps.reload()
+        })
     }
 
-    async function create (release: string, kind: string, names: SubmissionNames) {
-        if (busy.value) return
-        busy.value = true
-        try {
-            const p = await preview(release, kind)
-            if (!p) return
-            if (!p.canSubmit) {
-                await refusedPreview('Cannot create this submission', p, kind, names?.componentType)
-                return
-            }
-            const answer: any = await Swal.fire({ ...submissionCreateConfirm(p, kind, names, perspectiveNames()),
-                icon: 'question', input: 'textarea', inputLabel: 'Reason (optional)',
-                inputAttributes: { maxlength: '2048' }, inputValidator: (v: string) => submissionReasonError(v, false),
-                showCancelButton: true, cancelButtonText: 'Cancel' })
+    async function discard (draft: any, names: SubmissionNames) {
+        await oneAtATime(async () => {
+            const answer: any = await Swal.fire({ ...draftDiscardConfirm(draft, names), icon: 'warning',
+                ...reasonInput('Keep draft') })
             if (!answer?.isConfirmed) return
-            await act(submissionQueries.CreateSubmissionGql, { release, kind, reason: reasonOf(answer.value) },
-                'createSubmission', r => submissionWrittenText(r))
-        } finally {
-            busy.value = false
-        }
+            await send(submissionQueries.DiscardDraftGql, { draft: draft.uuid, reason: reasonOf(answer.value) }, 'discardDraft')
+            await deps.reload()
+        })
     }
 
-    async function resubmit (head: any, names: SubmissionNames) {
-        if (busy.value) return
-        busy.value = true
-        try {
-            const p = await preview(head.release, head.kind)
-            if (!p) return
-            if (!p.canSubmit) {
-                await refusedPreview('Cannot resubmit this submission', p, head.kind, head.componentType ?? names?.componentType)
-                return
-            }
-            const answer: any = await Swal.fire({ ...submissionResubmitConfirm(p, head.kind, names, perspectiveNames()),
-                icon: 'question', input: 'textarea', inputLabel: 'Reason (required)',
-                inputAttributes: { maxlength: '2048' }, inputValidator: (v: string) => submissionReasonError(v, true),
-                showCancelButton: true, cancelButtonText: 'Cancel' })
+    async function confirm (draft: any, names: SubmissionNames) {
+        await oneAtATime(async () => {
+            const expectedRevision = draft.revision
+            const answer: any = await Swal.fire({ ...draftConfirmConfirm(draft, names), icon: 'question', ...statementInput() })
             if (!answer?.isConfirmed) return
-            await act(submissionQueries.ResubmitSubmissionGql,
-                { submission: head.uuid, reason: reasonOf(answer.value), expectedLatestVersion: head.latestVersion },
-                'resubmitSubmission', r => submissionWrittenText(r))
-        } finally {
-            busy.value = false
-        }
+            await send(submissionQueries.ConfirmDraftGql, { draft: draft.uuid, expectedRevision }, 'confirmDraft')
+            await deps.reload()
+        })
     }
 
-    async function withdraw (head: any, names: SubmissionNames) {
-        if (busy.value) return
-        busy.value = true
-        try {
-            const answer: any = await Swal.fire({ ...submissionWithdrawConfirm(head, names), icon: 'warning',
-                input: 'textarea', inputLabel: 'Reason (required)', inputAttributes: { maxlength: '2048' },
-                inputValidator: (v: string) => submissionReasonError(v, true),
-                showCancelButton: true, cancelButtonText: 'Cancel', confirmButtonColor: '#d33' })
+    async function returnToEditing (draft: any, names: SubmissionNames) {
+        await oneAtATime(async () => {
+            const answer: any = await Swal.fire({ ...draftReturnConfirm(draft, names), icon: 'warning', ...reasonInput('Cancel') })
             if (!answer?.isConfirmed) return
-            await act(submissionQueries.WithdrawSubmissionGql, { submission: head.uuid, reason: reasonOf(answer.value) },
-                'withdrawSubmission', r => r?.outcome === 'UNCHANGED' ? 'Already cancelled.' : 'Cancelled.')
-        } finally {
-            busy.value = false
-        }
+            await send(submissionQueries.ReturnDraftToEditingGql, { draft: draft.uuid, reason: reasonOf(answer.value) },
+                'returnDraftToEditing')
+            await deps.reload()
+        })
     }
 
-    return { busy, create, resubmit, withdraw }
+    async function finalize (draft: any, names: SubmissionNames, secondConfirmer: boolean | null) {
+        await oneAtATime(async () => {
+            const expectedRevision = draft.revision
+            const answer: any = await Swal.fire({ ...draftFinalizeConfirm(draft, names, secondConfirmer), icon: 'question',
+                ...statementInput() })
+            if (!answer?.isConfirmed) return
+            const result = await send(submissionQueries.FinalizeDraftGql, { draft: draft.uuid, expectedRevision }, 'finalizeDraft')
+            if (result) Swal.fire({ titleText: 'Submission', text: submissionWrittenText(result), icon: 'success' })
+            await deps.reload()
+        })
+    }
+
+    async function cancel (head: any, names: SubmissionNames) {
+        await oneAtATime(async () => {
+            const answer: any = await Swal.fire({ ...submissionCancelConfirm(head, names), icon: 'warning',
+                ...reasonInput('Keep submission') })
+            if (!answer?.isConfirmed) return
+            const result = await send(submissionQueries.CancelSubmissionGql, { submission: head.uuid, reason: reasonOf(answer.value) },
+                'cancelSubmission')
+            if (result) Swal.fire({ titleText: 'Submission', text: 'Cancelled.', icon: 'success' })
+            await deps.reload()
+        })
+    }
+
+    return { busy, start, rebuild, discard, confirm, returnToEditing, finalize, cancel }
 }
