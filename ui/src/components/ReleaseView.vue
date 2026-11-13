@@ -2344,7 +2344,10 @@
                             :component-type="updatedRelease?.componentDetails?.type"
                             :narrative-override="releaseNarrativeBaseline"
                             :org-narrative="orgNarrativeDefault"
-                            @narrative-saved="onSubmissionNarrativeSaved" />
+                            :tea-view="teaView"
+                            :tea-acting="teaActing !== null"
+                            @narrative-saved="onSubmissionNarrativeSaved"
+                            @share="shareWithCustomers" />
                     </div>
                 </n-tab-pane>
                 <n-tab-pane name="meta" tab="Meta">
@@ -2826,6 +2829,8 @@ import { teaProfilesAvailable, teaSourceLabel } from '@/utils/teaProfile'
 import { teaActLabel, teaActProgress, type TeaAct, teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText, teaActErrorText } from '@/utils/teaPublication'
 import { loadTeaWithdrawn, teaMarkWithdrawn, teaWithdrawnNotice, TEA_WITHDRAWN_UNKNOWN, type TeaWithdrawnState } from '@/utils/teaWithdrawn'
+import { runTeaPublishFlow } from '@/utils/teaPublishFlow'
+import type { TeaShare } from '@/utils/teaPublication'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
@@ -4945,25 +4950,31 @@ async function onSubmissionNarrativeSaved () {
     }
 }
 
-async function runTeaPublish (mutation: any, field: string) {
-    const view = teaView.value
-    if (!view) return
-    const confirm = teaPublishConfirm(view, {
-        component: updatedRelease.value?.componentDetails?.name ?? '',
-        version: updatedRelease.value?.version ?? '',
-        perspectives: teaPerspectiveNames()
-    })
-    const answer = await Swal.fire(confirm)
-    if (!answer.isConfirmed) return
-    const act: TeaAct = field === 'republishReleaseOnTea' ? 'republish' : 'publish'
-    await withTeaProgress(act, view, async () => {
-        const resp: any = await graphqlClient.mutate({
-            mutation,
-            variables: { release: view.release },
-            fetchPolicy: 'no-cache'
-        })
-        await Swal.fire({ title: 'TEA', text: teaPublishSummary(resp.data[field]), icon: 'success' })
-    })
+/**
+ * Publish, Re-publish and Share with customers (FDAW-39 3.7): the dialogs, the partial-publish list and
+ * "Turn on for both" live in runTeaPublishFlow; the act still runs through withTeaProgress.
+ */
+async function runTeaPublish (mutation: any, field: string, share: TeaShare | null = null) {
+    await runTeaPublishFlow({
+        client: graphqlClient,
+        fire: (...a: any[]) => (Swal.fire as any)(...a),
+        progress: (o: any) => { Swal.fire({ ...o, didOpen: () => Swal.showLoading() }) },
+        withProgress: async (act: TeaAct, view: any, run: () => Promise<void>) => {
+            await withTeaProgress(act, view, async () => {
+                await run()
+            })
+        },
+        isOrgAdmin: isOrgAdmin.value,
+        org: updatedRelease.value?.org,
+        installationType: myUser?.installationType,
+        componentOf: (release: string) => updatedRelease.value?.parentReleases?.find((p: any) => p.release === release)?.releaseDetails?.componentDetails?.uuid ?? null,
+    }, { view: teaView.value, names: { component: updatedRelease.value?.componentDetails?.name ?? '', version: updatedRelease.value?.version ?? '', perspectives: teaPerspectiveNames() }, mutation, field, share })
+}
+
+/** Share with customers from a package head (FDAW-39 3.8): the TEA publish, or the re-publish of a published release. */
+function shareWithCustomers (share: TeaShare) {
+    if (teaView.value?.publication) return runTeaPublish(graphqlQueries.RepublishReleaseOnTeaGql, 'republishReleaseOnTea', share)
+    return runTeaPublish(graphqlQueries.PublishReleaseOnTeaGql, 'publishReleaseOnTea', share)
 }
 
 /**

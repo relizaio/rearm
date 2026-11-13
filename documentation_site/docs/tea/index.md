@@ -230,6 +230,7 @@ TEA publishing settings carry these fields (defaults in brackets):
 | Product components | `PUBLISH_WITH_PRODUCT`, `PRODUCT_ONLY` [`PUBLISH_WITH_PRODUCT`]: the cascade, see [Products](#products) |
 | Minimum lifecycle | `ASSEMBLED`, `READY_TO_SHIP`, `GENERAL_AVAILABILITY` [`ASSEMBLED`] |
 | TEI | `DISABLED`, `UUID` [`DISABLED`], with the TEI domain (required with UUID: ASCII, lower case, with a dot): UUID stamps `tei://<TEI domain>/uuid/<TEA release id>` onto published releases |
+| Publish at shipped | On or off: off for existing TEA publishing settings, and on in the built-in defaults of new ones. When on, a release is published on TEA when it reaches Shipped and published again each time it changes after that (see [Sharing with customers](#sharing-with-customers)); when off, publishing is left to the Publish button and to approval-policy actions. Turning it on, or changing what it publishes, needs the Publish Externally (TEA) permission or an organization admin. The API calls the field `autoPublish`, with `DISABLED` for off and `AT_SHIPPED` for on |
 
 When publishing is ENABLED, every named SBOM profile must resolve at the scope: a save naming one that does not is refused, naming the profile and the remedy (define it there or at a higher scope, or settle the conflict on the component). The names of a row with publishing DISABLED are not checked. A row that follows a perspective sends no names and takes the followed perspective's, which must resolve at the component. A save that makes anything PUBLIC takes an organization admin, and PUBLIC settings show a red banner wherever they apply. What the API enforces: `saveTeaProfile` and `deleteTeaProfile` need ADMIN on the scope's object (an ADMIN grant on the component or product, on the perspective, or organization-wide; an organization admin holds it at every scope), and any save that leads to PUBLIC needs an organization admin. In the UI, the editors of TEA publishing settings (under Organization Settings, Transparency Exchange; on the TEA tab; in the perspective's TEA dialog) are editable by organization admins, and a perspective, component or product admin can also save through the user GraphQL API. The organization's row cannot be deleted.
 
@@ -283,6 +284,8 @@ A publish of a large product can outlast the web proxy's limit; the page then re
 
 The actions TEA Publish (TEA_PUBLISH) and TEA Hide (TEA_HIDE), configured on a component's Actions tab or as policy-wide actions of an approval policy like a VDR snapshot and with no settings of their own, run after the rule's pass on a queue; what they publish is decided by the TEA publishing settings the component resolves to at firing time, and when they are PUBLIC the editor warns before the save and marks the action. Configuring them, the rules and global-rule refs that fire or disable them on any approval policy of the organization, an approval policy that carries them, or a component name an organization rule maps to such a policy, needs the Publish Externally (TEA) permission on the component; a TEA_PUBLISH fires only from actions, rules and refs that a holder of that permission or an organization admin saved, and a publish whose wiring was changed any other way is withheld with a History line (TEA_PUBLISH withheld: NOT_AUTHORIZED) until a holder edits and saves it on the component, or an organization admin saves the policy's lists again; a component's ref that overrides a global rule's outputs to a TEA_PUBLISH is authorized by the ref and the action, and the overridden rule contributes its condition only; a hide always fires; a component created under a matching name is enrolled by the organization's rule; a global action's TEA kind, and whether a global rule fires one, cannot change under the same action or rule, and a removed global's uuid is never reused (remove it and create a new one); while a hide rule matches no automatic publish runs, in the pass or at the act (History: TEA_PUBLISH withheld); a hide that arrives while a publish waits runs instead of it; a refused act is on the release's History as a GUARD line; a publish in progress is retried within minutes; the property relizaprops.teaOutputEventsEnabled pauses automatic publication on an instance.
 
+TEA publishing settings can also publish without any action: with Publish at shipped on, a release is published when it reaches Shipped and kept published as it changes, as described under [Publish at shipped](#publish-at-shipped).
+
 ### Products
 
 When a product's TEA publishing settings have Product components set to PUBLISH_WITH_PRODUCT, publishing the product also publishes each of its component releases of the product's own organization; a component release of another organization is reported as not found and left untouched. The product's named SBOM profiles shape each component release's aggregated SBOMs, one per product name in the product's order. The component's own TEA publishing settings still gate it: a component release whose own settings have publishing DISABLED, or that is in conflict, is refused and reported without stopping the product, and its visibility is never wider than its own settings allow, nor wider than the product's. Raw artifacts follow the narrower of the two settings, and the stricter of the two minimum lifecycles applies. For each product name, the internal metadata of the aggregated SBOM is capped by the component's own view of that name: its own definition of the name where it has one, else the SBOM profiles its own TEA publishing settings name. A component release is refused only over the SBOM profiles of its own settings, never over a product name. A component release that cannot be published (for example a DRAFT one) is reported without stopping the product. A component release that is already published directly, or that was hidden, is left as it is. A component release bundled by several products belongs to the product that published it first: the others report it as published with that product, and a product takes it over only when that product is hidden or no longer lists it. Hiding the product conceals the component releases published with it.
@@ -313,6 +316,57 @@ When the TEI setting of the TEA publishing settings is UUID, the publication car
 The release page header offers Publish on TEA, and once published a TEA badge with the collection version (red when the release is public), Re-publish on TEA and Hide from TEA. Each asks for confirmation first; PUBLIC settings are called out with the URL anyone can read. A public release also shows a red banner under its title. The Transparency Exchange (TEA) section of the release page shows the state (and why it is concealed, when it is), the TEA release id and URL, the TEA publishing settings applied and their revision (or the product it was published with), and for each aggregated SBOM the SBOM profile that produced it, the TEI, the last publish, and every collection version with its artifacts. The release History tab records each publish, re-publish and hide.
 
 The same acts are available through GraphQL: `publishReleaseOnTea`, `republishReleaseOnTea`, `hideReleaseOnTea` and the query `releaseTeaPublicationView`, and for API keys `publishReleaseOnTeaProgrammatic`, `republishReleaseOnTeaProgrammatic`, `hideReleaseOnTeaProgrammatic` and `releaseTeaPublicationViewProgrammatic`. Notification subscriptions can listen for Release published on TEA and Release hidden from TEA. The publication view lists `aggregateArtifacts { profileName artifact }`, one per published SBOM profile in order; each collection entry carries `sbomProfileName`, `sbomProfileUuid` and `sbomProfileRevision` (null on uploaded artifacts and on revisions published before SBOM profiles were named); the publish preview lists the names in `profiles`. `aggregateArtifact` is deprecated and answers the `default` profile's artifact, else the first.
+
+## Sharing with customers
+
+Sharing a release with customers means publishing it on TEA, by hand, from the package head, or automatically when it ships. This section says what each path does and what customers then read.
+
+### Publish at shipped
+
+The Publish at shipped setting of the TEA publishing settings publishes releases without a click:
+
+- Turning it on publishes nothing by itself.
+- A release that reaches Shipped under the settings is published then.
+- A release that is already at Shipped or later is published the next time it changes: when the release is saved, when its lifecycle changes, or when its vulnerability findings change.
+- A release that was never published is also published when someone uses Re-evaluate on its release page.
+- After that, every such change publishes the release again at once; a change that leaves the published documents as they are adds no collection version.
+- A release hidden on TEA is never published automatically.
+
+Turning Publish at shipped on, or changing what it publishes, needs the Publish Externally (TEA) permission on the scope, or an organization admin. When someone without that permission changes the settings, Publish at shipped is paused until a holder of the permission, or an organization admin, saves them again; the settings editor shows a banner while it is paused, also on the editors of every scope that inherits the settings. Removing a TEA publishing settings override, changing a component's perspectives or deleting a perspective is refused when it would start Publish at shipped for a component and the person does not hold the permission; with the permission, the editor says before the change which component starts publishing at shipped.
+
+### What customers get
+
+Customers get, on TEA, the release SBOM per SBOM profile of the TEA publishing settings, its living VEX, and the device support statement when the organization text is authored. They never get the regulatory package: its Narrative, Support addendum and VDR are not published, and the package cannot be downloaded from TEA.
+
+### The living VEX
+
+A release has one VEX serial per release SBOM, and a new VEX version is published when the analysis of a finding changes. Earlier versions stay listed in the collection versions that carried them. An earlier revision can be refused when its stored content is no longer available.
+
+### The Public confirmation
+
+Making TEA publishing settings public exposes every collection version already published under them, earlier ones included, with every document in them (SBOMs, VEX documents, device support statements, published artifacts); the confirmation before the save names the number of published releases and of their collection versions. While publishing is off, nothing under the settings can be read on TEA, so turning publishing on for settings that are already public makes their published releases readable by anyone again. The settings page shows its red banner for such settings and asks no further question before that save; "Turn on for both" (below) asks before it does this.
+
+### A product publish that leaves component releases behind
+
+Before a product is published or shared, the publish dialog lists every component release that will not be published with it, each with its reason (published on its own already, hidden on TEA, published with another product, its TEA publishing settings have publishing disabled, its lifecycle is below the minimum, and so on). Customers still see those components inside the product SBOM, but cannot open the component releases on TEA.
+
+When every refused component release is refused only because its own TEA publishing settings have publishing disabled, an organization admin is offered "Turn on for both": it turns on TEA publishing in the TEA publishing settings of the listed components, this stays on for their later releases, and the product is then published. Each component goes through the settings editor's own checks and confirmations first. A listed component whose TEA publishing settings are public is confirmed on its own, by name, before anything is saved for it; declining that confirmation saves nothing more and publishes nothing.
+
+### Share with customers on the package
+
+The package head of a release's regulatory submission offers Share with customers from Final onward (Final, Sent or Amended), when the release's TEA publishing settings have publishing enabled. It publishes the release on TEA, or re-publishes it when it is already published, with the comment "Shared with customers"; it needs the Publish Externally (TEA) permission on the release, and says so when it is missing. It never publishes the package itself. Its dialog says what customers get and never get, and for a product its result names each component release left behind, with the reason.
+
+### A device publishes its package's SBOM profile too
+
+A device with a regulatory package also publishes under its package's SBOM profile, so customers can pin the serial the package carries. When the package's SBOM profile is not on the TEA publishing settings' list, the share dialog says that customers get a different serial from the one the package carries, and how to add it.
+
+### The labeling texts
+
+The three labeling texts of the organization's Regulatory settings are published in the device support statement on TEA, to public readers too when the TEA publishing settings are public. Write a reference as a document number, or as a link that needs the reader's own sign-in.
+
+### Customers and their keys
+
+Which customers can read private TEA publishing settings, and with which keys, is set up under [Customers](../configure/programmatic-access#customers).
 
 ## What a consumer reads
 

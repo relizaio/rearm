@@ -256,3 +256,59 @@ describe('ReleaseView reads the narrative default of the release\'s own organiza
         expect(rv).toContain('    loadReleaseOrgNarrative()')
     })
 })
+
+// FDAW-39 row 51 (e): the share wiring, runTeaPublish through runTeaPublishFlow, withTeaProgress as at the
+// base, the labeling-text note and the partial list's CSS rule.
+describe('ReleaseView, OrgSettings and App: Share with customers and the partial list (FDAW-39 row 51 (e))', () => {
+    const rv = read('./ReleaseView.vue')
+    const rvCode = strip(rv)
+    const bodyOf = (fn: string) => {
+        const start = rvCode.indexOf(fn)
+        expect(start, fn).toBeGreaterThan(0)
+        return rvCode.slice(start, rvCode.indexOf('\n}\n', start))
+    }
+
+    it('passes the view, the acting flag and the share event to ReleaseSubmissionsPanel', () => {
+        const start = rv.indexOf('<ReleaseSubmissionsPanel')
+        const tag = rv.slice(start, rv.indexOf('/>', start))
+        expect(tag).toContain(':tea-view="teaView"')
+        expect(tag).toContain(':tea-acting="teaActing !== null"')
+        expect(tag).toContain('@share="shareWithCustomers"')
+    })
+
+    it('shareWithCustomers names both mutation documents and chooses on the publication', () => {
+        const body = bodyOf('function shareWithCustomers')
+        expect(body).toContain('graphqlQueries.PublishReleaseOnTeaGql')
+        expect(body).toContain('graphqlQueries.RepublishReleaseOnTeaGql')
+        expect(body).toContain('teaView.value?.publication')
+    })
+
+    it('runTeaPublish runs the flow with the admin flag, withTeaProgress and the loading mark; withTeaProgress keeps three parameters', () => {
+        const body = bodyOf('async function runTeaPublish')
+        expect(body).toContain('runTeaPublishFlow(')
+        expect(body).toContain('isOrgAdmin.value')
+        expect(body).toContain('await withTeaProgress(act, view, async () => {')
+        expect(body).toContain('Swal.showLoading()')
+        expect(rv).toContain('async function withTeaProgress (act: TeaAct, view: any, run: () => Promise<void>)')
+    })
+
+    it('OrgSettings has the TEA note after the third labeling text, bound to FDA_PROSE_TEA_NOTE, which equals its literal', async () => {
+        const os = read('./OrgSettings.vue')
+        const input = os.indexOf('v-model:value="orgSettings.fdaRiskIncreasesNotice"')
+        const note = os.indexOf('data-testid="fda-prose-tea-note"')
+        const nextComment = os.indexOf('<!-- ITS OWN SECTION', input)
+        expect(input).toBeGreaterThan(0)
+        expect(note).toBeGreaterThan(input)
+        expect(note).toBeLessThan(nextComment)
+        expect(os.slice(note, os.indexOf('\n', note))).toContain('{{ FDA_PROSE_TEA_NOTE }}')
+        const { FDA_PROSE_TEA_NOTE } = await import('@/utils/fdaProseInput')
+        expect(FDA_PROSE_TEA_NOTE).toBe('These three labeling texts are published in the device support statement on TEA, to '
+            + 'public readers when the TEA settings are public. Write a reference as a document number, or as a link that needs '
+            + "the reader's own sign-in.")
+    })
+
+    it('App.vue keeps the partial list one line per child', () => {
+        const app = read('../App.vue')
+        expect(app).toMatch(/\.tea-partial-children \{[^}]*white-space: pre-line;/)
+    })
+})

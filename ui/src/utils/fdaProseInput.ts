@@ -67,3 +67,11 @@ export function proseBaselineFrom (settings: FdaProseState | null | undefined): 
     for (const f of FDA_PROSE_FIELDS) out[f] = (settings?.[f] || '')
     return out
 }
+
+/**
+ * The line beside the three labeling texts (FDAW-39 3.8, FDAW-35's hand-over): they are published in
+ * the device support statement on TEA, to public readers too.
+ */
+export const FDA_PROSE_TEA_NOTE = 'These three labeling texts are published in the device support statement on TEA, '
+    + 'to public readers when the TEA settings are public. Write a reference as a document number, or as a link that '
+    + "needs the reader's own sign-in."

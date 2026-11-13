@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import ts from 'typescript'
 import { withoutHtmlComments } from '@/utils/specText'
 import { teaProfilesAvailable } from '@/utils/teaProfile'
+import { loadTeaDocument } from '@/utils/teaDocuments'
 import {
     outputEventTypeLabel, teaActionNames, teaConfirmBeforeAutoPublish, teaConfirmBeforeGlobalAutoPublish,
     teaOrgPublicBadgeTitle, teaOrgPublicSources, teaPublicBadgeTitle, teaPublishWiringAdded,
@@ -74,7 +75,7 @@ describe('ComponentView: confirmTeaPublishWiring after the fresh read (T-1)', ()
         const fire = vi.fn(async (_opts: any) => o.answer)
         const notify = vi.fn()
         const refs = {
-            teaProfilesAvailable, teaPublishWiringAdded, teaConfirmBeforeAutoPublish, teaActionNames,
+            teaProfilesAvailable, teaPublishWiringAdded, teaConfirmBeforeAutoPublish, teaActionNames, loadTeaDocument,
             myUser: { installationType: o.edition ?? 'SAAS' },
             policyGlobalInputEvents: { value: [] },
             policyGlobalOutputEvents: { value: [] },
@@ -295,7 +296,7 @@ describe('OrgSettings: loadTeaOrgExposure reads both documents fresh (T-2)', () 
     function rig (o: { writable?: boolean, fails?: boolean, edition?: string, rows?: any[] }) {
         const queries: any[] = []
         const refs = {
-            teaProfilesAvailable, teaOrgPublicSources,
+            teaProfilesAvailable, teaOrgPublicSources, loadTeaDocument,
             myUser: { value: { installationType: o.edition ?? 'SAAS' } },
             isWritable: { value: o.writable ?? true },
             teaOrgSources: { value: 'stale' as any },

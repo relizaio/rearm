@@ -5,7 +5,7 @@
 // .vue files so the specs pin them.
 
 import { isProEdition } from './editionCapabilities'
-import { LISTED_NAMES, Option, TeaConfirm, teaSourceLabel } from './teaProfile'
+import { isCounted, listedNames, Option, TEA_DOCUMENT_KINDS, TeaConfirm, teaSourceLabel } from './teaProfile'
 
 /** A resolved TEA profile as teaProfileEditorView answers it (TEA_RESOLVED_PROFILE_GQL). */
 export interface TeaResolvedView {
@@ -22,6 +22,8 @@ export interface TeaEditorView {
     effective?: TeaResolvedView | null
     parent?: TeaResolvedView | null
     publishedReleases?: number | null
+    /** The collection versions of those releases (FDAW-38); absent on a backend without the field. */
+    publishedVersions?: number | null
     [field: string]: any
 }
 
@@ -71,7 +73,14 @@ export function teaScopeIsPublic (view: TeaEditorView | null | undefined): boole
 }
 
 /** What resolves PUBLIC in an organization, for the policy page: its own profile, and PUBLIC rows by scope. */
-export interface TeaOrgPublicSources { organization: boolean, perspectives: number, components: number, publishedReleases: number }
+export interface TeaOrgPublicSources {
+    organization: boolean
+    perspectives: number
+    components: number
+    publishedReleases: number
+    /** Copied from the organization view only when it is a number (FDAW-39 3.6). */
+    publishedVersions?: number
+}
 
 /**
  * null when nothing in the organization resolves PUBLIC. `organization` is the organization's own effective
@@ -89,7 +98,9 @@ export function teaOrgPublicSources (orgView: TeaEditorView | null | undefined, 
         else if (r.scope === 'COMPONENT') components++
     }
     if (!organization && perspectives === 0 && components === 0) return null
-    return { organization, perspectives, components, publishedReleases: Number(orgView?.publishedReleases ?? 0) }
+    const sources: TeaOrgPublicSources = { organization, perspectives, components, publishedReleases: Number(orgView?.publishedReleases ?? 0) }
+    if (typeof orgView?.publishedVersions === 'number') sources.publishedVersions = orgView.publishedVersions
+    return sources
 }
 
 const list = (v: any): string[] => (Array.isArray(v) ? v.filter((x: any) => typeof x === 'string') : [])
@@ -166,10 +177,26 @@ export function teaActionNames (added: string[], outputTriggers: any[], globals:
 const AUTO_PUBLISH_TITLE = 'Publish automatically to the public?'
 const AUTO_PUBLISH_BUTTON = 'Publish publicly'
 
-function listedNames (names: string[]): string {
-    const listed = names.slice(0, LISTED_NAMES).join(', ')
-    return names.length > LISTED_NAMES ? listed + ', and ' + (names.length - LISTED_NAMES) + ' more' : listed
+/** The component clause with the collection version count (FDAW-39 3.6), with its leading space. */
+export function TEA_ACTION_COUNTED (releases: number, versions: number): string {
+    return ' ' + releases + ' release(s), with all ' + versions + ' of their collection versions and every document in them '
+        + TEA_DOCUMENT_KINDS + ', are already published under this profile; every release the action publishes joins them.'
 }
+
+/** The component clause where the count is served and nothing is published yet, with its leading space. */
+export const TEA_ACTION_NONE_YET = ' No release is published under this profile yet; every release the action publishes '
+    + 'will be public, with every document in it ' + TEA_DOCUMENT_KINDS + '.'
+
+/** The organization clause with the count, with its trailing space. */
+export function TEA_GLOBAL_ACTION_COUNTED (releases: number, versions: number): string {
+    return releases + ' published release(s), with all ' + versions + ' of their collection versions and every document '
+        + 'in them ' + TEA_DOCUMENT_KINDS + ', are already under the organization profile, and every release the action '
+        + 'publishes joins them. '
+}
+
+/** The organization clause where the count is served and nothing is published yet; it continues a sentence. */
+export const TEA_GLOBAL_ACTION_NONE_YET = 'no release is published under the organization profile yet, and every release '
+    + 'the action publishes will be public, with every document in it ' + TEA_DOCUMENT_KINDS + '. '
 
 function sourceOf (view: TeaEditorView, names: Record<string, string>): string {
     return teaSourceLabel(view.effective?.source, view.effective?.sourceObject, names)
@@ -188,9 +215,16 @@ export function teaConfirmBeforeAutoPublish (view: TeaEditorView | null | undefi
         + sourceOf(view, names) + ': everything they publish is readable by anyone who knows the TEA URL.'
     if (view.effective?.source === 'COMPONENT') {
         const n = Number(view.publishedReleases ?? 0)
-        text += n
-            ? ' ' + n + ' release(s) are already published under this profile; every release the action publishes joins them.'
-            : ' No release is published under this profile yet; every release the action publishes will be public.'
+        const m = view.publishedVersions
+        if (n) {
+            text += isCounted(m)
+                ? TEA_ACTION_COUNTED(n, m as number)
+                : ' ' + n + ' release(s) are already published under this profile; every release the action publishes joins them.'
+        } else {
+            text += typeof m === 'number'
+                ? TEA_ACTION_NONE_YET
+                : ' No release is published under this profile yet; every release the action publishes will be public.'
+        }
     }
     return { title: AUTO_PUBLISH_TITLE, text, confirmButtonText: AUTO_PUBLISH_BUTTON }
 }
@@ -202,10 +236,19 @@ export function teaConfirmBeforeGlobalAutoPublish (sources: TeaOrgPublicSources 
         + 'for every component on this approval policy. '
     if (sources.organization) {
         const n = Number(sources.publishedReleases ?? 0)
+        const m = sources.publishedVersions
+        let clause: string
+        if (n) {
+            clause = isCounted(m)
+                ? TEA_GLOBAL_ACTION_COUNTED(n, m as number)
+                : n + ' published release(s) are already under the organization profile, and every release the action publishes joins them. '
+        } else {
+            clause = typeof m === 'number'
+                ? TEA_GLOBAL_ACTION_NONE_YET
+                : 'no release is published under the organization profile yet, and every release the action publishes will be public. '
+        }
         text += "The organization's TEA profile is PUBLIC, so every component without a PRIVATE profile of its own publishes publicly; "
-            + (n
-                ? n + ' published release(s) are already under the organization profile, and every release the action publishes joins them. '
-                : 'no release is published under the organization profile yet, and every release the action publishes will be public. ')
+            + clause
     }
     if (sources.perspectives > 0) {
         text += sources.perspectives + ' perspective profile(s) are PUBLIC: components in those perspectives publish publicly. '
