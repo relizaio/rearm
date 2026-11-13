@@ -23,10 +23,6 @@ The user will then need to log in with their new password to the ReARM instance.
 - Otherwise, with the default setting, **Refuse sign-in**, the login is refused with a message that no ReARM role is assigned (reference `NO-ROLE`), unless the user holds a pending invitation to an organization. Add the user to a connected Keycloak group in the `Groups` step above, or switch the setting to **Create account without a role**.
 - With **Create account without a role**, once they log in and accept terms and conditions, they join your main organization with no allocated permissions. To set permissions, in ReARM, in the left menu, click on the `Organization Settings` section, then click on the `Users` tab on top. Click on the pencil icon next to the user and assign desired permissions.
 
-A user with a permission above `None` takes a license seat. See [License Seats](/configure/license-seats.md).
-
 
 ### User Deletion
 Note, that if you delete a user from the Admin console, they will not be able to log in to ReARM even if they still have permissions in the `Organization Settings` view of ReARM.
-
-Deleting or disabling a user in the Admin console does not free their license seat: their ReARM account stays active and keeps it. To free the seat, also inactivate the user in ReARM (`Organization Settings` > `Users`, pencil icon, `Inactivate User`). See [License Seats](/configure/license-seats.md#disabling-a-user-in-the-identity-provider-does-not-free-a-seat).
