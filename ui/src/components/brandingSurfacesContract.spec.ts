@@ -107,7 +107,7 @@ describe('branding surfaces contract', () => {
         const added = ['utils/branding.ts', 'utils/branding.fixtures.ts', 'components/NavBrand.vue',
             'components/AppFooter.vue', 'utils/branding.spec.ts', 'components/NavBrand.spec.ts',
             'components/AppFooter.spec.ts', 'components/brandingSurfacesContract.spec.ts']
-            .map(f => resolve(SRC, f)).concat(resolve(DOCS, 'configure/branding.md'))
+            .map(f => resolve(SRC, f))
         // Built from parts, so this spec does not name them either.
         const names = [['rearm', 'saas'], ['rearm', 'core']].map(p => p.join('-')).concat(['backend', 'ai-plans'].join('/'))
         for (const f of added) {
@@ -116,15 +116,9 @@ describe('branding surfaces contract', () => {
         }
     })
 
-    it('34e: the docs page exists, is in the sidebar, and names the settings', () => {
-        expect(readFileSync(resolve(DOCS, '.vitepress/config.mjs'), 'utf8')).toContain("'/configure/branding'")
-        const page = resolve(DOCS, 'configure/branding.md')
-        expect(existsSync(page)).toBe(true)
-        const md = readFileSync(page, 'utf8')
-        for (const s of ['brandingPreset', 'BRANDING_PRESET', 'RELIZAPROP_BRANDING_PRESET', 'REARM_BRANDING_PRESET',
-            'medware', 'Community Edition', 'plain background']) {
-            expect(md).toContain(s)
-        }
-        expect(md).not.toContain('example')
+    it('34e: the public documentation site has no branding page and no sidebar entry for one', () => {
+        // Branding presets are a ReARM Pro internal: the public site does not document them.
+        expect(existsSync(resolve(DOCS, 'configure/branding.md'))).toBe(false)
+        expect(readFileSync(resolve(DOCS, '.vitepress/config.mjs'), 'utf8')).not.toContain("'/configure/branding'")
     })
 })
