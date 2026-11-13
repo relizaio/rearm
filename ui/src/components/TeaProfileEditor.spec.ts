@@ -31,7 +31,7 @@ const { teaBuiltInDefaults, TEA_PROFILE_FIELDS } = await import('@/utils/teaProf
 
 const P1 = { uuid: 'p1', name: 'Payments', type: 'PERSPECTIVE' }
 const P2 = { uuid: 'p2', name: 'Retail', type: 'PERSPECTIVE' }
-const profile = (changes: Record<string, any> = {}) => ({ ...teaBuiltInDefaults(), uuid: 'row', ...changes })
+const profile = (changes: Record<string, any> = {}) => ({ ...teaBuiltInDefaults(), autoPublish: 'DISABLED', autoPublishState: 'OFF', uuid: 'row', ...changes })
 const resolved = (source: string, p: any, sourceObject: string | null = null) =>
     ({ status: 'RESOLVED', source, sourceObject, profile: p, conflictingPerspectives: [] })
 
@@ -533,7 +533,7 @@ describe('TeaProfileEditor', () => {
             await w.find('[data-testid="tea-save"]').trigger('click')
             await flushPromises()
             const sent = mutate.mock.calls[0][0].variables.profile
-            expect(Object.keys(sent).sort()).toEqual([...TEA_PROFILE_FIELDS, 'mode'].sort())
+            expect(Object.keys(sent).sort()).toEqual([...TEA_PROFILE_FIELDS, 'autoPublish', 'mode'].sort())
             expect(sent.profiles).toEqual(['top', 'default'])
 
             mutate.mockClear()

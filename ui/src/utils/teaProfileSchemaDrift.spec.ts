@@ -13,6 +13,7 @@ import { outputEventTypeOptionsForEdition, TEA_OUTPUT_EVENT_TYPE_OPTIONS } from 
 import profilesQueries from './profilesQueries'
 import { MEDICAL_DEVICE_SETUP_STATUS_QUERY, SET_UP_MEDICAL_DEVICE } from './medicalDeviceSetup'
 import { withoutAdditiveFields } from './graphqlDriftFallback'
+import { teaCoreDocument } from './teaDocuments'
 import { COMPONENT_DEVICE_WINDOW_QUERY } from './componentDeviceWindow'
 import submissionQueries from './submissionQueries'
 import { PACKAGE_SELECTION_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, regulatoryPackagesAvailable } from './packageSettings'
@@ -74,7 +75,7 @@ describe('TEA profile documents and the edition gate', () => {
     })
 
     it('the CE schema answers either every TEA document or none, so the one gate covers them all', () => {
-        const valid = Object.values(DOCS).map(d => validate(ceSchema, d).length === 0)
+        const valid = Object.values(DOCS).map(d => validate(ceSchema, teaCoreDocument(d)).length === 0)
         expect(valid.every(v => v === ceServesTea())).toBe(true)
     })
 
@@ -84,7 +85,7 @@ describe('TEA profile documents and the edition gate', () => {
     })
 
     it('the membership dry-run is one of the documents the CE schema does not serve', () => {
-        expect(validate(ceSchema, DOCS.TeaMembershipExposureChangeGql).length > 0).toBe(!ceServesTea())
+        expect(validate(ceSchema, teaCoreDocument(DOCS.TeaMembershipExposureChangeGql)).length > 0).toBe(!ceServesTea())
     })
 
     it.runIf(proSchema)('every TEA document validates against the Pro schema', () => {

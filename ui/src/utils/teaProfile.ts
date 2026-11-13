@@ -140,6 +140,28 @@ export const TEA_FIELD_HELP: Record<string, string> = {
     tei: 'Stamps a TEI onto the release identifiers at publish.',
     profiles: 'The SBOM profiles this scope publishes, one aggregated SBOM each, in this order; every name must '
         + 'resolve at this scope while publishing is ENABLED.',
+    autoPublish: 'When on, a release is published on TEA when it reaches Shipped and published again each time it '
+        + 'changes after that. When off, publishing is left to the Publish button and to approval-policy actions. '
+        + 'Turning it on needs the Publish Externally (TEA) permission.',
+    packageProfile: "A device with a regulatory package also publishes under its package's SBOM profile, so "
+        + 'customers can pin the serial the package carries.',
+}
+
+/** Publish at shipped (FDAW-39, design 3.3): the editor's label of the TeaAutoPublish field. */
+export const TEA_AUTO_PUBLISH_LABEL = 'Publish at shipped'
+
+/** The two values of TeaAutoPublish, in this order. */
+export const TEA_AUTO_PUBLISH_OPTIONS: Option[] = [
+    opt('DISABLED', 'Off: publish by hand or by an approval-policy action'),
+    opt('AT_SHIPPED', 'On: publish when the release reaches Shipped'),
+]
+
+/** Added to the help on CE: the setting is stored there, and only Pro publishes on it. */
+export const TEA_AUTO_PUBLISH_CE_SUFFIX = ' Takes effect on ReARM Pro.'
+
+/** The help under the publish-at-shipped field; on CE (OSS) with the suffix. */
+export function teaAutoPublishHelp (installationType: string | null | undefined): string {
+    return TEA_FIELD_HELP.autoPublish + (installationType === 'OSS' ? TEA_AUTO_PUBLISH_CE_SUFFIX : '')
 }
 
 /**
@@ -160,6 +182,7 @@ export interface TeaProfileForm {
     tei: string
     teiDomain: string | null
     profiles: string[]
+    autoPublish: string
 }
 
 /** The built-in defaults: the profile every organization has before it saves one. */
@@ -175,6 +198,7 @@ export function teaBuiltInDefaults (): TeaProfileForm {
         tei: 'DISABLED',
         teiDomain: null,
         profiles: ['default'],
+        autoPublish: 'AT_SHIPPED',
     }
 }
 
@@ -185,6 +209,7 @@ function fieldsOf (p: any): Omit<TeaProfileForm, 'mode' | 'followedPerspective'>
         const v = p?.[f]
         out[f] = Array.isArray(v) ? [...v] : (v ?? (d as any)[f])
     }
+    out.autoPublish = p?.autoPublish ?? d.autoPublish
     return out
 }
 
@@ -212,8 +237,11 @@ export function teaInheritedForm (view: any): TeaProfileForm {
 /**
  * The TeaProfileInput a save sends: a FOLLOW row sends its mode and perspective only. `profiles` is
  * sent as a copy in the picker's order; on CE (OSS) the first name only, the CE rule of exactly one.
+ * `additive`: the backend serves publish at shipped, so the input carries `autoPublish` (an absent
+ * field saves it off, FDAW-39 3.1); false, the default, for a backend that may not know the field.
  */
-export function teaProfileInput (form: TeaProfileForm, scope: TeaScope, installationType?: string | null): Record<string, any> {
+export function teaProfileInput (form: TeaProfileForm, scope: TeaScope, installationType?: string | null,
+    additive = false): Record<string, any> {
     if (form.mode === TEA_INHERIT) throw new Error('INHERIT is not stored: inheriting again removes the row')
     if (scope === 'COMPONENT' && form.mode === 'FOLLOW_PERSPECTIVE') {
         return { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: form.followedPerspective }
@@ -227,6 +255,7 @@ export function teaProfileInput (form: TeaProfileForm, scope: TeaScope, installa
     out.teiDomain = form.tei === 'UUID' ? (form.teiDomain || null) : null
     // CE stores every TEA profile with the one `default` SBOM profile, whatever the form holds.
     out.profiles = installationType === 'OSS' ? [CE_SBOM_PROFILE] : [...(form.profiles ?? [])]
+    if (additive === true) out.autoPublish = form.autoPublish
     return out
 }
 
@@ -293,11 +322,63 @@ export function teaPublicBanner (view: any, names: Record<string, string> = {}):
     return null
 }
 
-/** The confirmation before a save makes a profile PUBLIC. */
-export function teaPublicConfirmText (publishedReleases: number): string {
+/**
+ * The state of publish at shipped on the row the editor shows (FDAW-39 3.4): a stored row with its own
+ * fields decides by its own state; a FOLLOW_PERSPECTIVE row and no row at all by the effective profile.
+ */
+export function teaShownAutoPublishState (view: any): string | undefined {
+    const stored = view?.stored
+    if (stored && stored.mode !== 'FOLLOW_PERSPECTIVE') return stored.autoPublishState ?? undefined
+    return view?.effective?.profile?.autoPublishState ?? undefined
+}
+
+/** Publish at shipped is paused on the row itself: its settings changed since a holder confirmed them. */
+export function TEA_AUTO_PUBLISH_PAUSED_OWN (scopeWord: string): string {
+    return 'Publish at shipped is paused: these settings changed since a holder confirmed them. Save them as a holder '
+        + 'of Publish Externally (TEA) on this ' + scopeWord + ', or as an organization admin, to resume.'
+}
+
+/** Publish at shipped is paused on the row this scope inherits or follows. */
+export function TEA_AUTO_PUBLISH_PAUSED_INHERITED (source: string, scopeWord: string): string {
+    return 'Publish at shipped is paused in the TEA profile of ' + source + ' that this ' + scopeWord
+        + ' resolves to. A holder of Publish Externally (TEA), or an organization admin, saves that profile to resume.'
+}
+
+/** The paused banner (FDAW-39 3.4), or null unless the shown row's state is NEEDS_CONFIRMATION. */
+export function teaAutoPublishBanner (view: any, scopeWord: string, names: Record<string, string> = {}): string | null {
+    if (teaShownAutoPublishState(view) !== 'NEEDS_CONFIRMATION') return null
+    const stored = view?.stored
+    if (stored && stored.mode !== 'FOLLOW_PERSPECTIVE') return TEA_AUTO_PUBLISH_PAUSED_OWN(scopeWord)
+    return TEA_AUTO_PUBLISH_PAUSED_INHERITED(teaSourceLabel(view?.effective?.source, view?.effective?.sourceObject, names), scopeWord)
+}
+
+/** The kinds of documents a published collection version carries, as the Public confirmations name them. */
+export const TEA_DOCUMENT_KINDS = '(SBOMs, VEX documents, device support statements, published artifacts)'
+
+/** The Public confirmation's count where the backend serves the collection version count (FDAW-39 3.6). */
+export function TEA_PUBLIC_CONFIRM_COUNTED (releases: number, versions: number): string {
+    return releases + ' published release(s) resolving to this profile, with all ' + versions + ' of their collection '
+        + 'versions, earlier versions included, and every document in them ' + TEA_DOCUMENT_KINDS + ', become readable '
+        + 'by anyone who knows the TEA URL as soon as you save; visibility is live.'
+}
+
+/** The Public confirmation where the backend serves the count and nothing is published yet. */
+export const TEA_PUBLIC_CONFIRM_NONE_YET = 'No release is published under this profile yet; every future publication '
+    + 'under it will be public. Every version published under it later will be public, with every document in it '
+    + TEA_DOCUMENT_KINDS + '.'
+
+const isCounted = (n: unknown): boolean => typeof n === 'number' && n > 0
+
+/**
+ * The confirmation before a save makes a profile PUBLIC. With the collection version count (FDAW-39
+ * 3.6) it names the versions and the document kinds; without it (an older backend) today's words.
+ */
+export function teaPublicConfirmText (publishedReleases: number | null | undefined, publishedVersions?: number | null): string {
     if (!publishedReleases) {
+        if (typeof publishedVersions === 'number') return TEA_PUBLIC_CONFIRM_NONE_YET
         return 'No release is published under this profile yet; every future publication under it will be public.'
     }
+    if (isCounted(publishedVersions)) return TEA_PUBLIC_CONFIRM_COUNTED(publishedReleases, publishedVersions as number)
     return publishedReleases + ' published release(s) resolving to this profile become readable by anyone who knows '
         + 'the TEA URL as soon as you save; visibility is live.'
 }
@@ -316,6 +397,12 @@ export interface TeaExposureChange {
     publishedReleases: number
     /** The other components the write makes PUBLIC (a perspective-row removal, TEA-9 round 2). */
     widened?: TeaWidenedComponent[] | null
+    /** The collection versions of the published releases (FDAW-38); absent on a backend without the field. */
+    publishedVersions?: number | null
+    /** Whether the write starts publish at shipped for the object (FDAW-57); absent on an older backend. */
+    autoPublishStarts?: boolean | null
+    /** The members of a perspective whose removal starts publish at shipped for them, in name order. */
+    autoPublishStartsFor?: TeaWidenedComponent[] | null
 }
 
 /** A component, other than the assessed object, that the write makes PUBLIC. */
@@ -357,12 +444,97 @@ export function teaConfirmBeforeSave (exposure: TeaExposureChange | null | undef
         path = 'Following perspective ' + followed + ' resolves this ' + scopeWord + ' to the PUBLIC profile of '
             + teaSourceLabel(exposure.afterSource, exposure.afterSourceObject, names) + '. '
     }
-    return { title: PUBLIC_CONFIRM_TITLE, text: path + teaPublicConfirmText(exposure.publishedReleases),
+    return { title: PUBLIC_CONFIRM_TITLE, text: path + teaPublicConfirmText(exposure.publishedReleases, exposure.publishedVersions),
         confirmButtonText: 'Make it public' }
 }
 
 /** How many names a confirmation lists before it says "and <N> more". */
 export const LISTED_NAMES = 5
+
+/** The first LISTED_NAMES names, then ", and <n> more". */
+function listedNames (names: string[]): string {
+    const listed = names.slice(0, LISTED_NAMES).join(', ')
+    return names.length > LISTED_NAMES ? listed + ', and ' + (names.length - LISTED_NAMES) + ' more' : listed
+}
+
+export const TEA_TURN_ON_TITLE = 'Turn on publish at shipped?'
+export const TEA_TURN_ON_BUTTON = 'Turn on'
+export const TEA_MEMBERSHIP_BUTTON = 'Change perspectives'
+
+/** What turning publish at shipped on does, said before a save that starts it (FDAW-39 3.5). */
+export const TEA_TURN_ON_TEXT = 'Saving publishes nothing by itself. A release already at Shipped or later under this '
+    + 'profile is published the next time it changes (it is saved, its lifecycle changes or its vulnerability findings '
+    + 'change), unless it is hidden on TEA. After that, every such change publishes it again; a change that leaves the '
+    + 'published documents as they are adds no version. Component releases resolving to this profile are published on '
+    + 'their own when they ship; a product published later lists them as already published.'
+
+/** The lead of the turn-on confirmation of a FOLLOW_PERSPECTIVE save, with its trailing space. */
+export function TEA_TURN_ON_FOLLOW_LEAD (followed: string, scopeWord: string, source: string): string {
+    return 'Following perspective ' + followed + ' turns on publish at shipped for this ' + scopeWord
+        + ' through the TEA profile of ' + source + '. '
+}
+
+export function TEA_START_REMOVAL_OBJECT (scopeWord: string, source: string): string {
+    return 'Removing this override turns on publish at shipped for this ' + scopeWord + ' through the TEA profile of '
+        + source + '; its releases at Shipped or later are published the next time they change.'
+}
+
+export function TEA_START_REMOVAL_MEMBERS (count: number, names: string): string {
+    return 'Removing this override turns on publish at shipped for ' + count + ' component(s) of this perspective: '
+        + names + '; their releases at Shipped or later are published the next time they change.'
+}
+
+export function TEA_START_MEMBERSHIP (scopeWord: string, what: string, source: string): string {
+    return 'Changing this ' + scopeWord + "'s perspectives" + what + ' turns on publish at shipped for it through the '
+        + 'TEA profile of ' + source + '; its releases at Shipped or later are published the next time they change.'
+}
+
+/**
+ * Whether a save of `input` starts publish at shipped here: it turns publishing on with AT_SHIPPED
+ * while the shown row is not already firing (a paused row counts as not firing). An input without
+ * `autoPublish` (a backend without the field) never does.
+ */
+export function teaWouldStartAutoPublish (view: any, input: Record<string, any> | null | undefined): boolean {
+    return input?.publishing === 'ENABLED' && input?.autoPublish === 'AT_SHIPPED'
+        && teaShownAutoPublishState(view) !== 'ARMED'
+}
+
+/**
+ * The turn-on confirmation before a save, or null. A FOLLOW_PERSPECTIVE save asks exactly when the
+ * server's dry-run says it starts (the only save it computes that for); every other save asks on
+ * teaWouldStartAutoPublish.
+ */
+export function teaTurnOnConfirm (view: any, input: Record<string, any> | null | undefined,
+    exposure: TeaExposureChange | null | undefined, scopeWord: string, names: Record<string, string> = {}): TeaConfirm | null {
+    if (input?.mode === 'FOLLOW_PERSPECTIVE') {
+        if (exposure?.autoPublishStarts !== true) return null
+        const followed = input.followedPerspective
+        const lead = TEA_TURN_ON_FOLLOW_LEAD((followed && names[followed]) || followed || '', scopeWord,
+            teaSourceLabel(exposure.afterSource, exposure.afterSourceObject, names))
+        return { title: TEA_TURN_ON_TITLE, text: lead + TEA_TURN_ON_TEXT, confirmButtonText: TEA_TURN_ON_BUTTON }
+    }
+    if (!teaWouldStartAutoPublish(view, input)) return null
+    return { title: TEA_TURN_ON_TITLE, text: TEA_TURN_ON_TEXT, confirmButtonText: TEA_TURN_ON_BUTTON }
+}
+
+/** Whether the dry-run says the write starts publish at shipped, for the object or for members. */
+export function teaStartsAutoPublish (exposure: TeaExposureChange | null | undefined): boolean {
+    return exposure?.autoPublishStarts === true || (exposure?.autoPublishStartsFor?.length ?? 0) > 0
+}
+
+/**
+ * The sentence a removal or a membership change adds when it starts publish at shipped, or null.
+ * `what` is the membership change's bracket (" (adding Payments)").
+ */
+export function teaAutoPublishStartText (exposure: TeaExposureChange | null | undefined, kind: 'removal' | 'membership',
+    scopeWord: string, names: Record<string, string> = {}, what = ''): string | null {
+    if (!exposure || !teaStartsAutoPublish(exposure)) return null
+    const source = teaSourceLabel(exposure.afterSource, exposure.afterSourceObject, names)
+    if (kind === 'membership') return TEA_START_MEMBERSHIP(scopeWord, what, source)
+    const members = exposure.autoPublishStartsFor ?? []
+    if (members.length) return TEA_START_REMOVAL_MEMBERS(members.length, listedNames(members.map(m => m.name)))
+    return TEA_START_REMOVAL_OBJECT(scopeWord, source)
+}
 
 /**
  * The confirmation before a removal: the plain one, or the PUBLIC one when the parent it falls
@@ -371,9 +543,11 @@ export const LISTED_NAMES = 5
  */
 export function teaConfirmBeforeRemoval (exposure: TeaExposureChange | null | undefined, scopeWord: string,
     names: Record<string, string> = {}): TeaConfirm {
+    const start = teaAutoPublishStartText(exposure, 'removal', scopeWord, names)
+    const withStart = (text: string) => start ? text + ' ' + start : text
     if (!exposure || !teaNeedsPublicConfirm(exposure)) {
         return { title: 'Remove this TEA profile override?',
-            text: 'The ' + scopeWord + ' then resolves its TEA profile from its parent again.', confirmButtonText: 'Remove' }
+            text: withStart('The ' + scopeWord + ' then resolves its TEA profile from its parent again.'), confirmButtonText: 'Remove' }
     }
     const widened = exposure.widened ?? []
     const objectWidens = teaObjectWidens(exposure)
@@ -387,7 +561,7 @@ export function teaConfirmBeforeRemoval (exposure: TeaExposureChange | null | un
         text += 'Removing the override lets this ' + scopeWord + ' resolve to the PUBLIC profile of '
             + teaSourceLabel(exposure.afterSource, exposure.afterSourceObject, names) + '. '
     }
-    return { title: PUBLIC_CONFIRM_TITLE, text: text + teaPublicConfirmText(exposure.publishedReleases),
+    return { title: PUBLIC_CONFIRM_TITLE, text: withStart(text + teaPublicConfirmText(exposure.publishedReleases, exposure.publishedVersions)),
         confirmButtonText: objectWidens ? 'Remove and make it public' : 'Remove and make them public' }
 }
 
@@ -431,16 +605,20 @@ export function teaMembershipDelta (next: string[], current: TeaPerspectiveRef[]
  */
 export function teaConfirmBeforeMembership (exposure: TeaExposureChange | null | undefined, added: string[],
     removed: string[], names: Record<string, string> = {}, scopeWord = 'component'): TeaConfirm | null {
-    if (!exposure || !teaNeedsPublicConfirm(exposure)) return null
+    if (!exposure) return null
     const changes = [
         ...(added.length ? ['adding ' + added.join(', ')] : []),
         ...(removed.length ? ['removing ' + removed.join(', ')] : []),
     ]
     const what = changes.length ? ' (' + changes.join('; ') + ')' : ''
-    return { title: 'Make this ' + scopeWord + ' public?',
-        text: 'Changing this ' + scopeWord + "'s perspectives" + what + ' resolves it to the PUBLIC profile of '
-            + teaSourceLabel(exposure.afterSource, exposure.afterSourceObject, names) + '. '
-            + teaPublicConfirmText(exposure.publishedReleases),
+    const start = teaAutoPublishStartText(exposure, 'membership', scopeWord, names, what)
+    if (!teaNeedsPublicConfirm(exposure)) {
+        return start ? { title: TEA_TURN_ON_TITLE, text: start, confirmButtonText: TEA_MEMBERSHIP_BUTTON } : null
+    }
+    const text = 'Changing this ' + scopeWord + "'s perspectives" + what + ' resolves it to the PUBLIC profile of '
+        + teaSourceLabel(exposure.afterSource, exposure.afterSourceObject, names) + '. '
+        + teaPublicConfirmText(exposure.publishedReleases, exposure.publishedVersions)
+    return { title: 'Make this ' + scopeWord + ' public?', text: start ? text + ' ' + start : text,
         confirmButtonText: 'Make it public' }
 }
 

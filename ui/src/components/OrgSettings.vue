@@ -1196,6 +1196,7 @@
                                         type="textarea" :rows="3" style="max-width: 760px;"
                                         placeholder="Cybersecurity risk to users can be expected to increase after end of support." />
                                 </n-form-item>
+                                <p data-testid="fda-prose-tea-note" class="text-muted" style="max-width: 760px;">{{ FDA_PROSE_TEA_NOTE }}</p>
 
                                 <!-- ITS OWN SECTION, AFTER all three labeling slots.
                                      It previously sat between slot 2 and slot 3, which read as a
@@ -1517,7 +1518,7 @@ import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderP
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions from '@/utils/commonFunctions'
-import { FDA_PROSE_FIELDS, FDA_PROSE_MAX_LENGTH, proseDiff, proseBaselineFrom } from '@/utils/fdaProseInput'
+import { FDA_PROSE_FIELDS, FDA_PROSE_MAX_LENGTH, FDA_PROSE_TEA_NOTE, proseDiff, proseBaselineFrom } from '@/utils/fdaProseInput'
 import { organizationToCommit, supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import { addPerspectiveToComponent } from '@/utils/perspectiveMembership'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
@@ -1562,6 +1563,7 @@ import SbomProfileOverrides from './SbomProfileOverrides.vue'
 import PackageSettingsEditor from './PackageSettingsEditor.vue'
 import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
 import { teaConfirmBeforeMembership, teaMembershipDelta, teaProfilesAvailable } from '@/utils/teaProfile'
+import { loadTeaDocument } from '@/utils/teaDocuments'
 import { outputEventTypeLabel, outputEventTypeOptionsForEdition, teaConfirmBeforeGlobalAutoPublish, TeaEditorView,
     teaOrgPublicBadgeTitle, teaOrgPublicSources, TeaOrgPublicSources, TeaProfileRow } from '@/utils/teaOutputEvents'
 import TeaProfileEditor from './TeaProfileEditor.vue'
@@ -3123,7 +3125,7 @@ async function confirmTeaMembershipAdd (componentUuid: string, scopeWord: 'compo
     })
     const current: any[] = storedResp.data.component?.perspectiveDetails ?? []
     const afterAdd: string[] = [...current.map((p: any) => p.uuid).filter((u: string) => u !== selectedPerspectiveUuid.value), selectedPerspectiveUuid.value]
-    const exposureResp: any = await graphqlClient.query({
+    const exposureResp: any = await loadTeaDocument(graphqlClient, {
         query: graphqlQueries.TeaMembershipExposureChangeGql,
         variables: { componentUuid, perspectiveUuids: afterAdd },
         fetchPolicy: 'no-cache'
@@ -6048,7 +6050,7 @@ async function loadTeaOrgExposure (): Promise<TeaOrgExposureRead | null> {
     }
     try {
         const [viewResp, rowsResp]: any[] = await Promise.all([
-            graphqlClient.query({ query: graphqlQueries.TeaProfileEditorViewGql, variables: { org: orgResolved.value, scope: 'ORGANIZATION', object: null }, fetchPolicy: 'no-cache' }),
+            loadTeaDocument(graphqlClient, { query: graphqlQueries.TeaProfileEditorViewGql, variables: { org: orgResolved.value, scope: 'ORGANIZATION', object: null }, fetchPolicy: 'no-cache' }),
             graphqlClient.query({ query: graphqlQueries.TeaProfilesOfOrgGql, variables: { org: orgResolved.value }, fetchPolicy: 'no-cache' }),
         ])
         const read: TeaOrgExposureRead = { view: viewResp.data.teaProfileEditorView ?? null, rows: rowsResp.data.teaProfilesOfOrg ?? [] }

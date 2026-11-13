@@ -1568,6 +1568,7 @@ import ProductSubmissionsPanel from './ProductSubmissionsPanel.vue'
 import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
 import { submissionsAvailable } from '@/utils/submissions'
 import { teaConfirmBeforeMembership, teaMembershipDelta, teaPublicBanner, teaProfilesAvailable } from '@/utils/teaProfile'
+import { loadTeaDocument } from '@/utils/teaDocuments'
 import { outputEventTypeLabel, outputEventTypeOptionsForEdition, teaConfirmBeforeAutoPublish, TeaEditorView, teaPublicBadgeTitle,
     teaActionNames, teaPublishWiring, teaPublishWiringAdded } from '@/utils/teaOutputEvents'
 import ComponentLocks from './ComponentLocks.vue'
@@ -1774,7 +1775,7 @@ async function loadTeaBanner () {
         return
     }
     try {
-        const resp: any = await graphqlClient.query({
+        const resp: any = await loadTeaDocument(graphqlClient, {
             query: graphqlQueries.TeaProfileEditorViewGql,
             variables: { org: orguuid.value, scope: 'COMPONENT', object: componentUuid },
             fetchPolicy: 'no-cache',
@@ -2523,7 +2524,7 @@ async function savePerspectives() {
         // TEA-9: a membership change that makes the component PUBLIC is confirmed first, on the
         // server's dry-run of exactly this list. A refusal (validation, archived) shows and stops.
         if (teaProfilesAvailable(myUser.installationType)) {
-            const exposureResp: any = await graphqlClient.query({
+            const exposureResp: any = await loadTeaDocument(graphqlClient, {
                 query: graphqlQueries.TeaMembershipExposureChangeGql,
                 variables: { componentUuid: componentUuid, perspectiveUuids: selectedPerspectives.value },
                 fetchPolicy: 'no-cache'
@@ -3246,7 +3247,7 @@ async function confirmTeaPublishWiring (): Promise<boolean> {
     if (added.length === 0) return true
     let view: TeaEditorView | null = null
     try {
-        const resp: any = await graphqlClient.query({
+        const resp: any = await loadTeaDocument(graphqlClient, {
             query: graphqlQueries.TeaProfileEditorViewGql,
             variables: { org: orguuid.value, scope: 'COMPONENT', object: componentUuid },
             fetchPolicy: 'no-cache',

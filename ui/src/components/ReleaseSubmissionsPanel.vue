@@ -32,6 +32,8 @@
                         :disabled="acts.busy.value" @click="startResubmit(headOf(k))">Resubmit</n-button>
                     <n-button v-if="headOf(k)?.state === 'FINAL'" size="tiny" type="error" data-testid="submission-withdraw"
                         :disabled="acts.busy.value" @click="acts.withdraw(headOf(k), actNames)">Cancel</n-button>
+                    <n-button v-if="shareState(k).shown" size="tiny" data-testid="submission-share"
+                        :disabled="shareState(k).disabled" :title="shareState(k).title" @click="share(k)">{{ TEA_SHARE_BUTTON }}</n-button>
                 </n-space>
             </div>
             <!-- The newest version's parts, downloads and manifest in the open, without the chevron
@@ -113,6 +115,7 @@ import {
 import { ArtifactDownloadRef, artifactDownloadUrl, downloadArtifactBytes, saveBlob } from '@/utils/artifactDownload'
 import { useSubmissionActs } from '@/utils/submissionActs'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
+import { TEA_SHARE_BUTTON, teaShareButtonState, type TeaShare } from '@/utils/teaPublication'
 import {
     NARRATIVE_CHOICE_ORGANIZATION, NARRATIVE_CHOICE_RELEASE, NO_ORG_NARRATIVE, NarrativeChoice, UPDATE_RELEASE_NARRATIVE_GQL,
     kindNeedsNarrative, narrativeChoiceError, narrativeChoiceVariables, narrativeInitialChoice, narrativeInitialText,
@@ -132,6 +135,8 @@ const props = withDefaults(defineProps<{
     names?: Record<string, string>
     narrativeOverride?: string | null
     orgNarrative?: string | null
+    teaView?: any
+    teaActing?: boolean
 }>(), {
     orgUuid: null,
     releaseUuid: null,
@@ -146,9 +151,11 @@ const props = withDefaults(defineProps<{
     names: () => ({}),
     narrativeOverride: null,
     orgNarrative: null,
+    teaView: null,
+    teaActing: false,
 })
 
-const emit = defineEmits<{ (e: 'narrative-saved', narrative: string): void }>()
+const emit = defineEmits<{ (e: 'narrative-saved', narrative: string): void, (e: 'share', share: TeaShare): void }>()
 
 const NOT_DOWNLOADABLE = 'not downloadable: no artifact version recorded'
 
@@ -253,6 +260,20 @@ function latestOf (kind: string): any {
     const latest = headOf(kind)?.latestVersion
     return versions.find((v: any) => v?.version === latest)
         ?? versions.reduce((a: any, b: any) => ((b?.version ?? 0) > (a?.version ?? 0) ? b : a))
+}
+
+/** Share with customers on the head of a kind (FDAW-39 3.8): shown from Final onward while the release's TEA settings publish. */
+function shareState (kind: string): { shown: boolean, disabled: boolean, title: string } {
+    return teaShareButtonState(props.teaView, headOf(kind), { writable: props.isWritable,
+        busy: props.teaActing || acts.busy.value })
+}
+
+/** The share click: the release page runs the TEA publish or re-publish with this head's facts. */
+function share (kind: string) {
+    if (shareState(kind).disabled) return
+    const head = headOf(kind)
+    emit('share', { kind, latestVersion: head?.latestVersion, state: head?.state,
+        profileName: latestOf(kind)?.sbomProfile?.name ?? null })
 }
 
 function versionRows (kind: string): any[] {

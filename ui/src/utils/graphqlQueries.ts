@@ -596,6 +596,8 @@ const TEA_PROFILE_FIELDS_GQL = `
     teiDomain
     profiles
     revision
+    autoPublish #additive-field
+    autoPublishState #additive-field
 `
 
 const TEA_RESOLVED_PROFILE_GQL = `
@@ -625,6 +627,7 @@ query TeaProfileEditorView($org: ID!, $scope: TeaProfileScope!, $object: ID) {
             ${TEA_RESOLVED_PROFILE_GQL}
         }
         publishedReleases
+        publishedVersions #additive-field
         supportInjection
     }
 }`
@@ -728,6 +731,9 @@ const TEA_EXPOSURE_CHANGE_FIELDS_GQL = `
         afterSource
         afterSourceObject
     }
+    publishedVersions #additive-field
+    autoPublishStarts #additive-field
+    autoPublishStartsFor { component name afterSource afterSourceObject } #additive-field
 `
 
 const TEA_PROFILE_EXPOSURE_CHANGE = gql`
@@ -887,6 +893,25 @@ query ReleaseTeaPublicationView($release: ID!) {
             ${TEA_PUBLISHED_COLLECTION_FIELDS_GQL}
         }
         publishing
+        profiles
+    }
+}`
+
+// The direct component releases a product publish would leave behind (FDAW-39, FDAW-38's field
+// resolver): read only when the publish or share dialog of a product that cascades needs the list.
+const RELEASE_TEA_PUBLISH_CHILDREN = gql`
+query ReleaseTeaPublishChildren($release: ID!) {
+    releaseTeaPublicationView(release: $release) {
+        release
+        children {
+            release
+            componentName
+            version
+            outcome
+            refusal
+            detail
+            ownRow
+        }
     }
 }`
 
@@ -2445,6 +2470,7 @@ export default {
     UnassignTeaHostGql: UNASSIGN_TEA_HOST,
     AllOrganizationsGql: ALL_ORGANIZATIONS,
     ReleaseTeaPublicationViewGql: RELEASE_TEA_PUBLICATION_VIEW,
+    ReleaseTeaPublishChildrenGql: RELEASE_TEA_PUBLISH_CHILDREN,
     PublishReleaseOnTeaGql: PUBLISH_RELEASE_ON_TEA,
     RepublishReleaseOnTeaGql: REPUBLISH_RELEASE_ON_TEA,
     HideReleaseOnTeaGql: HIDE_RELEASE_ON_TEA,
