@@ -134,7 +134,7 @@ export const TEA_TEI_OPTIONS: Option[] = [
 export const TEA_FIELD_HELP: Record<string, string> = {
     publishing: 'DISABLED conceals every release resolving to this profile and blocks new publishes.',
     visibility: 'Resolved at request time: switching it changes who can read what is already published.',
-    rawArtifacts: 'Which existing release artifacts ride along with a publication.',
+    rawArtifacts: 'Which existing release artifacts ride along with a publication. A VDR snapshot stored by a release action never does, whatever is chosen here.',
     productComponents: 'For a product: whether its component releases are published with it.',
     minimumLifecycle: 'The lifecycle a release must have reached before it can be published.',
     tei: 'Stamps a TEI onto the release identifiers at publish.',

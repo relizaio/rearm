@@ -128,6 +128,19 @@ describe('TeaProfileEditor', () => {
         expect(w.find('[data-testid="tea-reset"]').exists()).toBe(false)
     })
 
+    it('shows under the Raw artifacts select that a VDR snapshot never rides along (FDAW-80)', async () => {
+        const w = await mountWith(view())
+        const items = w.findAllComponents({ name: 'FormItem' })
+        const raw = items.find((i: any) => i.find('[data-testid="tea-raw-artifacts"]').exists())
+        expect(raw).toBeDefined()
+        expect(raw!.text()).toContain('Raw artifacts')
+        expect(raw!.text()).toContain('Which existing release artifacts ride along with a publication. '
+            + 'A VDR snapshot stored by a release action never does, whatever is chosen here.')
+        const publishing = items.find((i: any) => i.find('[data-testid="tea-publishing"]').exists())
+        expect(publishing).toBeDefined()
+        expect(publishing!.text()).not.toContain('VDR snapshot')
+    })
+
     it('names the perspective or the built-in defaults an INHERIT form comes from', async () => {
         const fromPerspective = await mountWith(view({ parent: resolved('PERSPECTIVE', profile(), 'p1') }))
         expect(fromPerspective.find('[data-testid="tea-source"]').text()).toBe('Inherited from perspective Payments')

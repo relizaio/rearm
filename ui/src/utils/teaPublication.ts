@@ -183,7 +183,7 @@ export function teaHideConfirm (view: any): TeaConfirm {
  */
 export const TEA_RIDE_ALONG_STATUSES = [
     'PUBLISHED', 'SKIPPED_NO_RAW_BYTES', 'SKIPPED_NO_CHECKSUM', 'SKIPPED_VERSION_NOT_INTEGER',
-    'SKIPPED_SIGNATURE_TYPE', 'SKIPPED_NO_DOWNLOAD_LINK', 'SKIPPED_LINK_NOT_HTTP_URL',
+    'SKIPPED_SIGNATURE_TYPE', 'SKIPPED_NO_DOWNLOAD_LINK', 'SKIPPED_LINK_NOT_HTTP_URL', 'SKIPPED_VDR_SNAPSHOT',
 ] as const
 export type TeaRideAlongStatus = typeof TEA_RIDE_ALONG_STATUSES[number]
 
@@ -195,6 +195,7 @@ export const TEA_RIDE_ALONG_SKIP_LABELS: Record<Exclude<TeaRideAlongStatus, 'PUB
     SKIPPED_SIGNATURE_TYPE: 'signature, published with its artifact',
     SKIPPED_NO_DOWNLOAD_LINK: 'no download link',
     SKIPPED_LINK_NOT_HTTP_URL: 'download link is not an absolute http(s) URL',
+    SKIPPED_VDR_SNAPSHOT: 'VDR snapshot, never published on TEA',
 }
 
 const CHILD_PUBLISHED = ['PUBLISHED', 'REPUBLISHED', 'UNCHANGED']

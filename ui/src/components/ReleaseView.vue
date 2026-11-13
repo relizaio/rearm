@@ -2311,6 +2311,8 @@
                             <div v-if="teaView.publication.lastPublishedDate"><strong>Last published: </strong>{{ new Date(teaView.publication.lastPublishedDate).toLocaleString('en-CA') }}<span v-if="teaView.publication.lastPublishedBy"> by {{ resolveUserById(teaView.publication.lastPublishedBy) }}</span></div>
                             <div v-if="teaView.publication.state === 'HIDDEN' && teaView.publication.lastHiddenDate"><strong>Hidden: </strong>{{ new Date(teaView.publication.lastHiddenDate).toLocaleString('en-CA') }}</div>
                         </div>
+                        <n-alert v-if="teaWithdrawnLine" type="warning" :show-icon="false" style="margin-bottom: 8px;" data-testid="tea-withdrawn-notice">{{ teaWithdrawnLine }}</n-alert>
+                        <div v-else-if="teaWithdrawn.failed" class="text-muted" style="margin-bottom: 8px;" data-testid="tea-withdrawn-unknown">{{ TEA_WITHDRAWN_UNKNOWN }}</div>
                         <n-data-table :data="teaCollections" :columns="teaCollectionsTableFields" :row-key="teaRowKey" />
                     </div>
                     <div class="container" v-else data-testid="tea-not-published">
@@ -2826,6 +2828,7 @@ import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syn
 import { teaProfilesAvailable, teaSourceLabel } from '@/utils/teaProfile'
 import { teaActLabel, teaActProgress, type TeaAct, teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText, teaActErrorText } from '@/utils/teaPublication'
+import { loadTeaWithdrawn, teaMarkWithdrawn, teaWithdrawnNotice, TEA_WITHDRAWN_UNKNOWN, type TeaWithdrawnState } from '@/utils/teaWithdrawn'
 import { runTeaPublishFlow } from '@/utils/teaPublishFlow'
 import type { TeaShare } from '@/utils/teaPublication'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
@@ -4828,6 +4831,9 @@ async function loadSyntheticArtifacts () {
 // counter, and reloaded after every publish, re-publish and hide. Release.teaPublication is never
 // selected by the shared release fragments.
 const teaView: Ref<any | null> = ref(null)
+// FDAW-80: the published revisions TEA withdrew, read by a document of its own after the view.
+const teaWithdrawn: Ref<TeaWithdrawnState> = ref({ withdrawn: null, failed: false })
+const teaWithdrawnLine: ComputedRef<string | null> = computed(() => teaWithdrawnNotice(teaView.value?.collections, teaWithdrawn.value.withdrawn))
 const teaViewRelease: Ref<string> = ref('')
 let teaViewLoadSeq = 0
 async function loadTeaPublication () {
@@ -4835,6 +4841,7 @@ async function loadTeaPublication () {
     const forRelease = releaseUuid.value
     if (teaViewRelease.value !== forRelease) {
         teaView.value = null
+        teaWithdrawn.value = { withdrawn: null, failed: false }
         teaViewRelease.value = forRelease
     }
     if (!teaProfilesAvailable(myUser?.installationType)) return
@@ -4847,6 +4854,11 @@ async function loadTeaPublication () {
         // Drop out-of-order responses (prev/next navigation mid-flight).
         if (seq !== teaViewLoadSeq) return
         teaView.value = resp.data?.releaseTeaPublicationView ?? null
+        teaWithdrawn.value = { withdrawn: null, failed: false }
+        if (teaView.value?.publication) {
+            const state = await loadTeaWithdrawn(graphqlClient, forRelease)
+            if (seq === teaViewLoadSeq) teaWithdrawn.value = state
+        }
     } catch (e) {
         console.warn('Failed to load the TEA publication of release', e)
     }
@@ -5070,8 +5082,11 @@ const teaEntriesTableFields: DataTableColumns<any> = [
     {
         key: 'teaUrl',
         title: 'TEA URL',
-        render: (row: any) => h('span', { style: 'word-break: break-all;' },
-            row.externalUrl ? [row.teaUrl, h('br'), 'Stored at: ' + row.externalUrl] : row.teaUrl)
+        render: (row: any) => h('span', { style: 'word-break: break-all;' }, [
+            row.teaUrl,
+            ...(row.externalUrl ? [h('br'), 'Stored at: ' + row.externalUrl] : []),
+            ...(row.withdrawn ? [h('br'), h('strong', { 'data-testid': 'tea-entry-withdrawn' }, row.withdrawn)] : []),
+        ])
     },
     {
         key: 'download',
@@ -5089,7 +5104,7 @@ const teaCollectionsTableFields: DataTableColumns<any> = [
     {
         type: 'expand',
         renderExpand: (row: any) => h(NDataTable, {
-            data: teaEntryRows(row.collection, teaView.value?.apiBase),
+            data: teaMarkWithdrawn(teaEntryRows(row.collection, teaView.value?.apiBase), teaWithdrawn.value.withdrawn),
             columns: teaEntriesTableFields,
             rowKey: teaRowKey,
             size: 'small'

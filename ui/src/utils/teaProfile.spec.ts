@@ -53,6 +53,16 @@ describe('TEA profile option lists', () => {
         expect(teaModeOptions('COMPONENT', 'OSS')[0].label).toBe('Inherit: use the organization profile')
     })
 
+    it('the Raw artifacts help says a VDR snapshot never rides along, and the option labels stay (FDAW-80)', () => {
+        expect(TEA_FIELD_HELP.rawArtifacts).toBe('Which existing release artifacts ride along with a publication. '
+            + 'A VDR snapshot stored by a release action never does, whatever is chosen here.')
+        expect(TEA_RAW_ARTIFACTS_OPTIONS).toEqual([
+            { label: 'None', value: 'NONE' },
+            { label: 'Non-BOM artifacts', value: 'NON_BOM' },
+            { label: 'All artifacts', value: 'ALL' },
+        ])
+    })
+
     it('offers only the minimum lifecycles the server accepts', () => {
         expect(values(TEA_MINIMUM_LIFECYCLE_OPTIONS)).toEqual(['ASSEMBLED', 'READY_TO_SHIP', 'GENERAL_AVAILABILITY'])
     })
