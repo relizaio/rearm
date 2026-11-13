@@ -96,7 +96,7 @@ Currently, following functions are available:
 
 All functions are always available for `Administrator` permission type.
 
-Creating, resubmitting or withdrawing a regulatory submission needs no function, only `Read & Write` (or higher) in a grant that covers the release's component: on the component, on a perspective that contains it, or organization-wide; a release-scoped grant does not suffice (ReARM Pro). Downloading its documents needs `Artifact Download` in a grant that covers the component the same way. See [Regulatory Packages and Submissions](../workflows/regulatory-packages#permissions).
+The acts on a regulatory package (Start draft, Rebuild, Confirm, Return to draft, Discard, Finalize and Cancel) need no function, only `Read & Write` (or higher) in a grant that covers the release's component: on the component, on a perspective that contains it, or organization-wide; a release-scoped grant does not suffice (ReARM Pro). Downloading its documents needs `Artifact Download` in a grant that covers the component the same way. See [Regulatory Packages and Submissions](../workflows/regulatory-packages#permissions).
 
 ### 3) Organization-Wide Approval Permissions
 
