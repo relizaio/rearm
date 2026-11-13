@@ -38,11 +38,7 @@ maintained twice.
 
 If you made changes and want to discard them, click **Reset Changes**.
 
-In ReARM Pro, a permission above `None` gives the user a license seat, and `Admin`, `Read & Write`, `Finding Analysis Write` or an approval permission gives a write seat. A change that needs a seat the license does not have is refused with a `License limit reached` message. See [License Seats](./license-seats).
-
 ## Manage User Groups
-
-In ReARM Pro, a group's permissions count toward the license seats of every member: adding a member, or raising the group's permissions, is refused when the license has no seat for it. See [License Seats](./license-seats).
 
 ### Create a User Group
 
