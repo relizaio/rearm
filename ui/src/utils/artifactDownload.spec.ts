@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 
-const { artifactDownloadRef, artifactDownloadUrl, downloadFileName } = await import('./artifactDownload')
+const { artifactDownloadRef, artifactDownloadUrl, downloadFileName, downloadArtifactFile } = await import('./artifactDownload')
+const { fetchWithAuth } = await import('./fetchClient') as any
 
 const U = '0f8fad5b-d9cb-469f-a165-70867728950e'
 
@@ -53,5 +54,33 @@ describe('artifactDownloadRef and downloadFileName', () => {
         expect(downloadFileName(null, U)).toBe(U)
         expect(artifactDownloadRef(U, '3', '../../etc/passwd')!.fileName).toBe('....etcpasswd')
         expect(artifactDownloadRef(U, '3', '')!.fileName).toBe(U)
+    })
+})
+
+// FDAW-32 3.6: a draft part has no stored file name, so the server's Content-Disposition names it.
+describe('downloadArtifactFile', () => {
+    it('returns the bytes with the Content-Disposition and Content-Type headers on an ok response', async () => {
+        const headers = new Map([['Content-Disposition', 'attachment; filename="part.json"'], ['Content-Type', 'application/json']])
+        const bytes = new ArrayBuffer(4)
+        fetchWithAuth.mockResolvedValueOnce({ ok: true, headers: { get: (k: string) => headers.get(k) ?? null },
+            arrayBuffer: async () => bytes })
+        const file = await downloadArtifactFile('/api/manual/v1/artifact/' + U + '/download')
+        expect(file.bytes).toBe(bytes)
+        expect(file.disposition).toBe('attachment; filename="part.json"')
+        expect(file.mediaType).toBe('application/json')
+    })
+
+    it('is null for a header the response did not send', async () => {
+        fetchWithAuth.mockResolvedValueOnce({ ok: true, headers: { get: () => null }, arrayBuffer: async () => new ArrayBuffer(0) })
+        const file = await downloadArtifactFile('/x')
+        expect(file.disposition).toBeNull()
+        expect(file.mediaType).toBeNull()
+    })
+
+    it('throws, naming the status, on a response that is not ok; never reads a body', async () => {
+        const arrayBuffer = vi.fn()
+        fetchWithAuth.mockResolvedValueOnce({ ok: false, status: 404, statusText: 'Not Found', headers: { get: () => null }, arrayBuffer })
+        await expect(downloadArtifactFile('/x')).rejects.toThrow('404')
+        expect(arrayBuffer).not.toHaveBeenCalled()
     })
 })

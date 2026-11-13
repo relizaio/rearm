@@ -31,11 +31,11 @@ const RELEASES = [
 ]
 const HEADS = [
     { uuid: 's1', release: 'r1', releaseVersion: '1.0.0', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2,
-        lastActKind: 'RESUBMITTED', lastActDate: '2026-10-02T00:00:00Z' },
+        lastAct: { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann' }, lastActDate: '2026-10-02T00:00:00Z' },
     { uuid: 's3', release: 'r3', releaseVersion: '0.8.0', kind: 'FDA_PREMARKET', state: 'CANCELLED', latestVersion: 3,
-        lastActKind: 'CANCELLED', lastActDate: '2026-09-20T00:00:00Z' },
+        lastAct: { kind: 'CANCEL', actedAt: '2026-09-20T00:00:00Z', actorName: 'Ann' }, lastActDate: '2026-09-20T00:00:00Z' },
     { uuid: 's9', release: 'r-old', releaseVersion: '0.9.0', kind: 'FDA_PREMARKET', state: 'CANCELLED', latestVersion: 1,
-        lastActKind: 'WITHDRAWN', lastActDate: '2026-09-01T00:00:00Z', legacyState: 'WITHDRAWN' },
+        lastAct: { kind: 'CANCEL', actedAt: '2026-09-01T00:00:00Z', actorName: 'Ann' }, lastActDate: '2026-09-01T00:00:00Z', legacyState: 'WITHDRAWN' },
 ]
 const NULL_TEXT = "The field at path '/submissionsOfComponent' was declared as a non null type, but the code involved "
     + 'in retrieving data has wrongly returned a null value.  The graphql specification requires that the parent '
@@ -92,41 +92,38 @@ describe('ProductSubmissionsPanel', () => {
         answers()
     })
 
-    it('shows the head and its actions for a writer, and Create disabled with the lifecycle title on a DRAFT', async () => {
+    it('shows the head with no button for a writer, and the lifecycle reason, no link, on a DRAFT (FDAW-32 3.8)', async () => {
         const { w } = await mountPanel()
         const assembled = rowOf(w, '1.0.0')
         expect(assembled.find('[data-testid="submission-state"]').text()).toBe('Final (no confirmation record) - not sent')
         expect(assembled.text()).toContain('v2')
-        expect(assembled.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
-        expect(assembled.find('[data-testid="submission-withdraw"]').text()).toBe('Cancel')
-        expect(assembled.find('[data-testid="submission-create"]').exists()).toBe(false)
+        expect(assembled.find('[data-testid="submission-cell-FDA_PREMARKET"]').findAll('button')).toHaveLength(0)
+        expect(assembled.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
         const draft = rowOf(w, '1.1.0')
-        const create = draft.find('[data-testid="submission-create"]')
-        expect(create.exists()).toBe(true)
-        expect(create.attributes('disabled')).toBeDefined()
-        expect(create.attributes('title')).toBe('The release must be Assembled or later')
+        expect(draft.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
+        expect(draft.findAll('td')[3].text()).toBe('The release must be Assembled or later')
         const rows = w.findAll('[data-testid="submissions-release-rows"] tbody tr')
         expect(rows.map((r: any) => r.find('td').text())).toEqual(['1.1.0', '1.0.0', '0.8.0'])
         w.unmount()
     })
 
-    it('offers Resubmit and no Cancel on a CANCELLED head', async () => {
+    it('a CANCELLED head and a FINAL head show their cells with no button and no link (FDAW-32 3.8)', async () => {
         const { w } = await mountPanel()
         const cell = rowOf(w, '0.8.0').find('[data-testid="submission-cell-FDA_PREMARKET"]')
         expect(cell.exists()).toBe(true)
         expect(cell.find('[data-testid="submission-state"]').text()).toBe('Cancelled')
         expect(cell.text()).toContain('v3')
-        expect(cell.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
-        expect(cell.find('[data-testid="submission-withdraw"]').exists()).toBe(false)
+        expect(cell.findAll('button')).toHaveLength(0)
+        expect(cell.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
         const active = rowOf(w, '1.0.0').find('[data-testid="submission-cell-FDA_PREMARKET"]')
-        expect(active.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
-        expect(active.find('[data-testid="submission-withdraw"]').exists()).toBe(true)
+        expect(active.findAll('button')).toHaveLength(0)
+        expect(active.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
         w.unmount()
     })
 
-    it('offers no action button at all to a reader', async () => {
+    it('offers no action button and no draft link to a reader', async () => {
         const { w } = await mountPanel({ isWritable: false })
-        for (const id of ['submission-create', 'submission-resubmit', 'submission-withdraw']) {
+        for (const id of ['submission-create', 'submission-resubmit', 'submission-withdraw', 'submission-draft-link']) {
             expect(w.find(`[data-testid="${id}"]`).exists(), id).toBe(false)
         }
         expect(rowOf(w, '1.0.0').find('[data-testid="submission-state"]').exists()).toBe(true)
@@ -202,9 +199,10 @@ describe('ProductSubmissionsPanel', () => {
 
 // Task FDAW-63 (ARCHITECTURE r2 section 4, rows 2-5, 7 and 9): the panel reads every head (state null) and applies
 // the state filter itself; a head the filter hides shows the fixed "Not in filter" marker with no action button,
-// a release with no head of the kind keeps the no-head cell (Create, No submission or not set up).
+// a release with no head of the kind keeps the no-head cell (since FDAW-32: the draft link or the lifecycle
+// reason, No submission, or not set up).
 describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
-    const ACT_IDS = ['submission-create', 'submission-resubmit', 'submission-withdraw']
+    const ACT_IDS = ['submission-draft-link']
     const filterBy = async (w: any, state: string) => {
         await select(w, 'submissions-state').vm.$emit('update:value', state)
         await flushPromises()
@@ -226,21 +224,19 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
         answers()
     })
 
-    it('row 2: under Cancelled, the cancelled head shows, the filtered-out head shows the marker, the no-head release keeps Create', async () => {
+    it('row 2: under Cancelled, the cancelled head shows, the filtered-out head shows the marker, the no-head release keeps its cell', async () => {
         const { w } = await mountPanel()
         await filterBy(w, 'CANCELLED')
         const cancelled = rowOf(w, '0.8.0')
         const cell = cancelled.find('[data-testid="submission-cell-FDA_PREMARKET"]')
         expect(cell.exists()).toBe(true)
         expect(cell.find('[data-testid="submission-state"]').text()).toBe('Cancelled')
-        expect(cell.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
+        expect(cell.findAll('button')).toHaveLength(0)
         expect(marker(cancelled).exists()).toBe(false)
         expectMarkerOnly(rowOf(w, '1.0.0'))
         const draft = rowOf(w, '1.1.0')
-        const create = draft.find('[data-testid="submission-create"]')
-        expect(create.exists()).toBe(true)
-        expect(create.attributes('disabled')).toBeDefined()
-        expect(create.attributes('title')).toBe('The release must be Assembled or later')
+        expect(draft.findAll('td')[3].text()).toBe('The release must be Assembled or later')
+        expect(draft.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
         expect(marker(draft).exists()).toBe(false)
         expect(w.find('[data-testid="submissions-none"]').exists()).toBe(false)
         w.unmount()
@@ -251,9 +247,9 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
         await filterBy(w, 'FINAL')
         const final = rowOf(w, '1.0.0').find('[data-testid="submission-cell-FDA_PREMARKET"]')
         expect(final.exists()).toBe(true)
-        expect(final.find('[data-testid="submission-withdraw"]').text()).toBe('Cancel')
+        expect(final.findAll('button')).toHaveLength(0)
         expectMarkerOnly(rowOf(w, '0.8.0'))
-        expect(rowOf(w, '1.1.0').find('[data-testid="submission-create"]').exists()).toBe(true)
+        expect(rowOf(w, '1.1.0').findAll('td')[3].text()).toBe('The release must be Assembled or later')
         expect(w.find('[data-testid="submissions-other-rows"]').exists()).toBe(false)
         expect(w.find('[data-testid="submissions-other-none"]').text()).toBe('None')
 
@@ -261,13 +257,10 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
         const assembled = rowOf(w, '1.0.0')
         expect(assembled.find('[data-testid="submission-state"]').text()).toBe('Final (no confirmation record) - not sent')
         expect(assembled.text()).toContain('v2')
-        expect(assembled.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
-        expect(assembled.find('[data-testid="submission-withdraw"]').text()).toBe('Cancel')
-        expect(assembled.find('[data-testid="submission-create"]').exists()).toBe(false)
-        const create = rowOf(w, '1.1.0').find('[data-testid="submission-create"]')
-        expect(create.exists()).toBe(true)
-        expect(create.attributes('disabled')).toBeDefined()
-        expect(create.attributes('title')).toBe('The release must be Assembled or later')
+        expect(assembled.findAll('button')).toHaveLength(0)
+        expect(assembled.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
+        expect(rowOf(w, '1.1.0').findAll('td')[3].text()).toBe('The release must be Assembled or later')
+        expect(rowOf(w, '1.1.0').find('[data-testid="submission-draft-link"]').exists()).toBe(false)
         expect(rowOf(w, '0.8.0').find('[data-testid="submission-state"]').text()).toBe('Cancelled')
         const rows = w.findAll('[data-testid="submissions-release-rows"] tbody tr')
         expect(rows.map((r: any) => r.find('td').text())).toEqual(['1.1.0', '1.0.0', '0.8.0'])
@@ -303,7 +296,7 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
         await filterBy(w, 'SUPERSEDED')
         expectMarkerOnly(rowOf(w, '1.0.0'))
         expectMarkerOnly(rowOf(w, '0.8.0'))
-        expect(rowOf(w, '1.1.0').find('[data-testid="submission-create"]').exists()).toBe(true)
+        expect(rowOf(w, '1.1.0').findAll('td')[3].text()).toBe('The release must be Assembled or later')
         expect(w.find('[data-testid="submissions-none"]').exists()).toBe(false)
         w.unmount()
 
@@ -319,12 +312,12 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
         const empty = await mountPanel()
         await filterBy(empty.w, 'CANCELLED')
         expect(empty.w.find('[data-testid="submissions-none"]').text())
-            .toBe('No submission yet; create one from a release that is Assembled or later')
-        expect(rowOf(empty.w, '1.1.0').find('[data-testid="submission-create"]').exists()).toBe(true)
+            .toBe('No submission yet; start a draft on a release that is Assembled or later')
+        expect(rowOf(empty.w, '1.1.0').findAll('td')[3].text()).toBe('The release must be Assembled or later')
         empty.w.unmount()
     })
 
-    it('row 9: a release at ASSEMBLED or above with no head keeps an enabled Create under every filter', async () => {
+    it('row 9: a release at ASSEMBLED or above with no head keeps the draft link under every filter', async () => {
         query.mockImplementation(async (opts: any) => {
             switch (operation(opts)) {
             case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
@@ -338,10 +331,9 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
         const { w } = await mountPanel()
         const expectEnabledCreate = (label: string) => {
             const row = rowOf(w, '1.2.0')
-            const create = row.find('[data-testid="submission-create"]')
-            expect(create.exists(), label).toBe(true)
-            expect(create.attributes('disabled'), label).toBeUndefined()
-            expect(create.attributes('title') ?? '', label).toBe('')
+            const link = row.findComponent(RouterLinkStub)
+            expect(row.find('[data-testid="submission-draft-link"]').exists(), label).toBe(true)
+            expect(link.props('to'), label).toEqual({ name: 'ReleaseView', params: { uuid: 'r4' } })
             expect(marker(row).exists(), label).toBe(false)
         }
         expectEnabledCreate('All')
@@ -354,7 +346,7 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
     })
 })
 
-// Task FDAW-4 (B18, T6, T7): Create only for a kind switched on for the product; otherwise what to set
+// Task FDAW-4 (B18, T6, T7): the draft link (FDAW-32; Create before it) only for a kind switched on for the product; otherwise what to set
 // up, with a link to the settings modal's pane. FDAW-18 (row 20): the link opens the Medical device pane.
 describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
     const SETUP_TO = { path: ROUTE.path, query: { tab: 'submissions', componentSettingsView: 'true', componentSettingsTab: 'device' } }
@@ -369,12 +361,12 @@ describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
         answers()
     })
 
-    it('T6: switched off, a writer gets no Create but Not set up with the Medical device link', async () => {
+    it('T6: switched off, a writer gets no draft link but Not set up with the Medical device link', async () => {
         enabledKinds = []
         const { w } = await mountPanel({ canConfigure: true })
         const assembled = rowOf(w, '1.1.0')
-        expect(assembled.find('[data-testid="submission-create"]').exists()).toBe(false)
-        expect(w.find('[data-testid="submission-create"]').exists()).toBe(false)
+        expect(assembled.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
+        expect(w.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
         const cell = assembled.find('[data-testid="submission-not-set-up-FDA_PREMARKET"]')
         expect(cell.exists()).toBe(true)
         expect(cell.text().replace(/\s+/g, ' ')).toBe('Not set up: FDA premarket is switched off for this product. '
@@ -385,12 +377,13 @@ describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
         w.unmount()
     })
 
-    it('T6: a head on a switched-off kind keeps its cell (Resubmit and Withdraw stay)', async () => {
+    it('T6: a head on a switched-off kind keeps its cell, with no button', async () => {
         enabledKinds = []
         const { w } = await mountPanel({ canConfigure: true })
         const active = rowOf(w, '1.0.0').find('[data-testid="submission-cell-FDA_PREMARKET"]')
-        expect(active.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
-        expect(active.find('[data-testid="submission-withdraw"]').exists()).toBe(true)
+        expect(active.exists()).toBe(true)
+        expect(active.find('[data-testid="submission-state"]').exists()).toBe(true)
+        expect(active.findAll('button')).toHaveLength(0)
         w.unmount()
     })
 
@@ -403,9 +396,9 @@ describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
         w.unmount()
     })
 
-    it('T6: switched on, Create is offered as before; a reader sees No submission either way', async () => {
+    it('T6: switched on, the no-head cell is offered as before (the lifecycle reason on a DRAFT); a reader sees No submission either way', async () => {
         const { w } = await mountPanel({ canConfigure: true })
-        expect(rowOf(w, '1.1.0').find('[data-testid="submission-create"]').exists()).toBe(true)
+        expect(rowOf(w, '1.1.0').findAll('td')[3].text()).toBe('The release must be Assembled or later')
         expect(w.find('[data-testid^="submission-not-set-up-"]').exists()).toBe(false)
         w.unmount()
         enabledKinds = []
@@ -450,11 +443,11 @@ describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
         w.unmount()
     })
 
-    it('T7: a failed kinds read leaves today\'s cells (Create offered) and logs', async () => {
+    it('T7: a failed kinds read leaves today\'s cells (the no-head cell offered) and logs', async () => {
         kindsFailing = true
         const error = vi.spyOn(console, 'error').mockImplementation(() => {})
         const { w } = await mountPanel()
-        expect(rowOf(w, '1.1.0').find('[data-testid="submission-create"]').exists()).toBe(true)
+        expect(rowOf(w, '1.1.0').findAll('td')[3].text()).toBe('The release must be Assembled or later')
         expect(w.find('[data-testid^="submission-not-set-up-"]').exists()).toBe(false)
         expect(error.mock.calls.some(c => String(c[0]?.message ?? c[0]).includes('kinds read refused'))).toBe(true)
         error.mockRestore()
@@ -491,19 +484,17 @@ describe('ProductSubmissionsPanel in words (FDAW-78 row 15)', () => {
         heads = []
         const { w } = await mountPanel()
         expect(w.find('[data-testid="submissions-none"]').text())
-            .toBe('No submission yet; create one from a release that is Assembled or later')
+            .toBe('No submission yet; start a draft on a release that is Assembled or later')
         const rows = w.findAll('[data-testid="submissions-release-rows"] tbody tr')
         expect(rows.map((r: any) => r.findAll('td')[1].text())).toEqual(['Assembled', 'Shipped', 'Draft', 'Sunset review'])
-        const create = rowOf(w, '2.0.0').find('[data-testid="submission-create"]')
-        expect(create.attributes('disabled')).toBeDefined()
-        expect(create.attributes('title')).toBe('The release must be Assembled or later')
+        expect(rowOf(w, '2.0.0').findAll('td')[3].text()).toBe('The release must be Assembled or later')
         expectSwept((w.element.parentElement ?? document.body).textContent ?? '', 'product panel')
         w.unmount()
     })
 
     it('a head on another feature set\'s release with no version reads release as its link text, never the uuid', async () => {
         heads = [{ uuid: 's1', release: UUID, releaseVersion: '', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 1,
-            lastActKind: 'CREATED', lastActDate: '2026-10-02T00:00:00Z' }]
+            lastAct: { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann' }, lastActDate: '2026-10-02T00:00:00Z' }]
         const { w } = await mountPanel()
         const other = w.find('[data-testid="submissions-other-rows"]')
         const link = other.find('[data-testid="submission-release-link"]')
@@ -511,6 +502,138 @@ describe('ProductSubmissionsPanel in words (FDAW-78 row 15)', () => {
         expect(other.text()).not.toMatch(UUID_RE)
         expect(UUID).toMatch(UUID_RE)
         expectSwept(other.text(), 'other feature sets')
+        w.unmount()
+    })
+})
+
+// Task FDAW-32 (architecture round 2, 3.8, row 9): the product tab no longer acts. A release without a
+// version of a kind links to its release page, after the filter marker and the not-set-up cell; a head's
+// cell is its tag, version and last act in words, and nothing else.
+describe('ProductSubmissionsPanel offers no act (FDAW-32 row 9)', () => {
+    const R4 = { uuid: 'r4', version: '1.2.0', lifecycle: 'READY_TO_SHIP', createdDate: '2026-10-08T00:00:00Z' }
+    const LIFE_RELEASES = [
+        { uuid: 'l1', version: '4.0.0', lifecycle: 'ASSEMBLED', createdDate: '2026-10-04T00:00:00Z' },
+        { uuid: 'l3', version: '2.0.0', lifecycle: 'DRAFT', createdDate: '2026-10-02T00:00:00Z' },
+    ]
+    const OTHER_HEAD = { uuid: 's5', release: '3bef7cde-2edb-47cb-aa4e-94487c2cdced', releaseVersion: '', kind: 'FDA_PREMARKET',
+        state: 'FINAL', latestVersion: 1, lastAct: { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann' },
+        lastActDate: '2026-10-02T00:00:00Z' }
+    const serve = (releases: any[], heads: any[]) => {
+        query.mockReset()
+        query.mockImplementation(async (opts: any) => {
+            switch (operation(opts)) {
+            case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
+            case 'SubmissionsOfComponent': return { data: { submissionsOfComponent: heads } }
+            case 'SubmissionReleasesOfBranch': return { data: { releases } }
+            case 'ComponentRegulatoryPackageKinds': return { data: { component: { uuid: 'c1', regulatoryPackageKinds: ['FDA_PREMARKET'] } } }
+            default: throw new Error('unexpected query ' + operation(opts))
+            }
+        })
+    }
+    const FIXTURES: [string, any[], any[]][] = [
+        ['the feature set with a release to start', [...RELEASES, R4], HEADS],
+        ['lifecycles, no head', LIFE_RELEASES, []],
+        ['lifecycles, a head on another feature set', LIFE_RELEASES, [OTHER_HEAD]],
+    ]
+
+    beforeEach(() => {
+        mutate.mockReset()
+        failing = false
+        enabledKinds = ['FDA_PREMARKET']
+        kindsFailing = false
+    })
+
+    it('(a) over every fixture, as a writer: no act button anywhere and no button in the table; the link is the control', async () => {
+        for (const [label, releases, heads] of FIXTURES) {
+            serve(releases, heads)
+            const { w } = await mountPanel()
+            for (const id of ['submission-create', 'submission-resubmit', 'submission-withdraw']) {
+                expect(w.find(`[data-testid="${id}"]`).exists(), label + ' ' + id).toBe(false)
+            }
+            expect(w.find('[data-testid="submissions-release-rows"]').findAll('button'), label).toHaveLength(0)
+            expect(w.find('[data-testid="submission-draft-link"]').exists(), label).toBe(true)
+            w.unmount()
+        }
+    })
+
+    it('(b) an ASSEMBLED release without a head links to its release page; a DRAFT one reads the lifecycle; a reader No submission', async () => {
+        serve(LIFE_RELEASES, [])
+        let { w } = await mountPanel()
+        const link = rowOf(w, '4.0.0').findComponent(RouterLinkStub)
+        expect(rowOf(w, '4.0.0').find('[data-testid="submission-draft-link"]').text()).toBe('Draft on the release page')
+        expect(link.props('to')).toEqual({ name: 'ReleaseView', params: { uuid: 'l1' } })
+        const draft = rowOf(w, '2.0.0')
+        expect(draft.findAll('td')[3].text()).toBe('The release must be Assembled or later')
+        expect(draft.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
+        w.unmount();
+        ({ w } = await mountPanel({ isWritable: false }))
+        expect(rowOf(w, '4.0.0').findAll('td')[3].text()).toBe('No submission')
+        expect(w.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('(c) a filtered-out head is the marker with no link; the release to start keeps its link under every filter', async () => {
+        serve([...RELEASES, R4], HEADS)
+        const { w } = await mountPanel()
+        for (const state of ['CANCELLED', 'FINAL', 'SUPERSEDED']) {
+            await select(w, 'submissions-state').vm.$emit('update:value', state)
+            await flushPromises()
+            const hidden = rowOf(w, state === 'FINAL' ? '0.8.0' : '1.0.0')
+            expect(hidden.find('[data-testid="submission-filtered-FDA_PREMARKET"]').exists(), state).toBe(true)
+            expect(hidden.find('[data-testid="submission-draft-link"]').exists(), state).toBe(false)
+            expect(rowOf(w, '1.2.0').find('[data-testid="submission-draft-link"]').exists(), state).toBe(true)
+        }
+        w.unmount()
+    })
+
+    it('(d) a switched-off kind shows the not-set-up cell and no link', async () => {
+        serve([...RELEASES, R4], HEADS)
+        enabledKinds = []
+        query.mockImplementation(async (opts: any) => {
+            switch (operation(opts)) {
+            case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
+            case 'SubmissionsOfComponent': return { data: { submissionsOfComponent: HEADS } }
+            case 'SubmissionReleasesOfBranch': return { data: { releases: [...RELEASES, R4] } }
+            case 'ComponentRegulatoryPackageKinds': return { data: { component: { uuid: 'c1', regulatoryPackageKinds: [] } } }
+            default: throw new Error('unexpected query ' + operation(opts))
+            }
+        })
+        const { w } = await mountPanel({ canConfigure: true })
+        expect(rowOf(w, '1.2.0').find('[data-testid="submission-not-set-up-FDA_PREMARKET"]').exists()).toBe(true)
+        expect(w.find('[data-testid="submission-draft-link"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('(e) a FINAL head whose newest version holds a confirmation reads Final - not sent and Finalized; the read is as today', async () => {
+        const head = { ...HEADS[0], latest: { version: 2, confirmations: [{ confirmedAt: 'x' }] },
+            lastAct: { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann' } }
+        serve(RELEASES, [head])
+        const { w } = await mountPanel()
+        const cell = rowOf(w, '1.0.0').find('[data-testid="submission-cell-FDA_PREMARKET"]')
+        expect(cell.find('[data-testid="submission-state"]').text()).toBe('Final - not sent')
+        expect(cell.text()).toContain('Finalized')
+        expect(calls('SubmissionsOfComponent')[0][0].variables).toEqual({ component: 'c1', kind: null, state: null })
+        w.unmount()
+    })
+
+    it('(f) with no head at all the empty line says to start a draft', async () => {
+        serve(RELEASES, [])
+        const { w } = await mountPanel()
+        expect(w.find('[data-testid="submissions-none"]').text())
+            .toBe('No submission yet; start a draft on a release that is Assembled or later')
+        w.unmount()
+    })
+
+    it('(g) the panel reads and never writes: no mutate after a click on every clickable element of the table', async () => {
+        serve([...RELEASES, R4], HEADS)
+        const { w } = await mountPanel()
+        const table = w.find('[data-testid="submissions-release-rows"]')
+        const clickable = table.findAll('a, button, [data-testid], [role="button"], td')
+        expect(clickable.length).toBeGreaterThan(0)
+        for (const el of clickable) await el.trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls).toEqual([])
+        expect(query).toHaveBeenCalled()
         w.unmount()
     })
 })

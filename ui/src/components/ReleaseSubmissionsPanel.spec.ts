@@ -10,10 +10,10 @@
 // assessment-narrative prompt before Create and Resubmit of a kind with a REQUIRED NARRATIVE part:
 // its preselection, the organization option without a default, the write it sends (set, clear or
 // none) before the act, and no act when the write fails.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
-import { NNotificationProvider } from 'naive-ui'
+import { NNotificationProvider, NSelect } from 'naive-ui'
 
 const query = vi.fn()
 const mutate = vi.fn()
@@ -52,9 +52,9 @@ const V2 = v(2, { reason: 'Updated <b>SBOM</b>\nline two', parts: [
         fileName: 'narrative.md', mediaType: 'text/markdown', size: 5, sha256: 'b'.repeat(64) },
 ] })
 const HEADS = [
-    { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastActKind: 'RESUBMITTED',
+    { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastAct: { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann' },
         lastActDate: '2026-10-02T00:00:00Z', lastActBy: 'u1', versions: [v(1), V2] },
-    { uuid: 's2', release: 'r1', kind: 'TEST_KIND', state: 'CANCELLED', latestVersion: 1, lastActKind: 'CANCELLED',
+    { uuid: 's2', release: 'r1', kind: 'TEST_KIND', state: 'CANCELLED', latestVersion: 1, lastAct: { kind: 'CANCEL', actedAt: '2026-10-03T00:00:00Z', actorName: 'Ann' },
         lastActDate: '2026-10-03T00:00:00Z', lastActBy: 'u1', legacyState: null,
         acts: [
             { uuid: 'a1', kind: 'FINALIZE', cause: 'USER', version: 1, actedAt: '2026-10-01T00:00:00Z', actorName: 'Ann', reasonText: 'first' },
@@ -65,8 +65,20 @@ const HEADS = [
         versions: [v(1, { submission: 's2', kind: 'TEST_KIND' })] },
 ]
 
+// FDAW-32 3.11: every mount reads the drafts and the second-confirmer setting, and the Start form the
+// component's heads; a cell that needs other answers installs them before this helper's line.
+function draftReads (opts: any): any {
+    switch (operation(opts)) {
+    case 'ReleaseDrafts': return { data: { release: { uuid: 'r1', drafts: [] } } }
+    case 'OrgSecondConfirmer': return { data: { organizations: [{ uuid: 'o1', settings: { submissionSecondConfirmer: false } }] } }
+    case 'SubmissionsOfComponent': return { data: { submissionsOfComponent: [] } }
+    default: return undefined
+    }
+}
+
 function answers () {
     query.mockImplementation(async (opts: any) => {
+        const d = draftReads(opts); if (d) return d
         switch (operation(opts)) {
         case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }, { kind: 'TEST_KIND', parts: [] }] } }
         case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: HEADS } }
@@ -104,9 +116,9 @@ describe('ReleaseSubmissionsPanel', () => {
         expect(head.text()).toContain('FDA premarket')
         expect(head.find('[data-testid="submission-state"]').text()).toBe('Final (no confirmation record) - not sent')
         expect(head.text()).toContain('v2')
-        expect(head.text()).toContain('Resubmitted on')
-        expect(head.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
-        expect(head.find('[data-testid="submission-withdraw"]').exists()).toBe(true)
+        expect(head.text()).toContain('Finalized on')
+        expect(head.find('[data-testid="draft-start"]').exists()).toBe(true)
+        expect(head.find('[data-testid="submission-cancel"]').exists()).toBe(true)
         w.unmount()
     })
 
@@ -171,7 +183,7 @@ describe('ReleaseSubmissionsPanel', () => {
         w.unmount()
     })
 
-    it('shows the cancelled kind with its newest CANCEL act as text, offering Resubmit and not Cancel', async () => {
+    it('shows the cancelled kind with its newest CANCEL act as text, offering Start draft and not Cancel', async () => {
         const w = await mountPanel()
         const head = w.find('[data-testid="submission-head-TEST_KIND"]')
         expect(head.find('[data-testid="submission-state"]').text()).toBe('Cancelled')
@@ -183,24 +195,25 @@ describe('ReleaseSubmissionsPanel', () => {
         expect(reason.text()).toBe('Recalled <i>why</i>')
         expect(reason.find('i').exists()).toBe(false)
         expect(reason.attributes('style')).toContain('white-space: pre-wrap')
-        expect(head.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
-        expect(head.find('[data-testid="submission-withdraw"]').exists()).toBe(false)
+        expect(head.find('[data-testid="draft-start"]').exists()).toBe(true)
+        expect(head.find('[data-testid="submission-cancel"]').exists()).toBe(false)
         w.unmount()
     })
 
     it('offers Cancel on the FINAL head', async () => {
         const w = await mountPanel()
-        const button = w.find('[data-testid="submission-head-FDA_PREMARKET"]').find('[data-testid="submission-withdraw"]')
+        const button = w.find('[data-testid="submission-head-FDA_PREMARKET"]').find('[data-testid="submission-cancel"]')
         expect(button.text()).toBe('Cancel')
         w.unmount()
     })
 
     it('a legacy cancelled head reads its withdrawal triple and says it was migrated', async () => {
         const legacy = { uuid: 's3', release: 'r1', kind: 'TEST_KIND', state: 'CANCELLED', latestVersion: 1,
-            lastActKind: 'WITHDRAWN', lastActDate: '2026-09-03T00:00:00Z', lastActBy: 'u1', legacyState: 'WITHDRAWN',
+            lastAct: { kind: 'CANCEL', actedAt: '2026-09-03T00:00:00Z', actorName: 'Ann' }, lastActDate: '2026-09-03T00:00:00Z', lastActBy: 'u1', legacyState: 'WITHDRAWN',
             withdrawnDate: '2026-09-03T00:00:00Z', withdrawReason: 'Old <i>reason</i>', acts: [],
             versions: [v(1, { submission: 's3', kind: 'TEST_KIND' })] }
         query.mockImplementation(async (opts: any) => {
+            const d = draftReads(opts); if (d) return d
             switch (operation(opts)) {
             case 'PackageKinds': return { data: { packageKinds: [{ kind: 'TEST_KIND', parts: [] }] } }
             case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: [legacy] } }
@@ -213,22 +226,22 @@ describe('ReleaseSubmissionsPanel', () => {
         expect(head.find('[data-testid="submission-state"]').text()).toBe('Cancelled (legacy: withdrawn ' + date + ')')
         expect(head.find('.submission-withdrawn').text()).toContain('Withdrawn on ' + date + ':')
         expect(head.find('[data-testid="submission-withdraw-reason"]').text()).toBe('Old <i>reason</i>')
-        expect(head.find('[data-testid="submission-withdraw"]').exists()).toBe(false)
+        expect(head.find('[data-testid="submission-cancel"]').exists()).toBe(false)
         w.unmount()
     })
 
     it('a reader sees no action; an empty release says so', async () => {
         const reader = await mountPanel({ isWritable: false })
-        for (const id of ['submission-create', 'submission-resubmit', 'submission-withdraw']) {
+        for (const id of ['draft-start', 'submission-cancel']) {
             expect(reader.find(`[data-testid="${id}"]`).exists(), id).toBe(false)
         }
         reader.unmount()
-        query.mockImplementation(async (opts: any) => operation(opts) === 'PackageKinds'
+        query.mockImplementation(async (opts: any) => draftReads(opts) ?? (operation(opts) === 'PackageKinds'
             ? { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
-            : { data: { submissionsOfRelease: [] } })
+            : { data: { submissionsOfRelease: [] } }))
         const empty = await mountPanel({ lifecycle: 'DRAFT' })
         expect(empty.find('[data-testid="submissions-empty"]').text()).toBe('No submission of this release yet')
-        const create = empty.find('[data-testid="submission-create"]')
+        const create = empty.find('[data-testid="draft-start"]')
         expect(create.attributes('disabled')).toBeDefined()
         expect(create.attributes('title')).toBe('The release must be Assembled or later')
         empty.unmount()
@@ -236,6 +249,7 @@ describe('ReleaseSubmissionsPanel', () => {
 
     it('renders one row per kind the host passes, in that order, a failed catalog read changing nothing', async () => {
         query.mockImplementation(async (opts: any) => {
+            const d = draftReads(opts); if (d) return d
             if (operation(opts) === 'SubmissionsOfRelease') return { data: { submissionsOfRelease: [] } }
             throw new Error('unexpected query ' + operation(opts))
         })
@@ -272,15 +286,15 @@ describe('ReleaseSubmissionsPanel', () => {
             { kind: 'FDA_PREMARKET', parts: [{ part: 'AGGREGATE_SBOM', requirement: 'REQUIRED' }, { part: 'NARRATIVE', requirement: 'REQUIRED' }] },
             { kind: 'TEST_KIND', parts: [{ part: 'AGGREGATE_SBOM', requirement: 'REQUIRED' }, { part: 'NARRATIVE', requirement: 'OPTIONAL' }] },
         ]
-        const ACTIVE = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastActKind: 'CREATED',
+        const ACTIVE = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastAct: { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann' },
             lastActDate: '2026-10-02T00:00:00Z', lastActBy: 'u1', versions: [v(1), v(2)] }
 
         function narrativeAnswers (heads: any[] = []) {
             query.mockImplementation(async (opts: any) => {
+                const d = draftReads(opts); if (d) return d
                 switch (operation(opts)) {
                 case 'PackageKinds': return { data: { packageKinds: NARRATIVE_KINDS } }
                 case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: heads } }
-                case 'SubmissionPreview': return { data: { submissionPreview: { canSubmit: true, nextVersion: 1, parts: [] } } }
                 default: throw new Error('unexpected query ' + operation(opts))
                 }
             })
@@ -288,8 +302,6 @@ describe('ReleaseSubmissionsPanel', () => {
                 switch (operation(opts)) {
                 case 'updateReleaseNarrative':
                     return { data: { updateRelease: { uuid: 'r1', fdaAssessmentNarrative: opts.variables.release.fdaAssessmentNarrative || null } } }
-                case 'CreateSubmission': return { data: { createSubmission: { outcome: 'CREATED', version: { version: 1 } } } }
-                case 'ResubmitSubmission': return { data: { resubmitSubmission: { outcome: 'RESUBMITTED', version: { version: 3 } } } }
                 default: throw new Error('unexpected mutation ' + operation(opts))
                 }
             })
@@ -305,7 +317,7 @@ describe('ReleaseSubmissionsPanel', () => {
 
         async function openCreate (props: Record<string, any> = {}) {
             const w = await mountPanel({ kinds: ['FDA_PREMARKET'], ...props })
-            await w.find('[data-testid="submission-create"]').trigger('click')
+            await w.find('[data-testid="draft-start"]').trigger('click')
             await flushPromises()
             return w
         }
@@ -317,18 +329,19 @@ describe('ReleaseSubmissionsPanel', () => {
             expect(w.find('[data-testid="narrative-form"]').exists()).toBe(true)
             expect(w.text()).toContain('Use the organization default')
             expect(w.text()).toContain('Write one for this release')
-            expect(ops()).not.toContain('SubmissionPreview')
+            expect(ops()).not.toContain('SubmissionsOfComponent')
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(false)
             expect(mutate).not.toHaveBeenCalled()
             w.unmount()
         })
 
         it('a kind whose NARRATIVE part is not REQUIRED gets no prompt: Create goes straight to the preview', async () => {
             const w = await mountPanel({ kinds: ['TEST_KIND'], orgNarrative: 'Org text' })
-            await w.find('[data-testid="submission-create"]').trigger('click')
+            await w.find('[data-testid="draft-start"]').trigger('click')
             await flushPromises()
             expect(w.find('[data-testid="narrative-form"]').exists()).toBe(false)
-            expect(ops()).toContain('SubmissionPreview')
-            expect(mutations()).toEqual(['CreateSubmission'])
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
+            expect(mutations()).toEqual([])
             w.unmount()
         })
 
@@ -366,20 +379,26 @@ describe('ReleaseSubmissionsPanel', () => {
             await w.find('[data-testid="narrative-confirm"]').trigger('click')
             await flushPromises()
             expect(mutate.mock.calls[0][0].variables).toEqual({ release: { uuid: 'r1', org: 'o1', fdaAssessmentNarrative: 'Written here' } })
-            expect(mutations()).toEqual(['updateReleaseNarrative', 'CreateSubmission'])
+            expect(mutations()).toEqual(['updateReleaseNarrative'])
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
             w.unmount()
         })
 
         it('Write one with a changed text saves it, emits narrative-saved, then previews and creates', async () => {
             const w = await openCreate({ narrativeOverride: 'Release text', orgNarrative: 'Org text' })
             await w.find('[data-testid="narrative-text"] textarea').setValue('New release text')
+            let resolveWrite!: () => void
+            mutate.mockImplementationOnce((opts: any) => new Promise(resolve => {
+                resolveWrite = () => resolve({ data: { updateRelease: { uuid: 'r1', fdaAssessmentNarrative: opts.variables.release.fdaAssessmentNarrative } } })
+            }))
             await w.find('[data-testid="narrative-confirm"]').trigger('click')
             await flushPromises()
             expect(mutate.mock.calls[0][0].variables).toEqual({ release: { uuid: 'r1', org: 'o1', fdaAssessmentNarrative: 'New release text' } })
             const order = ops()
-            expect(order.indexOf('updateReleaseNarrative')).toBeLessThan(order.indexOf('CreateSubmission'))
-            expect(query.mock.calls.findIndex(c => operation(c[0]) === 'SubmissionPreview')).toBeGreaterThan(-1)
-            expect(mutations()).toEqual(['updateReleaseNarrative', 'CreateSubmission'])
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(false)
+            resolveWrite(); await flushPromises(); expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
+            expect(mutations()).toEqual(['updateReleaseNarrative'])
+            expect(order).toContain('updateReleaseNarrative')
             expect(w.findComponent(Panel).emitted('narrative-saved')).toEqual([['New release text']])
             expect(w.find('[data-testid="narrative-form"]').exists()).toBe(false)
             w.unmount()
@@ -389,7 +408,8 @@ describe('ReleaseSubmissionsPanel', () => {
             const w = await openCreate({ narrativeOverride: 'Release text', orgNarrative: 'Org text' })
             await w.find('[data-testid="narrative-confirm"]').trigger('click')
             await flushPromises()
-            expect(mutations()).toEqual(['CreateSubmission'])
+            expect(mutations()).toEqual([])
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
             expect(w.findComponent(Panel).emitted('narrative-saved')).toBeUndefined()
             w.unmount()
         })
@@ -401,7 +421,8 @@ describe('ReleaseSubmissionsPanel', () => {
             await w.find('[data-testid="narrative-confirm"]').trigger('click')
             await flushPromises()
             expect(mutate.mock.calls[0][0].variables).toEqual({ release: { uuid: 'r1', org: 'o1', fdaAssessmentNarrative: '' } })
-            expect(mutations()).toEqual(['updateReleaseNarrative', 'CreateSubmission'])
+            expect(mutations()).toEqual(['updateReleaseNarrative'])
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
             expect(w.findComponent(Panel).emitted('narrative-saved')).toEqual([['']])
             w.unmount()
         })
@@ -410,7 +431,8 @@ describe('ReleaseSubmissionsPanel', () => {
             const w = await openCreate({ narrativeOverride: null, orgNarrative: 'Org text' })
             await w.find('[data-testid="narrative-confirm"]').trigger('click')
             await flushPromises()
-            expect(mutations()).toEqual(['CreateSubmission'])
+            expect(mutations()).toEqual([])
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
             w.unmount()
         })
 
@@ -423,7 +445,8 @@ describe('ReleaseSubmissionsPanel', () => {
             expect(w.find('[data-testid="narrative-save-error"]').text()).toContain('fdaAssessmentNarrative must not exceed 8000 characters')
             expect(w.find('[data-testid="narrative-form"]').exists()).toBe(true)
             expect(mutations()).toEqual(['updateReleaseNarrative'])
-            expect(ops()).not.toContain('SubmissionPreview')
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(false)
+            expect(ops()).not.toContain('SubmissionsOfComponent')
             expect(fire).not.toHaveBeenCalled()
             expect(w.findComponent(Panel).emitted('narrative-saved')).toBeUndefined()
             w.unmount()
@@ -435,33 +458,36 @@ describe('ReleaseSubmissionsPanel', () => {
             await flushPromises()
             expect(w.find('[data-testid="narrative-form"]').exists()).toBe(false)
             expect(mutate).not.toHaveBeenCalled()
-            expect(ops()).not.toContain('SubmissionPreview')
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(false)
+            expect(ops()).not.toContain('SubmissionsOfComponent')
             w.unmount()
         })
 
-        it('Resubmit asks too, writes first, then keeps its required reason and sends the shown version', async () => {
+        it('Start draft over a FINAL head asks too, writes first, then the form shows with no category chosen', async () => {
             narrativeAnswers([ACTIVE])
             const w = await mountPanel({ kinds: ['FDA_PREMARKET'], narrativeOverride: 'Release text', orgNarrative: 'Org text' })
-            await w.find('[data-testid="submission-resubmit"]').trigger('click')
+            await w.find('[data-testid="draft-start"]').trigger('click')
             await flushPromises()
             expect(w.find('[data-testid="narrative-form"]').exists()).toBe(true)
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(false)
             expect(chosen(w)).toBe('RELEASE')
             await radio(w, 'ORGANIZATION').setValue(true)
             await flushPromises()
             await w.find('[data-testid="narrative-confirm"]').trigger('click')
             await flushPromises()
-            expect(mutations()).toEqual(['updateReleaseNarrative', 'ResubmitSubmission'])
+            expect(mutations()).toEqual(['updateReleaseNarrative'])
             expect(mutate.mock.calls[0][0].variables.release.fdaAssessmentNarrative).toBe('')
-            const reasonDialog = fire.mock.calls.find(c => c[0]?.inputLabel)![0]
-            expect(reasonDialog.inputLabel).toBe('Reason (required)')
-            expect(mutate.mock.calls[1][0].variables).toEqual({ submission: 's1', reason: 'Updated narrative', expectedLatestVersion: 2 })
+            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
+            const category = w.findAllComponents(NSelect).find((c: any) => c.attributes('data-testid') === 'draft-reason-category')!
+            expect(category.props('value')).toBeNull()
+            expect(w.find('[data-testid="draft-start-problem"]').text()).toBe('Choose a reason')
             w.unmount()
         })
 
         it('a second act after a write starts from the stored override before the host refreshes', async () => {
             narrativeAnswers([ACTIVE])
             const w = await mountPanel({ kinds: ['FDA_PREMARKET'], narrativeOverride: null, orgNarrative: 'Org text' })
-            await w.find('[data-testid="submission-resubmit"]').trigger('click')
+            await w.find('[data-testid="draft-start"]').trigger('click')
             await flushPromises()
             expect(chosen(w)).toBe('ORGANIZATION')
             await radio(w, 'RELEASE').setValue(true)
@@ -469,7 +495,9 @@ describe('ReleaseSubmissionsPanel', () => {
             await w.find('[data-testid="narrative-text"] textarea').setValue('Own text')
             await w.find('[data-testid="narrative-confirm"]').trigger('click')
             await flushPromises()
-            await w.find('[data-testid="submission-resubmit"]').trigger('click')
+            await w.find('[data-testid="draft-start-cancel"]').trigger('click')
+            await flushPromises()
+            await w.find('[data-testid="draft-start"]').trigger('click')
             await flushPromises()
             expect(chosen(w)).toBe('RELEASE')
             expect((w.find('[data-testid="narrative-text"] textarea').element as HTMLTextAreaElement).value).toBe('Own text')
@@ -489,17 +517,17 @@ describe('ReleaseSubmissionsPanel: the newest version and the actors (FDAW-4)', 
         fire.mockReset()
         heads = HEADS
         query.mockImplementation(async (opts: any) => {
+            const d = draftReads(opts); if (d) return d
             switch (operation(opts)) {
             case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
             case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: heads } }
-            case 'SubmissionPreview': return { data: { submissionPreview: { canSubmit: true, nextVersion: 1, parts: [] } } }
             default: throw new Error('unexpected query ' + operation(opts))
             }
         })
         mutate.mockImplementation(async (opts: any) => {
             switch (operation(opts)) {
-            case 'CreateSubmission': return { data: { createSubmission: { outcome: 'CREATED', version: { version: 1 } } } }
-            case 'ResubmitSubmission': return { data: { resubmitSubmission: { outcome: 'RESUBMITTED', version: { version: 2 } } } }
+            case 'FinalizeDraft': return { data: { finalizeDraft: { draft: null, submission: { uuid: 's1', state: 'FINAL', latestVersion: 1 },
+                version: { version: 1 } } } }
             default: throw new Error('unexpected mutation ' + operation(opts))
             }
         })
@@ -530,21 +558,42 @@ describe('ReleaseSubmissionsPanel: the newest version and the actors (FDAW-4)', 
         w.unmount()
     })
 
-    it('T3: after a Create the re-read shows v1 without a click, after a Resubmit v2', async () => {
+    it('T3: after a Finalize the re-read shows the new version without a click', async () => {
+        const built = { uuid: 'd1', org: 'o1', release: 'r1', component: 'c1', kind: 'FDA_PREMARKET', submission: null, state: 'EDITING',
+            revision: 7, plannedVersion: 1, startedAt: '2026-11-13T05:00:00Z', startedBy: { actor: 'u1', actorName: 'Ann' },
+            reasonCategory: 'FIRST_VERSION', reasonText: null, replaces: null, job: { state: 'BUILT', attempt: 1 },
+            build: { builtAt: '2026-11-13T06:07:08.123Z', releaseSbom: { version: 3 }, parts: [], diff: null }, confirmation: null,
+            changesSinceBuild: { count: 0, fingerprintEqual: true, movedLines: [] } }
+        let drafts: any[] = [built]
         heads = []
+        query.mockImplementation(async (opts: any) => {
+            if (operation(opts) === 'ReleaseDrafts') return { data: { release: { uuid: 'r1', drafts } } }
+            const d = draftReads(opts); if (d) return d
+            switch (operation(opts)) {
+            case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
+            case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: heads } }
+            default: throw new Error('unexpected query ' + operation(opts))
+            }
+        })
+        fire.mockResolvedValue({ isConfirmed: true, value: 1 })
         const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
         expect(w.find('[data-testid="submission-latest-FDA_PREMARKET"]').exists()).toBe(false)
-        heads = [{ ...HEADS[0], latestVersion: 1, lastActKind: 'CREATED', versions: [v(1)] }]
-        await w.find('[data-testid="submission-create"]').trigger('click')
+        heads = [{ ...HEADS[0], latestVersion: 1, versions: [v(1)] }]
+        drafts = []
+        await w.find('[data-testid="draft-finalize"]').trigger('click')
         await flushPromises()
-        expect(mutate.mock.calls.map(c => operation(c[0]))).toEqual(['CreateSubmission'])
+        expect(mutate.mock.calls.map(c => operation(c[0]))).toEqual(['FinalizeDraft'])
         let latest = w.find('[data-testid="submission-latest-FDA_PREMARKET"]')
         expect(latest.text()).toContain('Latest: v1')
         expect(latest.find('[data-testid="submission-parts-FDA_PREMARKET-1"]').exists()).toBe(true)
-        heads = [{ ...HEADS[0], latestVersion: 2, versions: [v(1), v(2)] }]
-        await w.find('[data-testid="submission-resubmit"]').trigger('click')
+        drafts = [{ ...built, uuid: 'd2', submission: 's1', plannedVersion: 2 }]
+        await (w.findComponent(Panel).vm as any).read()
         await flushPromises()
-        expect(mutate.mock.calls.map(c => operation(c[0]))).toEqual(['CreateSubmission', 'ResubmitSubmission'])
+        heads = [{ ...HEADS[0], latestVersion: 2, versions: [v(1), v(2)] }]
+        drafts = []
+        await w.find('[data-testid="draft-finalize"]').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls.map(c => operation(c[0]))).toEqual(['FinalizeDraft', 'FinalizeDraft'])
         latest = w.find('[data-testid="submission-latest-FDA_PREMARKET"]')
         expect(latest.text()).toContain('Latest: v2')
         expect(latest.find('[data-testid="submission-parts-FDA_PREMARKET-2"]').exists()).toBe(true)
@@ -575,7 +624,7 @@ describe('ReleaseSubmissionsPanel: the newest version and the actors (FDAW-4)', 
 
 /** FDAW-78 row 15 (REQ-67): the release panel's Requirement and Settings cells in words, swept. */
 describe('ReleaseSubmissionsPanel in words (FDAW-78 row 15)', () => {
-    const HEAD = { uuid: 's9', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastActKind: 'RESUBMITTED',
+    const HEAD = { uuid: 's9', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastAct: { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann' },
         lastActDate: '2026-10-02T00:00:00Z', lastActBy: 'u1', versions: [
             v(1, { submission: 's9' }),
             v(2, { submission: 's9', settings: { row: 'row-1', revision: 0, source: 'COMPONENT' }, parts: [
@@ -588,6 +637,7 @@ describe('ReleaseSubmissionsPanel in words (FDAW-78 row 15)', () => {
     beforeEach(() => {
         query.mockReset()
         query.mockImplementation(async (opts: any) => {
+            const d = draftReads(opts); if (d) return d
             switch (operation(opts)) {
             case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
             case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: [HEAD] } }
@@ -622,11 +672,11 @@ describe('ReleaseSubmissionsPanel: Share with customers (FDAW-39 row 51 (d))', (
     const ENABLED = { publishing: 'ENABLED', canPublish: true, publication: null, refusal: null }
     const BLOCKED = { publishing: 'ENABLED', canPublish: false, publication: null, refusal: 'LIFECYCLE_TOO_LOW',
         refusalMessage: 'Release Pump 1.2.0 is ASSEMBLED; the TEA profile\'s minimum lifecycle is GENERAL_AVAILABILITY' }
-    const fdaHead = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastActKind: 'RESUBMITTED',
+    const fdaHead = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastAct: { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann' },
         lastActDate: '2026-10-02T00:00:00Z', lastActBy: 'u1',
         versions: [v(1), v(2, { sbomProfile: { name: 'fda', row: null, revision: 0, source: 'DEFAULT' } })] }
     const testHead = (state: string, changes: Record<string, any> = {}) => ({ uuid: 's2', release: 'r1', kind: 'TEST_KIND', state,
-        latestVersion: 1, lastActKind: 'CREATED', lastActDate: '2026-10-03T00:00:00Z', lastActBy: 'u1', legacyState: null,
+        latestVersion: 1, lastAct: { kind: 'FINALIZE', actedAt: '2026-10-03T00:00:00Z', actorName: 'Ann' }, lastActDate: '2026-10-03T00:00:00Z', lastActBy: 'u1', legacyState: null,
         versions: [v(1, { submission: 's2', kind: 'TEST_KIND' })], ...changes })
     let heads: any[] = []
     const shareIn = (w: any, kind: string) => w.find(`[data-testid="submission-head-${kind}"] [data-testid="submission-share"]`)
@@ -637,6 +687,7 @@ describe('ReleaseSubmissionsPanel: Share with customers (FDAW-39 row 51 (d))', (
         fire.mockReset()
         heads = [fdaHead, testHead('SENT')]
         query.mockImplementation(async (opts: any) => {
+            const d = draftReads(opts); if (d) return d
             switch (operation(opts)) {
             case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }, { kind: 'TEST_KIND', parts: [] }] } }
             case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: heads } }
@@ -654,7 +705,7 @@ describe('ReleaseSubmissionsPanel: Share with customers (FDAW-39 row 51 (d))', (
         expect(b.attributes('title') ?? '').toBe('')
         const actions = w.find('[data-testid="submission-head-FDA_PREMARKET"] .submission-actions')
         expect(actions.findAll('button[data-testid]').map((e: any) => e.attributes('data-testid')))
-            .toEqual(['submission-resubmit', 'submission-withdraw', 'submission-share'])
+            .toEqual(['draft-start', 'submission-cancel', 'submission-share'])
         w.unmount()
     })
 
@@ -733,5 +784,558 @@ describe('ReleaseSubmissionsPanel: Share with customers (FDAW-39 row 51 (d))', (
         expect(swept).toContain(LIFECYCLE_TEXT)
         expectSwept(swept, 'release panel with share')
         w.unmount()
+    })
+})
+
+// FDAW-32 (architecture-2 section 4): the draft of a kind's next version on the release's Regulatory tab.
+const { default: submissionQueries } = await import('@/utils/submissionQueries')
+const U1 = A1
+const D: any = { uuid: 'd1', org: 'o1', release: 'r1', component: 'c1', kind: 'FDA_PREMARKET', submission: null, state: 'EDITING',
+    revision: 7, plannedVersion: 2, startedAt: '2026-11-13T05:00:00Z', startedBy: { actor: 'u1', actorName: 'Ann' },
+    reasonCategory: 'CORRECTION', reasonText: 'fix', replaces: null, job: { state: 'BUILT', attempt: 1 },
+    build: { builtAt: '2026-11-13T06:07:08.123Z', releaseSbom: { version: 3 }, parts: [
+        { part: 'AGGREGATE_SBOM', artifact: U1, sha256: 'a'.repeat(64), sizeBytes: 10, documentVersion: 3 },
+        { part: 'VDR', artifact: 'not-a-uuid', sha256: null, sizeBytes: null, documentVersion: null }], diff: null },
+    confirmation: null, changesSinceBuild: { count: 0, fingerprintEqual: true, movedLines: [] } }
+const DH = { ...D, submission: 's1', plannedVersion: 3 }
+const AWAIT = { state: 'AWAITING_CONFIRMATION', confirmation: { actor: 'u1', actorName: 'Ann', capacity: 'AUTHOR',
+    confirmedAt: '2026-11-13T06:09:10Z' } }
+const FINAL_S1 = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2,
+    lastAct: { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann' }, lastActDate: '2026-10-02T00:00:00Z',
+    lastActBy: 'u1', versions: [v(1), v(2)] }
+const TEA_ENABLED = { publishing: 'ENABLED', canPublish: true, publication: null, refusal: null }
+const DRAFTS = (d: any) => ({ data: { release: { uuid: 'r1', drafts: [d] } } })
+const SETTING = (val: any) => ({ data: { organizations: [{ uuid: 'o1', settings: { submissionSecondConfirmer: val } }] } })
+const FIVE = ['draft-rebuild', 'draft-discard', 'draft-confirm', 'draft-return', 'draft-finalize']
+const T16 = 'Rebuild first'
+const T29 = 'The second confirmation must come from a different person than the first; ask another member to finalize'
+const LIFE = 'The release must be Assembled or later'
+const PLAN = (p: number, l: number) => 'This draft was planned as version ' + p + ', but the package already has version ' + l
+    + '; discard this draft and start a new one'
+const T32 = 'The second-confirmer setting could not be read; this page reads it again every 30 seconds'
+const T17_BASE = 'Writes v2 of the FDA premarket submission of widget 1.0.0 from the build of 2026-11-13 06:07 UTC. Nothing is generated '
+    + 'again, and a Final version cannot be changed.'
+
+// Each answer by operation name: a value, a function of the options, or an Error (rejected); the rest through draftReads.
+let replies: Record<string, any> = {}
+function install (map: Record<string, any>) {
+    replies = { PackageKinds: { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }, { kind: 'TEST_KIND', parts: [] }] } },
+        SubmissionsOfRelease: { data: { submissionsOfRelease: [] } }, ...map }
+    query.mockImplementation(async (opts: any) => {
+        const op = operation(opts)
+        if (op in replies) {
+            const r = typeof replies[op] === 'function' ? replies[op](opts) : replies[op]
+            if (r instanceof Error || (r && r.errors)) throw r
+            return r
+        }
+        const d = draftReads(opts); if (d) return d
+        throw new Error('unexpected query ' + op)
+    })
+}
+const opsOf = (calls: any[]) => calls.map(c => operation(c[0]))
+const callsOf = (name: string) => query.mock.calls.filter(c => operation(c[0]) === name).map(c => c[0])
+const draftButtonIds = (w: any) => w.findAll('[data-testid="draft-card"] button[data-testid]')
+    .map((b: any) => b.attributes('data-testid')).filter((id: string) => FIVE.includes(id))
+const button = (w: any, id: string) => w.find(`[data-testid="${id}"]`)
+const isDisabled = (w: any, id: string) => (button(w, id).element as HTMLButtonElement).disabled
+const titleOf = (w: any, id: string) => button(w, id).attributes('title') ?? ''
+const selectOf = (w: any, id: string) => w.findAllComponents(NSelect).find((c: any) => c.attributes('data-testid') === id)
+
+function resetMocks () {
+    query.mockReset()
+    mutate.mockReset()
+    fire.mockReset()
+    mutate.mockImplementation(async (opts: any) => {
+        const field = (opts.mutation.definitions[0].selectionSet.selections[0].name.value)
+        return { data: { [field]: { draft: { uuid: 'd9', state: 'EDITING', revision: 1 }, submission: null, version: { version: 2 } } } }
+    })
+}
+
+describe('ReleaseSubmissionsPanel: the draft (FDAW-32 row 6)', () => {
+    beforeEach(() => {
+        resetMocks()
+        install({})
+    })
+
+    it('(a) reads the drafts and the setting with no-cache; a failed drafts read is the load error, a failed setting read is not', async () => {
+        install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } } })
+        const w = await mountPanel()
+        expect(opsOf(query.mock.calls).sort()).toEqual(['OrgSecondConfirmer', 'PackageKinds', 'ReleaseDrafts', 'SubmissionsOfRelease'])
+        expect(callsOf('ReleaseDrafts')[0].variables).toEqual({ releaseID: 'r1', orgID: 'o1' })
+        expect(query.mock.calls.every(c => c[0].fetchPolicy === 'no-cache')).toBe(true)
+        w.unmount()
+
+        install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } }, ReleaseDrafts: new Error('drafts down') })
+        const failed = await mountPanel()
+        expect(failed.find('[data-testid="submissions-load-error"]').exists()).toBe(true)
+        failed.unmount()
+
+        install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } }, OrgSecondConfirmer: new Error('setting down') })
+        const noSetting = await mountPanel()
+        expect(noSetting.find('[data-testid="submissions-load-error"]').exists()).toBe(false)
+        expect(noSetting.find('[data-testid="submission-head-FDA_PREMARKET"] [data-testid="submission-state"]').exists()).toBe(true)
+        noSetting.unmount()
+
+        install({ ReleaseDrafts: DRAFTS(D), OrgSecondConfirmer: new Error('setting down') })
+        const unread = await mountPanel()
+        expect(draftButtonIds(unread)).toEqual(['draft-rebuild', 'draft-discard', 'draft-finalize'])
+        expect(unread.find('[data-testid="draft-setting-unread"]').text()).toBe(T32)
+        unread.unmount()
+
+        install({ ReleaseDrafts: DRAFTS(D), OrgSecondConfirmer: SETTING(false) })
+        const read = await mountPanel()
+        expect(read.find('[data-testid="draft-setting-unread"]').exists()).toBe(false)
+        read.unmount()
+
+        install({ ReleaseDrafts: DRAFTS(D),
+            OrgSecondConfirmer: { data: { organizations: [{ uuid: 'o2', settings: { submissionSecondConfirmer: true } }] } } })
+        const other = await mountPanel()
+        expect(draftButtonIds(other)).toEqual(['draft-rebuild', 'draft-discard', 'draft-finalize'])
+        expect(other.find('[data-testid="draft-setting-unread"]').text()).toBe(T32)
+        other.unmount()
+    })
+
+    it('(b) no head, no draft: Start draft alone, and none of the one-click buttons; below Assembled it is disabled with the reason', async () => {
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        const actions = w.find('[data-testid="submission-kind-FDA_PREMARKET"] .submission-actions')
+        expect(actions.findAll('button[data-testid]').map((b: any) => b.attributes('data-testid'))).toEqual(['draft-start'])
+        for (const id of ['submission-create', 'submission-resubmit', 'submission-withdraw']) {
+            expect(w.find(`[data-testid="${id}"]`).exists(), id).toBe(false)
+        }
+        w.unmount()
+        const low = await mountPanel({ kinds: ['FDA_PREMARKET'], lifecycle: 'DRAFT' })
+        expect(isDisabled(low, 'draft-start')).toBe(true)
+        expect(titleOf(low, 'draft-start')).toBe(LIFE)
+        low.unmount()
+    })
+
+    it('(c) the head actions with and without a draft; a reader sees the card without actions', async () => {
+        install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } } })
+        const ids = (w: any) => w.findAll('[data-testid="submission-kind-FDA_PREMARKET"] .submission-actions button[data-testid]')
+            .map((b: any) => b.attributes('data-testid'))
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'], teaView: TEA_ENABLED })
+        expect(ids(w)).toEqual(['draft-start', 'submission-cancel', 'submission-share'])
+        w.unmount()
+
+        install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } }, ReleaseDrafts: DRAFTS(DH) })
+        const withDraft = await mountPanel({ kinds: ['FDA_PREMARKET'], teaView: TEA_ENABLED })
+        expect(ids(withDraft)).toEqual(['submission-cancel', 'submission-share'])
+        expect(withDraft.findAll('[data-testid="draft-card"]')).toHaveLength(1)
+        withDraft.unmount()
+
+        install({ ReleaseDrafts: DRAFTS(D), OrgSecondConfirmer: new Error('setting down') })
+        const reader = await mountPanel({ kinds: ['FDA_PREMARKET'], isWritable: false })
+        expect(reader.find('.submission-actions').exists()).toBe(false)
+        expect(reader.find('[data-testid="draft-card"]').exists()).toBe(true)
+        expect(draftButtonIds(reader)).toEqual([])
+        expect(reader.find('[data-testid="draft-setting-unread"]').exists()).toBe(false)
+        reader.unmount()
+    })
+
+    it('(d) a draft of a kind the host did not pass and with no head renders its kind block with the card', async () => {
+        install({ ReleaseDrafts: DRAFTS(D) })
+        const w = await mountPanel({ kinds: ['TEST_KIND'] })
+        expect(w.find('[data-testid="submission-kind-FDA_PREMARKET"] [data-testid="draft-card"]').exists()).toBe(true)
+        w.unmount()
+    })
+
+    it('(e) without a head: the Start form with First version alone, then StartDraft and RebuildDraft', async () => {
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await button(w, 'draft-start').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
+        expect(mutate.mock.calls).toEqual([])
+        const category = selectOf(w, 'draft-reason-category')!
+        expect(category.props('options')).toEqual([{ label: 'First version', value: 'FIRST_VERSION' }])
+        expect(category.props('value')).toBe('FIRST_VERSION')
+        expect(category.props('disabled')).toBe(true)
+        expect(callsOf('SubmissionsOfComponent').map(c => c.variables)).toEqual([{ component: 'c1', kind: 'FDA_PREMARKET', state: null }])
+        await button(w, 'draft-start-confirm').trigger('click')
+        await flushPromises()
+        expect(opsOf(mutate.mock.calls)).toEqual(['StartDraft', 'RebuildDraft'])
+        expect(mutate.mock.calls[0][0].variables).toEqual({ release: 'r1', kind: 'FDA_PREMARKET', reasonCategory: 'FIRST_VERSION',
+            reasonText: null, replacesSubmission: null, replacesVersion: null })
+        expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('(f) with a FINAL head: three reasons, a required reason text, and the replaced version sent', async () => {
+        install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } },
+            SubmissionsOfComponent: { data: { submissionsOfComponent: [{ uuid: 's3', release: 'r3',
+                releaseVersion: '<img src=x onerror="window.__hit=1"><b>b</b>',
+                versionStates: [{ version: 1, state: 'SENT' }, { version: 2, state: 'FINAL' }] }] } } })
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await button(w, 'draft-start').trigger('click')
+        await flushPromises()
+        const category = selectOf(w, 'draft-reason-category')!
+        expect(category.props('options').map((o: any) => o.value)).toEqual(['FDA_REQUEST_RESPONSE', 'CORRECTION', 'OTHER'])
+        expect(category.props('value')).toBeNull()
+        expect(w.find('[data-testid="draft-start-problem"]').text()).toBe('Choose a reason')
+        expect(isDisabled(w, 'draft-start-confirm')).toBe(true)
+        category.vm.$emit('update:value', 'CORRECTION')
+        await flushPromises()
+        expect(w.find('[data-testid="draft-start-problem"]').text()).toBe('A reason is required')
+        await w.find('[data-testid="draft-reason-text"] textarea').setValue('fix')
+        await flushPromises()
+        expect(w.find('[data-testid="draft-start-problem"]').exists()).toBe(false)
+        expect(isDisabled(w, 'draft-start-confirm')).toBe(false)
+        selectOf(w, 'draft-replaces')!.vm.$emit('update:value', 's3:2')
+        await flushPromises()
+        await button(w, 'draft-start-confirm').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls[0][0].variables).toEqual({ release: 'r1', kind: 'FDA_PREMARKET', reasonCategory: 'CORRECTION',
+            reasonText: 'fix', replacesSubmission: 's3', replacesVersion: 2 })
+        w.unmount()
+    })
+
+    it('(g) the replaceable versions could not be read: no select, text 13, and Start still sent without one', async () => {
+        install({ SubmissionsOfComponent: new Error('heads down') })
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await button(w, 'draft-start').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="draft-replaces"]').exists()).toBe(false)
+        expect(w.find('[data-testid="draft-replaces-error"]').text())
+            .toBe('The versions that can be replaced could not be read; the draft can be started without one')
+        await button(w, 'draft-start-confirm').trigger('click')
+        await flushPromises()
+        expect(opsOf(mutate.mock.calls)[0]).toBe('StartDraft')
+        expect(mutate.mock.calls[0][0].variables.replacesSubmission).toBeNull()
+        expect(mutate.mock.calls[0][0].variables.replacesVersion).toBeNull()
+        w.unmount()
+    })
+
+    it('(h) a refused Start keeps the form and its text, sends nothing further and shows the server\'s sentence', async () => {
+        install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } } })
+        const refusal = 'Release widget 1.0.0: A draft already exists for this release and kind'
+        mutate.mockImplementation(async () => { throw { errors: [{ message: refusal }] } })
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await button(w, 'draft-start').trigger('click')
+        await flushPromises()
+        selectOf(w, 'draft-reason-category')!.vm.$emit('update:value', 'CORRECTION')
+        await w.find('[data-testid="draft-reason-text"] textarea').setValue('fix')
+        await flushPromises()
+        await button(w, 'draft-start-confirm').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls).toHaveLength(1)
+        expect(fire.mock.calls).toEqual([[{ titleText: 'Error!', text: refusal, icon: 'error' }]])
+        expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
+        expect((w.find('[data-testid="draft-reason-text"] textarea').element as HTMLTextAreaElement).value).toBe('fix')
+        w.unmount()
+    })
+
+    it('(i) a kind with a REQUIRED NARRATIVE part: the prompt first, its write, then the form; no StartDraft', async () => {
+        install({ PackageKinds: { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [{ part: 'NARRATIVE', requirement: 'REQUIRED' }] }] } } })
+        mutate.mockImplementation(async (opts: any) => ({ data: { updateRelease: { uuid: 'r1',
+            fdaAssessmentNarrative: opts.variables.release.fdaAssessmentNarrative } } }))
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'], narrativeOverride: 'Release text', orgNarrative: 'Org text' })
+        await button(w, 'draft-start').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="narrative-prompt"]').exists()).toBe(true)
+        expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(false)
+        expect(mutate.mock.calls).toEqual([])
+        await w.find('[data-testid="narrative-text"] textarea').setValue('Changed text')
+        await button(w, 'narrative-confirm').trigger('click')
+        await flushPromises()
+        expect(opsOf(mutate.mock.calls)).toEqual(['updateReleaseNarrative'])
+        expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
+        expect(opsOf(mutate.mock.calls)).not.toContain('StartDraft')
+        w.unmount()
+    })
+
+    it('(j) the last act from lastAct, the state from the newest version\'s confirmations, and one record line per confirmation', async () => {
+        const confirmed = { ...FINAL_S1, versions: [v(1), v(2, { confirmations: [
+            { actor: 'u1', actorName: 'Ann', capacity: 'AUTHOR', confirmedAt: '2026-11-13T06:07:59.999Z' },
+            { actor: 'u2', actorName: 'Bo', capacity: 'REVIEWER', confirmedAt: '2026-11-13T06:09:10Z' }] })] }
+        install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [confirmed] } } })
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        const head = w.find('[data-testid="submission-head-FDA_PREMARKET"]')
+        expect(head.text()).toContain('Finalized on')
+        expect(head.find('[data-testid="submission-state"]').text()).toBe('Final - not sent')
+        const lines = () => w.findAll('[data-testid="submission-latest-FDA_PREMARKET"] [data-testid="submission-confirmation"]')
+            .map((e: any) => e.text())
+        expect(lines()).toEqual(['Reviewed and confirmed ready for submission by Ann on 2026-11-13 06:07 UTC',
+            'Reviewed and confirmed ready for submission by Bo on 2026-11-13 06:09 UTC'])
+        const table = w.find('[data-testid="submission-versions-FDA_PREMARKET"]')
+        const v1 = table.findAll('tbody tr').find((r: any) => r.findAll('td')[1]?.text() === 'v1')!
+        await v1.find('.n-data-table-expand-trigger').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="submission-parts-FDA_PREMARKET-1"]').exists()).toBe(true)
+        expect(w.findAll('[data-testid="submission-confirmation"]')).toHaveLength(2)
+        w.unmount()
+
+        install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [{ ...FINAL_S1, lastAct: null }] } } })
+        const old = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(old.find('[data-testid="submission-head-FDA_PREMARKET"]').text()).toContain('Last act on')
+        old.unmount()
+    })
+
+    it('(k) Cancel sends cancelSubmission with the reason; dismissed, nothing', async () => {
+        install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } } })
+        fire.mockResolvedValue({ isConfirmed: true, value: 'why' })
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await button(w, 'submission-cancel').trigger('click')
+        await flushPromises()
+        expect(opsOf(mutate.mock.calls)).toEqual(['CancelSubmission'])
+        expect(mutate.mock.calls.map(c => c[0].variables)).toEqual([{ submission: 's1', reason: 'why' }])
+        mutate.mockClear()
+        fire.mockReset()
+        fire.mockResolvedValue({ isConfirmed: false })
+        await button(w, 'submission-cancel').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls).toEqual([])
+        w.unmount()
+    })
+
+    it('(l) Finalize sends the revision of the card clicked; Rebuild sends the draft with no dialog', async () => {
+        let held: any = D
+        install({ ReleaseDrafts: () => DRAFTS(held) })
+        fire.mockResolvedValue({ isConfirmed: true, value: 1 })
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        held = { ...D, revision: 9 }
+        await button(w, 'draft-finalize').trigger('click')
+        await flushPromises()
+        const finalizes = () => mutate.mock.calls.filter(c => operation(c[0]) === 'FinalizeDraft').map(c => c[0].variables)
+        expect(finalizes()).toEqual([{ draft: 'd1', expectedRevision: 7 }])
+        await button(w, 'draft-finalize').trigger('click')
+        await flushPromises()
+        expect(finalizes()).toEqual([{ draft: 'd1', expectedRevision: 7 }, { draft: 'd1', expectedRevision: 9 }])
+        mutate.mockClear()
+        fire.mockReset()
+        await button(w, 'draft-rebuild').trigger('click')
+        await flushPromises()
+        expect(opsOf(mutate.mock.calls)).toEqual(['RebuildDraft'])
+        expect(mutate.mock.calls[0][0].variables).toEqual({ draft: 'd1' })
+        expect(fire).not.toHaveBeenCalled()
+        w.unmount()
+    })
+
+    it('(m) the panel hands the card the user, the lifecycle, the head and the setting', async () => {
+        install({ ReleaseDrafts: DRAFTS({ ...D, ...AWAIT }), OrgSecondConfirmer: SETTING(true) })
+        const u1 = await mountPanel({ kinds: ['FDA_PREMARKET'], currentUser: 'u1' })
+        expect(isDisabled(u1, 'draft-finalize')).toBe(true)
+        expect(titleOf(u1, 'draft-finalize')).toBe(T29)
+        u1.unmount()
+        const u2 = await mountPanel({ kinds: ['FDA_PREMARKET'], currentUser: 'u2' })
+        expect(isDisabled(u2, 'draft-finalize')).toBe(false)
+        expect(titleOf(u2, 'draft-finalize')).toBe('')
+        u2.unmount()
+        const nobody = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(isDisabled(nobody, 'draft-finalize')).toBe(false)
+        nobody.unmount()
+
+        install({ ReleaseDrafts: DRAFTS(D) })
+        const low = await mountPanel({ kinds: ['FDA_PREMARKET'], lifecycle: 'DRAFT' })
+        expect(isDisabled(low, 'draft-finalize')).toBe(true)
+        expect(titleOf(low, 'draft-finalize')).toBe(LIFE)
+        low.unmount()
+
+        install({ ReleaseDrafts: DRAFTS(D), SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } } })
+        const stale = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(isDisabled(stale, 'draft-finalize')).toBe(true)
+        expect(titleOf(stale, 'draft-finalize')).toBe(PLAN(2, 2))
+        stale.unmount()
+
+        install({ ReleaseDrafts: DRAFTS(DH), SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } } })
+        const next = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(isDisabled(next, 'draft-finalize')).toBe(false)
+        next.unmount()
+    })
+
+    it('(n) the setting the panel holds words the Finalize dialog', async () => {
+        const ending = (setting: any) => {
+            install({ ReleaseDrafts: DRAFTS({ ...D, ...AWAIT }), OrgSecondConfirmer: setting })
+        }
+        const cases: [any, string][] = [
+            [SETTING(true), ' The confirmation by Ann is recorded first, then yours.'],
+            [SETTING(false), ' The organization no longer requires a second confirmer: the confirmation by Ann will not be recorded, and you are recorded alone.'],
+            [new Error('setting down'), ' The second-confirmer setting could not be read: whether the confirmation by Ann is recorded follows the setting as it is now.'],
+        ]
+        for (const [setting, tail] of cases) {
+            ending(setting)
+            fire.mockReset()
+            fire.mockResolvedValue({ isConfirmed: false })
+            const w = await mountPanel({ kinds: ['FDA_PREMARKET'], currentUser: 'u2' })
+            await button(w, 'draft-finalize').trigger('click')
+            await flushPromises()
+            expect(fire.mock.calls).toHaveLength(1)
+            expect(fire.mock.calls[0][0].text).toBe(T17_BASE + tail)
+            expect(mutate.mock.calls).toEqual([])
+            w.unmount()
+        }
+    })
+})
+
+describe('ReleaseSubmissionsPanel: polling (FDAW-32 row 8)', () => {
+    const T = '2026-11-13T06:00:00Z'
+    const RUNNING = { ...D, job: { state: 'RUNNING', startedAt: T, attempt: 1 } }
+    const jobAnswer = (state: string) => ({ data: { draft: { uuid: 'd1', state: 'EDITING', revision: 7,
+        job: { state, startedAt: T, attempt: 1 } } } })
+    const jobCalls = () => callsOf('DraftJob')
+    const draftCalls = () => callsOf('Draft')
+    const settingCalls = () => callsOf('OrgSecondConfirmer')
+    let w: any = null
+
+    async function advance (ms: number) {
+        await vi.advanceTimersByTimeAsync(ms)
+        await flushPromises()
+    }
+
+    beforeEach(() => {
+        resetMocks()
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+    })
+
+    afterEach(() => {
+        w?.unmount()
+        w = null
+        delete (document as any).hidden
+        vi.useRealTimers()
+    })
+
+    it('(a) a job in flight is read alone every 5 seconds, and its end re-reads the panel', async () => {
+        let state = 'RUNNING'
+        install({ ReleaseDrafts: () => DRAFTS(state === 'RUNNING' ? RUNNING : D), DraftJob: () => jobAnswer(state) })
+        w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await advance(4999)
+        expect(jobCalls()).toEqual([])
+        await advance(1)
+        expect(jobCalls()).toEqual([{ query: submissionQueries.DraftJobGql, variables: { uuid: 'd1' }, fetchPolicy: 'no-cache' }])
+        await advance(5000)
+        expect(jobCalls()).toHaveLength(2)
+        state = 'BUILT'
+        const heads = callsOf('SubmissionsOfRelease').length
+        const drafts = callsOf('ReleaseDrafts').length
+        await advance(5000)
+        expect(jobCalls()).toHaveLength(3)
+        expect(callsOf('SubmissionsOfRelease')).toHaveLength(heads + 1)
+        expect(callsOf('ReleaseDrafts')).toHaveLength(drafts + 1)
+        await advance(5000)
+        expect(jobCalls()).toHaveLength(3)
+        expect(draftCalls()).toEqual([])
+    })
+
+    it('(b) a built draft is read in full every 30 seconds, and the answer turns its banner', async () => {
+        install({ ReleaseDrafts: DRAFTS(D),
+            Draft: { data: { draft: { ...D, changesSinceBuild: { count: 2, fingerprintEqual: false, movedLines: [] } } } } })
+        w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(w.find('[data-testid="draft-stale"]').text()).toContain('Inputs unchanged')
+        await advance(29999)
+        expect(draftCalls()).toEqual([])
+        await advance(1)
+        expect(draftCalls()).toEqual([{ query: submissionQueries.DraftGql, variables: { uuid: 'd1' }, fetchPolicy: 'no-cache' }])
+        expect(w.find('[data-testid="draft-stale"]').text()).toContain('2 changes since this build')
+        expect(isDisabled(w, 'draft-finalize')).toBe(true)
+        expect(titleOf(w, 'draft-finalize')).toBe(T16)
+    })
+
+    it('(c) nothing is read while the tab is hidden, a form is open or an act waits on its dialog', async () => {
+        install({ ReleaseDrafts: DRAFTS(D), Draft: { data: { draft: D } } })
+        w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+        await advance(60000)
+        expect(draftCalls()).toEqual([])
+        expect(settingCalls()).toHaveLength(1)
+        delete (document as any).hidden
+        await advance(30000)
+        expect(draftCalls()).toHaveLength(1)
+        w.unmount()
+
+        query.mockClear()
+        w = await mountPanel({ kinds: ['FDA_PREMARKET', 'TEST_KIND'] })
+        await button(w.find('[data-testid="submission-kind-TEST_KIND"]'), 'draft-start').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
+        await advance(60000)
+        expect(draftCalls()).toEqual([])
+        await button(w, 'draft-start-cancel').trigger('click')
+        await advance(30000)
+        expect(draftCalls()).toHaveLength(1)
+        w.unmount()
+
+        query.mockClear()
+        fire.mockImplementation(() => new Promise(() => {}))
+        w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await button(w, 'draft-discard').trigger('click')
+        await flushPromises()
+        expect(fire).toHaveBeenCalledTimes(1)
+        await advance(60000)
+        expect(draftCalls()).toEqual([])
+    })
+
+    it('(d) a draft not found re-reads the panel; any other failed poll is logged and the poll goes on', async () => {
+        install({ ReleaseDrafts: DRAFTS(D), Draft: { errors: [{ message: 'Draft not found' }] } })
+        w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        const heads = callsOf('SubmissionsOfRelease').length
+        const drafts = callsOf('ReleaseDrafts').length
+        await advance(30000)
+        expect(callsOf('SubmissionsOfRelease')).toHaveLength(heads + 1)
+        expect(callsOf('ReleaseDrafts')).toHaveLength(drafts + 1)
+        w.unmount()
+
+        query.mockClear()
+        install({ ReleaseDrafts: DRAFTS(D), Draft: new Error('boom') })
+        w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await advance(30000)
+        expect(draftCalls()).toHaveLength(1)
+        expect(fire).not.toHaveBeenCalled()
+        expect(w.find('[data-testid="submissions-load-error"]').exists()).toBe(false)
+        await advance(30000)
+        expect(draftCalls()).toHaveLength(2)
+    })
+
+    it('(e) nothing after the unmount, and no timer on a panel without a draft', async () => {
+        install({ ReleaseDrafts: DRAFTS(D), Draft: { data: { draft: D } } })
+        w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await advance(30000)
+        expect(draftCalls()).toHaveLength(1)
+        w.unmount()
+        w = null
+        await advance(120000)
+        expect(draftCalls()).toHaveLength(1)
+        expect(vi.getTimerCount()).toBe(0)
+
+        query.mockClear()
+        install({})
+        w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        const atMount = query.mock.calls.length
+        await advance(120000)
+        expect(query.mock.calls).toHaveLength(atMount)
+    })
+
+    it('(f) the cap: 180 fast polls, then the 30 second read and text 11; Refresh starts again', async () => {
+        install({ ReleaseDrafts: DRAFTS(RUNNING), DraftJob: jobAnswer('RUNNING'), Draft: { data: { draft: RUNNING } } })
+        w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await advance(899999)
+        expect(jobCalls()).toHaveLength(179)
+        await advance(1)
+        expect(jobCalls()).toHaveLength(180)
+        expect(w.find('[data-testid="draft-still-running"]').text()).toContain('Still running; this page checks again every 30 seconds')
+        await advance(30000)
+        expect(jobCalls()).toHaveLength(180)
+        expect(draftCalls()).toHaveLength(1)
+        await button(w, 'draft-refresh').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="draft-still-running"]').exists()).toBe(false)
+        await advance(5000)
+        expect(jobCalls()).toHaveLength(181)
+    })
+
+    it('(g) the setting is read again every 30 seconds, and a failed re-read keeps the held value', async () => {
+        let setting: any = SETTING(false)
+        install({ ReleaseDrafts: DRAFTS(D), Draft: { data: { draft: D } }, OrgSecondConfirmer: () => setting })
+        w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(draftButtonIds(w)).toEqual(['draft-rebuild', 'draft-discard', 'draft-finalize'])
+        expect(settingCalls()).toHaveLength(1)
+        setting = SETTING(true)
+        await advance(29999)
+        expect(settingCalls()).toHaveLength(1)
+        await advance(1)
+        expect(settingCalls()).toEqual([{ query: submissionQueries.OrgSecondConfirmerGql, fetchPolicy: 'no-cache' },
+            { query: submissionQueries.OrgSecondConfirmerGql, fetchPolicy: 'no-cache' }])
+        expect(draftButtonIds(w)).toEqual(['draft-rebuild', 'draft-discard', 'draft-confirm'])
+        setting = new Error('setting down')
+        await advance(30000)
+        expect(settingCalls()).toHaveLength(3)
+        expect(draftButtonIds(w)).toEqual(['draft-rebuild', 'draft-discard', 'draft-confirm'])
     })
 })

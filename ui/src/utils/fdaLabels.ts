@@ -226,7 +226,7 @@ export function submissionHistoryShape (row: any): { action: string, text: strin
         return { action: 'Draft discarded', text: kindWord(o.kind) + ' submission: draft discarded' }
     }
     if (rua === 'CHANGED' && o?.kind && o.version != null && n?.kind && n.version != null) {
-        return { action: 'Resubmitted', text: kindWord(n.kind) + ' submission: version ' + n.version
+        return { action: 'Created', text: kindWord(n.kind) + ' submission: version ' + n.version
             + ' created, replacing version ' + o.version }
     }
     if (rua === 'CHANGED' && o?.state === 'CANCELLED' && o.version == null && n?.state && n.version != null) {

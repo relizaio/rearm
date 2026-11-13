@@ -1426,6 +1426,9 @@
                                 :is-writable="isOrgAdmin"
                                 :installation-type="myUser.installationType"
                                 :names="perspectiveNamesMap" />
+                            <SubmissionSecondConfirmerSetting
+                                :org-uuid="orgResolved"
+                                :is-writable="isOrgAdmin" />
                         </div>
                     </n-tab-pane>
                     <n-tab-pane name="tea" tab="Transparency Exchange API" v-if="teaProfilesAvailable(myUser.installationType)">
@@ -1561,6 +1564,7 @@ import TeaOrgPanel from './TeaOrgPanel.vue'
 import SbomProfilesPanel from './SbomProfilesPanel.vue'
 import SbomProfileOverrides from './SbomProfileOverrides.vue'
 import PackageSettingsEditor from './PackageSettingsEditor.vue'
+import SubmissionSecondConfirmerSetting from './SubmissionSecondConfirmerSetting.vue'
 import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
 import { teaConfirmBeforeMembership, teaMembershipDelta, teaProfilesAvailable } from '@/utils/teaProfile'
 import { loadTeaDocument } from '@/utils/teaDocuments'
