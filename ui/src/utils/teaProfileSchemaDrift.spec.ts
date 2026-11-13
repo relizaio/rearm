@@ -7,6 +7,7 @@ import { coerceInputValue, GraphQLError, GraphQLInputObjectType, validate } from
 import graphqlQueries from './graphqlQueries'
 import { editionPermissionFunctions, TEA_PERMISSION_FUNCTIONS, teaProfilesAvailable } from './teaProfile'
 import { TEA_RIDE_ALONG_SKIP_LABELS, TEA_RIDE_ALONG_STATUSES } from './teaPublication'
+import { TEA_WITHDRAWN_LABELS, TEA_WITHDRAWN_REASONS } from './teaWithdrawn'
 import constants from './constants'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 import { outputEventTypeOptionsForEdition, TEA_OUTPUT_EVENT_TYPE_OPTIONS } from './teaOutputEvents'
@@ -171,6 +172,23 @@ describe('TEA publication documents (TEA-5) and the edition gate', () => {
         const pro = enumValuesOf(proSchema!, 'TeaRideAlongStatus')
         expect([...TEA_RIDE_ALONG_STATUSES].sort()).toEqual([...pro].sort())
         expect(Object.keys(TEA_RIDE_ALONG_SKIP_LABELS).sort()).toEqual(pro.filter(v => v !== 'PUBLISHED').sort())
+    })
+
+    // FDAW-80: the withdrawn revisions ride a document of their own, so a backend without the field
+    // (CE before its catch-up) rejects that document alone and the view keeps working.
+    it('ReleaseTeaWithdrawnGql validates on CE exactly when CE serves TeaPublishPreview.withdrawn; the view never selects it', () => {
+        const t: any = ceSchema.getType('TeaPublishPreview')
+        expect(validate(ceSchema, graphqlQueries.ReleaseTeaWithdrawnGql).length === 0)
+            .toBe(Boolean(t?.getFields?.().withdrawn))
+        expect(graphqlQueries.ReleaseTeaPublicationViewGql.loc!.source.body).not.toMatch(/\bwithdrawn\b/)
+        expect(Object.keys(PUBLICATION_DOCS)).not.toContain('ReleaseTeaWithdrawnGql')
+    })
+
+    it.runIf(proSchema)('ReleaseTeaWithdrawnGql validates against the Pro schema, and the reasons equal the Pro TeaWithdrawnReason', () => {
+        expect(validate(proSchema!, graphqlQueries.ReleaseTeaWithdrawnGql).map(e => e.message)).toEqual([])
+        const pro = enumValuesOf(proSchema!, 'TeaWithdrawnReason')
+        expect([...TEA_WITHDRAWN_REASONS].sort()).toEqual([...pro].sort())
+        expect(Object.keys(TEA_WITHDRAWN_LABELS).sort()).toEqual([...pro].sort())
     })
 })
 

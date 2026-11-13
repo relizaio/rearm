@@ -226,7 +226,7 @@ TEA publishing settings carry these fields (defaults in brackets):
 | Publishing | `ENABLED`, `DISABLED` [`DISABLED`]: DISABLED conceals everything resolving to the row and blocks new publishes |
 | Visibility | `PRIVATE`, `PUBLIC` [`PRIVATE`]: resolved at request time; only an organization admin can make a component PUBLIC: by saving PUBLIC TEA publishing settings, by choosing to follow a perspective whose TEA publishing settings are PUBLIC or removing an override under one, by adding the component to such a perspective or removing the perspective that kept it private, or by removing a perspective's TEA publishing settings or deleting a perspective its members resolved through |
 | SBOM profiles | the names of the SBOM profiles the row publishes, in order, one aggregated SBOM each [`default`]; a row names exactly one SBOM profile on ReARM Community Edition (a save naming more is refused with the reason) and up to 10 on ReARM Pro |
-| Raw artifacts | `NONE`, `NON_BOM`, `ALL` [`NONE`]: the [ride-along artifacts](#ride-along-artifacts) |
+| Raw artifacts | `NONE`, `NON_BOM`, `ALL` [`NONE`]: the [ride-along artifacts](#ride-along-artifacts); a VDR snapshot stored by a release action is never published, whatever the value |
 | Product components | `PUBLISH_WITH_PRODUCT`, `PRODUCT_ONLY` [`PUBLISH_WITH_PRODUCT`]: the cascade, see [Products](#products) |
 | Minimum lifecycle | `ASSEMBLED`, `READY_TO_SHIP`, `GENERAL_AVAILABILITY` [`ASSEMBLED`] |
 | TEI | `DISABLED`, `UUID` [`DISABLED`], with the TEI domain (required with UUID: ASCII, lower case, with a dot): UUID stamps `tei://<TEI domain>/uuid/<TEA release id>` onto published releases |
@@ -291,7 +291,18 @@ When a product's TEA publishing settings have Product components set to PUBLISH_
 
 With the Raw artifacts setting of the TEA publishing settings at NON_BOM or ALL, the release's own artifacts are published alongside the aggregated SBOMs, after them in the collection (NON_BOM leaves out BOMs). An artifact is publishable when its version is an integer (its TEA revision) and ReARM holds its checksum: for an artifact stored in ReARM, the retained raw bytes of the upload; for an externally stored one, a download link and a declared checksum. Signatures are published with the artifact they sign. An artifact that does not qualify is skipped and named in the publish summary; it never fails the publish.
 
+A VDR snapshot stored by a release action is never published on TEA, whatever the Raw artifacts setting: it is skipped with `SKIPPED_VDR_SNAPSHOT`, because it carries the analyst's notes, which customers do not receive (they read the VEX). A snapshot revision that an earlier publish made available answers `410` on the artifact endpoints; collection versions written before keep listing it, and the next publish of the release writes a collection version without it. A VDR you upload yourself is published like any other artifact. The TEA tab of the release marks a withdrawn revision.
+
 An external download link is published only when it is an absolute `http` or `https` URL of printable ASCII characters, at most 4096 octets long, with a host and without user information; an artifact whose link is anything else is skipped with `SKIPPED_LINK_NOT_HTTP_URL`, and the same rule leaves out a deliverable's `distributions[].url` that does not meet it. A signature stored outside ReARM is published as the format's `signatureUrl` under the same rule, and its download is a `302` to that link.
+
+#### What changed for publications that hold a VDR snapshot
+
+1. Before this change, a release with a VDR snapshot action and Raw artifacts at NON_BOM or ALL published the snapshot as an artifact.
+2. Since the upgrade every artifact endpoint of such a revision answers `410` with `OBJECT_UNKNOWN` and the message `This artifact revision has been withdrawn by its publisher.`, to every reader, by revision and as `latest`.
+3. Collection versions already written still list it. The next publish of the release (by hand, with its product, or automatic) writes a version without it, with the reason `ARTIFACT_REMOVED`.
+4. The TEA tab of the release shows a notice and marks the revision `Withdrawn: VDR snapshot, not served on TEA`.
+5. The snapshot stays among the release's artifacts; your own downloads and exports are unchanged.
+6. To publish a VDR you do mean to share, upload it to the release as an artifact: an uploaded VDR is published like any other artifact. A reader who downloaded the snapshot before the upgrade keeps that copy.
 
 ### TEI
 
@@ -329,6 +340,8 @@ Every TEA error body carries `error` and optionally `message`:
 | `400` | `INVALID_PAGE_TOKEN` | A `pageToken` is sent. |
 | `406` | `NO_ACCEPTABLE_FORMAT` | A download `mediaType` is absent, blank, a wildcard or names no format of the revision. |
 | `404` | `SIGNATURE_NOT_FOUND` | The format has no signature. |
+| `410` | `OBJECT_UNKNOWN` | An artifact revision whose stored content is gone (`The stored content of this artifact revision is no longer available.`), or that its publisher withdrew (`This artifact revision has been withdrawn by its publisher.`; see [Ride-along artifacts](#ride-along-artifacts)). |
+| `503` | no body | The stored content of an artifact revision or of its signature could not be read. |
 | `404` | `NOT_IMPLEMENTED` | The instance's `/.well-known/tea` outside an installation of type OSS, on a host where the instance hosts no organization's document, or a redirect target above 4096 octets. |
 
 A path that no TEA operation serves is answered `404` with `{"message":"Not Found"}`, which is not a TEA error: the client has a wrong base or version and fails over to the next endpoint, or reports it. On a [custom domain](#what-a-custom-domain-serves) a path outside `/tea/` and `/.well-known/tea` is answered `404` before it reaches ReARM.

@@ -83,6 +83,36 @@ describe('ReleaseView TEA publication', () => {
             '<div v-if="teaView.publication.state === \'HIDDEN\'" data-testid="tea-hidden"><strong>Hidden from TEA:</strong>')
     })
 
+    it('marks the withdrawn revisions (FDAW-80): notice, unknown line, entry mark, and a read only for a publication', () => {
+        const imp = source.match(/import\s+\{([^}]*)\}\s+from\s+'@\/utils\/teaWithdrawn'/)
+        expect(imp).not.toBeNull()
+        for (const h of ['loadTeaWithdrawn', 'teaMarkWithdrawn', 'teaWithdrawnNotice', 'TEA_WITHDRAWN_UNKNOWN']) {
+            expect(imp![1], h).toMatch(new RegExp('\\b' + h + '\\b'))
+        }
+        const notice = '<n-alert v-if="teaWithdrawnLine" type="warning" :show-icon="false" style="margin-bottom: 8px;" data-testid="tea-withdrawn-notice">{{ teaWithdrawnLine }}</n-alert>'
+        const unknown = '<div v-else-if="teaWithdrawn.failed" class="text-muted" style="margin-bottom: 8px;" data-testid="tea-withdrawn-unknown">{{ TEA_WITHDRAWN_UNKNOWN }}</div>'
+        const table = '<n-data-table :data="teaCollections" :columns="teaCollectionsTableFields" :row-key="teaRowKey" />'
+        const section = template.slice(template.indexOf('data-testid="tea-section"'))
+        const at = [notice, unknown, table].map(t => section.indexOf(t))
+        expect(at[0]).toBeGreaterThan(0)
+        expect(at[1]).toBeGreaterThan(at[0])
+        expect(at[2]).toBeGreaterThan(at[1])
+        expect(code).toContain('teaWithdrawnNotice(teaView.value?.collections, teaWithdrawn.value.withdrawn)')
+        expect(code).toContain('data: teaMarkWithdrawn(teaEntryRows(row.collection, teaView.value?.apiBase), teaWithdrawn.value.withdrawn),')
+        expect(code).toContain("h('strong', { 'data-testid': 'tea-entry-withdrawn' }, row.withdrawn)")
+        const load = code.slice(code.indexOf('async function loadTeaPublication'))
+        const body = load.slice(0, load.indexOf('\n}\n'))
+        const set = body.indexOf('teaView.value = resp.data?.releaseTeaPublicationView ?? null')
+        const gate = body.indexOf('if (teaView.value?.publication) {')
+        const read = body.indexOf('const state = await loadTeaWithdrawn(graphqlClient, forRelease)')
+        const keep = body.indexOf('if (seq === teaViewLoadSeq) teaWithdrawn.value = state')
+        expect(set).toBeGreaterThan(0)
+        expect(gate).toBeGreaterThan(set)
+        expect(read).toBeGreaterThan(gate)
+        expect(keep).toBeGreaterThan(read)
+        expect(code.split('teaWithdrawn.value = { withdrawn: null, failed: false }').length - 1).toBe(2)
+    })
+
     it('the badge opens the TEA tab, and an open TEA tab that goes away falls back to Components', () => {
         const badge = template.slice(template.indexOf('data-testid="tea-badge"'))
         expect(badge.slice(0, badge.indexOf('</span>'))).toContain('@click="openTeaTab"')

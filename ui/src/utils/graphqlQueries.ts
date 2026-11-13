@@ -890,6 +890,20 @@ query ReleaseTeaPublicationView($release: ID!) {
     }
 }`
 
+// FDAW-80: the published revisions TEA answers 410 for. A document of its own, never a selection in the
+// view document: a backend without TeaPublishPreview.withdrawn (CE before its catch-up) rejects it alone.
+const RELEASE_TEA_WITHDRAWN = gql`
+query ReleaseTeaWithdrawn($release: ID!) {
+    releaseTeaPublicationView(release: $release) {
+        release
+        withdrawn {
+            teaUuid
+            revision
+            reason
+        }
+    }
+}`
+
 const PUBLISH_RELEASE_ON_TEA = gql`
 mutation PublishReleaseOnTea($release: ID!, $comment: String) {
     publishReleaseOnTea(release: $release, comment: $comment) {
@@ -2445,6 +2459,7 @@ export default {
     UnassignTeaHostGql: UNASSIGN_TEA_HOST,
     AllOrganizationsGql: ALL_ORGANIZATIONS,
     ReleaseTeaPublicationViewGql: RELEASE_TEA_PUBLICATION_VIEW,
+    ReleaseTeaWithdrawnGql: RELEASE_TEA_WITHDRAWN,
     PublishReleaseOnTeaGql: PUBLISH_RELEASE_ON_TEA,
     RepublishReleaseOnTeaGql: REPUBLISH_RELEASE_ON_TEA,
     HideReleaseOnTeaGql: HIDE_RELEASE_ON_TEA,

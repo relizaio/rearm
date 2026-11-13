@@ -178,6 +178,23 @@ describe('teaPublishSummary (55)', () => {
         expect(text).not.toContain('SKIPPED_')
     })
 
+    it('SKIPPED_VDR_SNAPSHOT (FDAW-80) shows its label, not the raw status', () => {
+        const text = teaPublishSummary({
+            outcome: 'PUBLISHED',
+            publication: publication({ latestVersion: 1 }),
+            collection: { version: 1, entries: [{ artifact: 'agg-1', revision: 1, origin: 'SYNTHETIC' }] },
+            artifacts: [
+                { artifact: 'a-2', status: 'PUBLISHED' },
+                { artifact: 'a-3', status: 'SKIPPED_VDR_SNAPSHOT', detail: 'a VDR snapshot stored by a release action is not published on TEA' },
+                { artifact: 'a-4', status: 'SKIPPED_NO_DOWNLOAD_LINK' },
+            ],
+            children: [],
+        })
+        expect(text).toBe('Published: collection version 1; aggregate SBOM revision 1; 1 artifacts published, 2 skipped '
+            + '(1 VDR snapshot, never published on TEA, 1 no download link)')
+        expect(text).not.toContain('SKIPPED_')
+    })
+
     it('UNCHANGED names the version', () => {
         expect(teaPublishSummary({ outcome: 'UNCHANGED', publication: publication({ latestVersion: 3 }),
             collection: { version: 3, entries: [] }, artifacts: [], children: [] }))
