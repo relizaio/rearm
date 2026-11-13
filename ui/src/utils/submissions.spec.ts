@@ -306,6 +306,11 @@ describe('the head state texts (FDAW-8)', () => {
             .toEqual({ lead: 'Withdrawn on ' + submissionDateText('2026-09-03T00:00:00Z') + ':', reason: 'old' })
         expect(submissionCancelNote({ state: 'FINAL', acts })).toBeNull()
         expect(submissionCancelNote({ state: 'CANCELLED', acts: [] })).toBeNull()
+        // the legacy withdrawal triple needs only one of withdrawnDate/withdrawReason, not both
+        expect(submissionCancelNote({ state: 'WITHDRAWN', acts: [], withdrawnDate: '2026-09-03T00:00:00Z', withdrawReason: null }))
+            .toEqual({ lead: 'Withdrawn on ' + submissionDateText('2026-09-03T00:00:00Z') + ':', reason: '' })
+        expect(submissionCancelNote({ state: 'WITHDRAWN', acts: [], withdrawnDate: null, withdrawReason: 'old, no date' }))
+            .toEqual({ lead: 'Withdrawn on ' + submissionDateText(null) + ':', reason: 'old, no date' })
     })
 })
 

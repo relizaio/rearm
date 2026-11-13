@@ -111,6 +111,11 @@ describe('row 2 others', () => {
             .toEqual({ kind: 'changed', text: '3 changes since this build', labels: ['assessment narrative changed', 'displayed version changed'] })
         expect(D.draftStaleBanner(draft({ changesSinceBuild: { count: 1, fingerprintEqual: false, movedLines: [] } })))
             .toEqual({ kind: 'changed', text: '1 changes since this build', labels: [] })
+        // a changed banner with no usable count (0, or not an integer) falls back to 1, never 0 or -1
+        expect(D.draftStaleBanner(draft({ changesSinceBuild: { count: 0, fingerprintEqual: false, movedLines: [] } })))
+            .toEqual({ kind: 'changed', text: '1 changes since this build', labels: [] })
+        expect(D.draftStaleBanner(draft({ changesSinceBuild: { count: -1, fingerprintEqual: false, movedLines: [] } })))
+            .toEqual({ kind: 'changed', text: '1 changes since this build', labels: [] })
         expect(D.draftStaleBanner(draft({ changesSinceBuild: null })).kind).toBe('changed')
     })
     it('(d) poll', () => {
