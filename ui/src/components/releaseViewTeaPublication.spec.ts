@@ -163,7 +163,7 @@ describe('ReleaseView TEA publication', () => {
         }
         const start = code.indexOf('async function withTeaProgress')
         const body = code.slice(start, code.indexOf('\n}\n', start))
-        expect(body).toMatch(/catch \(err: any\) \{\s*await Swal\.fire\('Error!', teaActErrorText\(err\), 'error'\)\s*\} finally \{\s*teaActing\.value = null\s*\}\s*await refreshAfterTeaAct\(\)/)
+        expect(body).toMatch(/catch \(err: any\) \{\s*await Swal\.fire\(\{ titleText: 'Error!', text: teaActErrorText\(err\), icon: 'error' \}\)\s*\} finally \{\s*teaActing\.value = null\s*\}\s*await refreshAfterTeaAct\(\)/)
     })
 
     it('after a TEA act the whole release is refetched (generated artifacts and identifiers too), the publication as the fallback', () => {

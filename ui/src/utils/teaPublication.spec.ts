@@ -49,7 +49,8 @@ function publication (over: Record<string, any> = {}): any {
 describe('teaPublishConfirm and teaHideConfirm (54)', () => {
     it('PRIVATE answers a plain dialog naming the source and the revision', () => {
         const c = teaPublishConfirm(view(), NAMES)
-        expect(c.title).toBe('Publish shop-api 1.4.0 on TEA?')
+        expect(c.titleText).toBe('Publish shop-api 1.4.0 on TEA?')
+        expect(c).not.toHaveProperty('title')
         expect(c.text).toBe('Published as a TEA component release under the organization TEA profile (revision 3). '
             + 'Visibility: PRIVATE: readable with an external key that covers this component.')
         expect(c.showCancelButton).toBe(true)
@@ -58,10 +59,27 @@ describe('teaPublishConfirm and teaHideConfirm (54)', () => {
         expect(c.confirmButtonText).toBe('Publish')
     })
 
+    it('FDAW-95 row 1: the names are in titleText only, one line each, and no title or html key exists', () => {
+        const H = '<img src=x onerror="window.__teaHit=1"></script><script>window.__teaHit=2</script><b>b</b>'
+        const c: any = teaPublishConfirm(view(), { component: H, version: H })
+        expect(c.titleText).toBe('Publish ' + H + ' ' + H + ' on TEA?')
+        expect(Object.keys(c).sort()).toEqual(['confirmButtonText', 'showCancelButton', 'text', 'titleText'])
+        expect(Object.entries(c).filter(([, v]) => typeof v === 'string' && v.includes('<img')).map(([k]) => k)).toEqual(['titleText'])
+        const BIDI = String.fromCodePoint(0x202e)
+        expect(teaPublishConfirm(view(), { component: 'a\nb', version: BIDI + '1.0' }).titleText).toBe('Publish a b 1.0 on TEA?')
+        expect(teaPublishConfirm(view(), { component: 'x'.repeat(150), version: '1.0' }).titleText)
+            .toBe('Publish ' + 'x'.repeat(99) + '… 1.0 on TEA?')
+        expect(teaPublishConfirm(view(), { component: null, version: undefined } as any).titleText).toBe('Publish   on TEA?')
+        const pub: any = teaPublishConfirm(view({ effectiveVisibility: 'PUBLIC', publication: publication() }), { component: H, version: H })
+        expect(pub.titleText).toBe('Re-publish ' + H + ' ' + H + ' on TEA?')
+        expect(pub).not.toHaveProperty('title')
+        expect(teaHideConfirm(view()).title).toBe('Hide from TEA?')
+    })
+
     it('names a perspective source by name, and asks to Re-publish once a publication exists', () => {
         const c = teaPublishConfirm(view({ profileSource: 'FOLLOWED_PERSPECTIVE', profileSourceObject: 'p-1',
             publication: publication({ state: 'HIDDEN' }) }), NAMES)
-        expect(c.title).toBe('Re-publish shop-api 1.4.0 on TEA?')
+        expect(c.titleText).toBe('Re-publish shop-api 1.4.0 on TEA?')
         expect(c.text).toContain('under the perspective Payments TEA profile (revision 3).')
         expect(c.confirmButtonText).toBe('Re-publish')
     })

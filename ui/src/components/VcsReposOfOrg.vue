@@ -203,7 +203,7 @@ function createdVcsRepo () {
 
 async function archiveVcsRepo (repo: VCS) {
     const swalResult = await Swal.fire({
-        title: `Are you sure you want to archive VCS Repository "${repo.name}"?`,
+        titleText: `Are you sure you want to archive VCS Repository "${repo.name}"?`,
         text: 'If you proceed, the VCS Repository will be archived.',
         icon: 'warning',
         showCancelButton: true,
@@ -221,11 +221,7 @@ async function archiveVcsRepo (repo: VCS) {
                 keepAliveOnHover: true
             })
         } catch (error: any) {
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(error.message),
-                'error'
-            )
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(error.message), icon: 'error' })
         }
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
         notification.info({

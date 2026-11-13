@@ -60,6 +60,7 @@ import {
     EXTERNAL_GRANTS_NONE, filterApiKeysBySearch, teaTokenUrl
 } from '@/utils/apiKeyControls'
 import { uuidCopyColumn } from '@/utils/uuidCopyColumn'
+import { escapeHtml } from '@/utils/escapeHtml'
 import { apiKeyGroupsOfKey } from '@/utils/apiKeyGroupInput'
 import { loadApiKeyGroups } from '@/utils/apiKeyGroupsQuery'
 import { normalizeSearchTerm } from '@/utils/tableSearch'
@@ -165,6 +166,7 @@ function holderNameError (v: string): string | null {
 async function createExternalKey () {
     const r = await Swal.fire({
         title: 'Create an external key',
+        // eslint-disable-next-line no-restricted-syntax -- constants and the number HOLDER_NAME_MAX
         html: '<p style="text-align:left">The key id is created with no secret, for one party outside the organization.</p>'
             + '<label style="display:block;text-align:left;margin-top:8px">Holder (the outside party, required)</label>'
             + `<input id="swal-external-holder" class="swal2-input" style="width: 80%" maxlength="${HOLDER_NAME_MAX}">`
@@ -177,7 +179,7 @@ async function createExternalKey () {
             const holderName = (document.getElementById('swal-external-holder') as HTMLInputElement).value
             const notes = (document.getElementById('swal-external-notes') as HTMLTextAreaElement).value
             const err = holderNameError(holderName)
-            if (err) { Swal.showValidationMessage(err); return false }
+            if (err) { Swal.showValidationMessage(escapeHtml(err)); return false }
             return { holderName: holderName.trim(), notes: notes.trim() }
         }
     })

@@ -952,6 +952,7 @@ const genApiKey = async function () {
         Swal.fire({
             title: 'Generated!',
             customClass: {popup: 'swal-wide'},
+            // eslint-disable-next-line no-restricted-syntax -- getGeneratedApiKeyHTML: a key id, a secret and a header the server minted, no user text
             html: newKeyMessage,
             icon: 'success'
         })
@@ -967,7 +968,7 @@ const genApiKey = async function () {
 
 const archiveInstance = async function () {
     const swalResult = await Swal.fire({
-        title: `Are you sure you want to archive the ${updatedInstance.value.uri} ${instanceWord.value}?`,
+        titleText: `Are you sure you want to archive the ${updatedInstance.value.uri} ${instanceWord.value}?`,
         text: `If you proceed, the instance will be archived and you will not have access to its data.`,
         icon: 'warning',
         showCancelButton: true,
@@ -986,11 +987,7 @@ const archiveInstance = async function () {
                 router.push({ name: 'InstancesOfOrg', params: { orguuid: updatedInstance.value.org } })
             }
         } catch (err: any) {
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(err.message),
-                'error'
-            )
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
         }
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
         notification.info({
@@ -1249,11 +1246,7 @@ const genProductRelease = async function () {
             }
         })
     }   catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     }
     await fetchInstance()
 }
@@ -1343,11 +1336,7 @@ const save = async function () {
         notify('info', 'SAVED', 'Instance changes saved successfully!')
     } catch (errOnSave: any) {
         console.error(errOnSave)
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(errOnSave.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(errOnSave.message), icon: 'error' })
     }
 }
 
