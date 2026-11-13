@@ -265,7 +265,7 @@ const showCreateOrgModal: Ref<boolean> = ref(false)
 async function archiveOrganization(orgUUID: string) {
     let orgToArchive = organizations.value.find((o: any) => o.uuid === orgUUID)
     Swal.fire({
-        title: `Are you sure you want to archive the ${orgToArchive.name} Organization?`,
+        titleText: `Are you sure you want to archive the ${orgToArchive.name} Organization?`,
         text: `If you proceed, the organization will be archived and you will not have access to its data. The organization will stay archived for 30 days after which it would be permanently deleted.`,
         icon: 'warning',
         showCancelButton: true,
@@ -282,11 +282,7 @@ async function archiveOrganization(orgUUID: string) {
                     store.dispatch('fetchMyOrganizations')
                 }
             } catch (err: any) {
-                Swal.fire(
-                    'Error!',
-                    commonFunctions.parseGraphQLError(err.message),
-                    'error'
-                )
+                Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
             }
         } else if (result.dismiss === Swal.DismissReason.cancel) {
             notify('info', 'Cancelled', `Organization archiving cancelled. Your organization is still active.`)

@@ -94,8 +94,7 @@ function expectTextOnly (log: any[]): void {
         expect('html' in e[1]).toBe(false)
     }
 }
-const TITLES = ['TEA', 'Turn on publish at shipped?', 'Publish this component publicly?', 'Make this TEA profile public?',
-    'Publish Pump 1.2.0 on TEA?', 'Re-publish Pump 1.2.0 on TEA?']
+const TITLES = ['TEA', 'Turn on publish at shipped?', 'Publish this component publicly?', 'Make this TEA profile public?']
 function expectTitles (log: any[]): void {
     for (const e of log.filter(x => x[0] === 'fire')) {
         if ('title' in e[1]) expect(TITLES, e[1].title).toContain(e[1].title)

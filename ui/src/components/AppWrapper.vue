@@ -46,6 +46,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '../utils/commonFunctions'
 import { loadBranding, supportContactHtml } from '../utils/branding'
+import { escapeHtml } from '../utils/escapeHtml'
 
 
 const store = useStore()
@@ -117,20 +118,16 @@ const onCreate = async function () {
                         fetchPolicy: 'no-cache'
                     })
                 }   catch (err: any) {
-                    Swal.showValidationMessage(
+                    Swal.showValidationMessage(escapeHtml(
                         `Failed!: ${commonFunctions.parseGraphQLError(err.message)}`
-                    )
+                    ))
                 }
             },
             allowOutsideClick: () => false
         }).then(async(result) => {
             if (result.isConfirmed) {
                 
-                Swal.fire(
-                    "Success!",
-                    "System Unsealed Successfully",
-                    "success"
-                ).then(() => {
+                Swal.fire({ titleText: "Success!", text: "System Unsealed Successfully", icon: "success" }).then(() => {
                     window.location.href = '/'
                 })
             
@@ -174,19 +171,15 @@ const onCreate = async function () {
                             fetchPolicy: 'no-cache'
                         })
                     } catch (err: any) {
-                        Swal.showValidationMessage(
+                        Swal.showValidationMessage(escapeHtml(
                             `Failed: ${commonFunctions.parseGraphQLError(err.message)}`
-                        )
+                        ))
                         return false
                     }
                 }
             }).then(async (result) => {
                 if (result.isConfirmed) {
-                    Swal.fire(
-                        'Success!',
-                        'License uploaded successfully',
-                        'success'
-                    ).then(() => {
+                    Swal.fire({ titleText: 'Success!', text: 'License uploaded successfully', icon: 'success' }).then(() => {
                         window.location.href = '/'
                     })
                 }
@@ -195,6 +188,7 @@ const onCreate = async function () {
             // Non-admin: show contact admin message
             Swal.fire({
                 title: 'License Invalid or Expired',
+                // eslint-disable-next-line no-restricted-syntax -- constants, and the branding contact through supportContactHtml, which escapes it
                 html: `<p>The software license is not valid.</p><p>Please contact your Global System Administrator or ${supportContactHtml()}</p>`,
                 icon: 'warning',
                 showCancelButton: false,

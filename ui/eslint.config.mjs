@@ -21,6 +21,33 @@
 import pluginVue from 'eslint-plugin-vue'
 import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescript'
 
+// FDAW-95: SweetAlert2 writes `title`, `html`, the positional second argument and a validation
+// message as HTML. Text that is not a string literal goes into `titleText` or `text`.
+const FIRE = "CallExpression[callee.object.name='Swal'][callee.property.name='fire']"
+const key = (k) => ":matches([key.name='" + k + "'], [key.value='" + k + "'])"
+const swalHtmlSinks = ['error',
+    {
+        selector: FIRE + '[arguments.length>1]',
+        message: 'Swal.fire takes one options object: its positional second argument is rendered as HTML. Use { titleText, text, icon }.',
+    },
+    {
+        selector: FIRE + ' > ObjectExpression > Property' + key('title') + ":not([value.type='Literal'])",
+        message: 'SweetAlert2 renders title as HTML: a title that is not a string literal goes into titleText.',
+    },
+    {
+        selector: FIRE + ' > ObjectExpression > Property' + key('html') + ":not([value.type='Literal'])",
+        message: 'SweetAlert2 renders html as HTML: use text, or keep html and say in the disable comment why every value in it is safe.',
+    },
+    {
+        selector: "CallExpression[callee.object.name='Swal'][callee.property.name='showValidationMessage']:not([arguments.0.type='Literal']):not([arguments.0.callee.name='escapeHtml'])",
+        message: 'Swal.showValidationMessage renders its argument as HTML: pass a string literal or escapeHtml(...).',
+    },
+    {
+        selector: FIRE + "[arguments.length=1]:not([arguments.0.type='ObjectExpression'])",
+        message: 'A single argument of Swal.fire that is not an object written in the call may be a string, which is the title, rendered as HTML: write { titleText, text }, or { ...options } for an object built elsewhere.',
+    },
+]
+
 export default defineConfigWithVueTs(
     {
         // Previously supplied via `--ignore-path .gitignore`.
@@ -43,6 +70,18 @@ export default defineConfigWithVueTs(
             'vue/no-v-model-argument': 'off',
             // Successor to the removed vue/no-setup-props-destructure.
             'vue/no-setup-props-reactivity-loss': 'off',
+            'no-restricted-syntax': swalHtmlSinks,
+        },
+    },
+    {
+        // Plain TypeScript modules were not linted before FDAW-95 (no entry matched them). They
+        // get this one rule; the rules above stay as they were for .vue files.
+        files: ['src/**/*.ts'],
+        ignores: ['src/**/*.spec.ts'],
+        linterOptions: { reportUnusedDisableDirectives: 'off' },
+        rules: {
+            indent: 'off',
+            'no-restricted-syntax': swalHtmlSinks,
         },
     }
 )

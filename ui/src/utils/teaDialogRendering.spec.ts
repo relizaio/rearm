@@ -4,7 +4,7 @@
 // that carry markup. It asserts what was built, not what ran: happy-dom runs neither the `onerror`
 // handler nor the `script` of HOSTILE, also in the controls that build the `img`, so no assertion on
 // execution is made. The controls show that the rig sees markup when the dialog is handed some.
-import { afterEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 vi.mock('@/utils/fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 import Swal from 'sweetalert2'
@@ -66,7 +66,14 @@ const R_HOSTILE = {
     ],
 }
 
-afterEach(() => Swal.close())
+// SweetAlert2 sets a 10 ms timer on every open and reads `window` in it; a timer left when the file
+// ends fires after happy-dom is gone and fails the run. Fake timers, run out while the window exists.
+beforeEach(() => { vi.useFakeTimers() })
+afterEach(() => {
+    Swal.close()
+    vi.runAllTimers()
+    vi.useRealTimers()
+})
 
 describe('FDAW-39 dialogs rendered with the real SweetAlert2 (row 56)', () => {
     it('HOSTILE has 90 characters, so teaOneLine leaves it whole', () => {
@@ -132,12 +139,12 @@ describe('FDAW-39 dialogs rendered with the real SweetAlert2 (row 56)', () => {
         rendered([d], (p) => expectTextOnly(p, d.text))
     })
 
-    it('(b) the plain publish dialog with the partial list: only its container is asserted (its title is the older one)', () => {
+    it('(b) the plain publish dialog with the partial list is text only, its title too (FDAW-95)', () => {
         const d = teaPublishConfirm(PRODUCT, { component: HOSTILE, version: HOSTILE, perspectives: {} }, PARTIAL)
         expect(d.text).toContain(HOSTILE)
-        rendered([d], () => {
-            expect(container().children.length).toBe(0)
-            expect(container().textContent).toBe(d.text)
+        rendered([d], (p) => {
+            expectTextOnly(p, d.text)
+            expect(title().textContent).toBe('Publish ' + HOSTILE + ' ' + HOSTILE + ' on TEA?')
         })
     })
 

@@ -396,7 +396,7 @@ async function updateWebhook() {
 
 async function onDelete(row: any) {
     const result = await Swal.fire({
-        title: `Delete webhook ${row.slug}?`,
+        titleText: `Delete webhook ${row.slug}?`,
         text: 'GitHub will start failing deliveries to the URL — remember to remove the webhook on the GitHub App side too.',
         icon: 'warning',
         showCancelButton: true,

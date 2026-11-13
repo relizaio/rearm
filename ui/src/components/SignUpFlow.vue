@@ -223,11 +223,7 @@ const resendVerificationLink = async function () {
         }
     } catch (err: any) {
         emailVerificationCallPending.value = false
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     }
 }
 

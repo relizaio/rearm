@@ -45,11 +45,11 @@ export function useSubmissionActs (deps: SubmissionActsDeps) {
     // "Not set up"; every other refusal shows the server's message.
     async function refusedPreview (title: string, p: any, kind: string, componentType: string | null | undefined) {
         if (p.refusal === 'KIND_DISABLED') {
-            Swal.fire({ title, text: submissionKindDisabledText(kind, componentType), icon: 'error' })
+            Swal.fire({ titleText: title, text: submissionKindDisabledText(kind, componentType), icon: 'error' })
             await deps.reload()
             return
         }
-        Swal.fire({ title, text: p.message ?? '', icon: 'error' })
+        Swal.fire({ titleText: title, text: p.message ?? '', icon: 'error' })
     }
 
     async function act (mutation: any, variables: Record<string, any>, field: string, success: (r: any) => string) {

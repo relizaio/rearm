@@ -369,7 +369,7 @@ const onSubmit = async function () {
         }
         emit('createdRelease', retRlz)
     } catch (err: any) {
-        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     }
 }
 
