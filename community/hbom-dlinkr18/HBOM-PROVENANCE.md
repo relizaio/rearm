@@ -5,7 +5,7 @@ Files in this directory:
 | File | What it is |
 |---|---|
 | `gen_hbom.py` | Hand-curated generator. Every value in the HBOM is a literal in this script; nothing is scraped automatically. |
-| `d-link-r18.hbom.cdx.json` | Output, **version 2** (2026-11-09). `python3 gen_hbom.py > d-link-r18.hbom.cdx.json` |
+| `d-link-r18.hbom.cdx.json` | Output, **version 2** (2026-11-09), last regenerated as v2.4 (2026-11-13). `python3 gen_hbom.py > d-link-r18.hbom.cdx.json` |
 | `gen_hbom.py.v1`, `d-link-r18.hbom.cdx.v1.json` | Version 1 (2026-11-08), kept for diffing. |
 | `HBOM-PROVENANCE.md` | This file. |
 | `photos/` | The published photos: board, rear buttons, UART header and SoC/DRAM/flash area (2026-11-09), and the U15 flash close-up (2026-11-11). |
@@ -29,7 +29,7 @@ Only the files listed above are published. Paths under `~/openwrt/` and `HANDOFF
 | **A** | Offline analysis of the stock firmware from the verified NAND backup | 2026-11-08/09 | `~/openwrt/backup/` (contains ODM secrets), extracted rootfs in `~/openwrt/wifi/rootfs-slave/`, kernel in `~/openwrt/stockkernel/` (not published) |
 | **P3** | Photo of the bottom rating label by the owner | 2026-11-10 | **Not stored** (shows default Wi-Fi/admin passwords and S/N); facts transcribed here |
 | **T** | Hardware tests while running OpenWrt from RAM (no flash writes) | 2026-11-09 | Serial logs `~/openwrt/logs/kexec*.out`, `HANDOFF.md` §11 (not published) |
-| **U** | Owner's direct observation during tests (incl. LED photos uploaded in the 2026-11-09 session) | 2026-11-09 | LED photos uploaded to the 2026-11-09 session; **not published** (not in `photos/`) |
+| **U** | Owner's direct observation: during tests (incl. LED photos uploaded in the 2026-11-09 session); and that the unit has no USB port and no memory-card slot (2026-11-13) | 2026-11-09, 2026-11-13 | LED photos uploaded to the 2026-11-09 session; **not published** (not in `photos/`). The 2026-11-13 observation is recorded in the HBOM as evidence `ev-owner-2026-11-13` |
 | **P2** | Close-up photos by the owner: SoC/DRAM/flash area; rear panel with buttons | 2026-11-09 | `photos/2026-11-09-soc-dram-flash.png`, `photos/2026-11-09-rear-buttons.jpg`, `photos/2026-11-09-uart-header.jpg` |
 | **P4** | Close-up of SPI-NAND U15 (package, marking, white dot) by the owner | 2026-11-11 | `photos/2026-11-11-u15-flash-closeup.png` |
 | **X** | External public reference | — | URLs in the HBOM |
@@ -198,6 +198,14 @@ All on OpenWrt main @ `7edc67adadb1` (kernel 6.18.60), booted from RAM via bootl
 - U15 package confirmed WSON-8 8×6 mm from close-up P4 (gull-wing doubt resolved); pin-1 white dot recorded; marking line 1 corrected X22J410 → X221410 (owner-confirmed).
 - Wi-Fi: RF shield will not be opened. Baseband kept as component choice MT7905DAN XOR MT7915DAN with `r18:resolution` = final; A-die `r18:todo` replaced by `r18:resolution`; metadata method note updated.
 
+## 5e. Changes v2.3 → v2.4 (same BOM `version` 2, regenerated)
+
+- Scope markers, separating "not present" from "not known" (section 7).
+- External interfaces marked with `r18:external-interface` and asserted complete by the `comp-external-interfaces` composition.
+- `declarations`: evidence `ev-owner-2026-11-13` (U) and `ev-photos-2026-11-09` (`photos/2026-11-09-board-view.jpg` and `photos/2026-11-09-rear-buttons.jpg`), claims `claim-no-usb` and `claim-no-card-slot`.
+- `r18:unknown` properties: ODM, 5 GHz MAC offset and secure element / TPM on the device; header function on `hdr-unpopulated`.
+- Validated against the same 2.0-dev schema (commit `ea8c360`): **0 errors**.
+
 ## 6. Still open
 
 1. ~~MT7905DAN vs MT7915DAN and the MT7975 A-die~~ closed as won't-resolve in v2.3: shield stays on (owner decision 2026-11-11); baseband stays a component choice (XOR), A-die stays inferred from the log.
@@ -207,3 +215,17 @@ All on OpenWrt main @ `7edc67adadb1` (kernel 6.18.60), booted from RAM via bootl
 5. ~~Console header pin order~~ done in v2.1 (VCC, TX, RX, GND).
 6. Function of the unpopulated headers.
 7. 5 GHz MAC offset used by stock firmware.
+
+## 7. Scope and limits: "not present" vs "not known"
+
+The inventory is marked `incomplete` (composition `comp-inventory`), which on its own cannot tell an analyst whether a
+missing item is absent or just not recorded. The HBOM separates the two cases with machine-readable markers:
+
+| State | How it is recorded | Items |
+|---|---|---|
+| **Not present** | Composition `comp-external-interfaces` (custom kind `external-interfaces`, aggregate `complete`, target `dlink-r18`): the components carrying `r18:external-interface` are every user-accessible interface, so any interface not listed is absent. Explicit `declarations.claims` with evidence for the absences analysts ask about. | No USB port (`claim-no-usb`), no memory-card slot (`claim-no-card-slot`); evidence: owner observation (U) and the published photos |
+| **Not known** | An `r18:unknown` property on the element the unknown concerns. Where the unknown is a choice between known parts, a `component-choice` with `XOR` and `r18:resolution`. | Device: ODM, 5 GHz MAC offset, presence of a discrete secure element or TPM (bottom side and RF-shielded area not inspected). `hdr-unpopulated`: header function. Wi-Fi baseband: `choice-wifi-bb` (XOR) |
+
+A composition states how complete an enumeration is, so it fits "not present" (a complete list implies absence) but not
+an unknown value such as the ODM or the MAC offset; those use the `r18:unknown` property. The claims use the 2.0
+attestation model (`declarations.claims`) with free-text predicates.

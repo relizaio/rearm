@@ -5,7 +5,7 @@
   "serialNumber": "urn:uuid:46c3e053-2a89-48dc-98a3-d160ebe58ac3",
   "version": 2,
   "metadata": {
-    "timestamp": "2026-11-11T12:00:00Z",
+    "timestamp": "2026-11-13T12:00:00Z",
     "lifecycles": [
       {
         "phase": "operations"
@@ -306,6 +306,18 @@
           {
             "name": "r18:openwrt-status",
             "value": "RAM-boot only (2026-11-09): Ethernet, switch, NAND (ro), LEDs, buttons, Wi-Fi both bands verified"
+          },
+          {
+            "name": "r18:unknown",
+            "value": "original design manufacturer (ODM) of the board: not identified"
+          },
+          {
+            "name": "r18:unknown",
+            "value": "5 GHz Wi-Fi MAC address offset from the base MAC: not observed"
+          },
+          {
+            "name": "r18:unknown",
+            "value": "presence of a discrete secure element or TPM: the board's bottom side and the RF-shielded area were not inspected"
           }
         ]
       },
@@ -872,6 +884,10 @@
             {
               "name": "r18:evidence",
               "value": "photo; serial boot log; cable test 2026-11-09"
+            },
+            {
+              "name": "r18:external-interface",
+              "value": "true"
             }
           ]
         },
@@ -906,6 +922,10 @@
             {
               "name": "r18:evidence",
               "value": "photo; cable test 2026-11-09"
+            },
+            {
+              "name": "r18:external-interface",
+              "value": "true"
             }
           ]
         },
@@ -937,6 +957,10 @@
             {
               "name": "r18:evidence",
               "value": "photo; rating label photo 2026-11-10"
+            },
+            {
+              "name": "r18:external-interface",
+              "value": "true"
             }
           ]
         },
@@ -968,6 +992,10 @@
             {
               "name": "r18:evidence",
               "value": "photo; stock module; press test; rear panel photo 2026-11-09"
+            },
+            {
+              "name": "r18:external-interface",
+              "value": "true"
             }
           ]
         },
@@ -995,6 +1023,10 @@
             {
               "name": "r18:evidence",
               "value": "stock module; LED test with photos 2026-11-09"
+            },
+            {
+              "name": "r18:external-interface",
+              "value": "true"
             }
           ]
         },
@@ -1024,6 +1056,10 @@
             {
               "name": "r18:evidence",
               "value": "photo"
+            },
+            {
+              "name": "r18:external-interface",
+              "value": "true"
             }
           ]
         },
@@ -1111,6 +1147,10 @@
             {
               "name": "r18:evidence",
               "value": "photo; photo 2026-11-09"
+            },
+            {
+              "name": "r18:unknown",
+              "value": "function of J1001 and of the 2x3 footprint (EJTAG or SPI programming suspected, not tested)"
             }
           ]
         }
@@ -1175,11 +1215,59 @@
   ],
   "compositions": [
     {
+      "refId": "comp-inventory",
       "kind": "components",
       "aggregate": "incomplete",
       "targets": [
         "inv-dlink-r18"
       ]
+    },
+    {
+      "refId": "comp-external-interfaces",
+      "kind": {
+        "name": "external-interfaces",
+        "description": "User-accessible ports, buttons, indicators and antennas on the enclosure: the components carrying the property r18:external-interface. Any interface not listed is absent."
+      },
+      "aggregate": "complete",
+      "targets": [
+        "dlink-r18"
+      ]
     }
-  ]
+  ],
+  "declarations": {
+    "evidence": [
+      {
+        "refId": "ev-owner-2026-11-13",
+        "description": "Owner's direct observation of the unit: it has no USB port and no memory-card slot (evidence tag U in HBOM-PROVENANCE.md).",
+        "created": "2026-11-13T00:00:00Z"
+      },
+      {
+        "refId": "ev-photos-2026-11-09",
+        "description": "Owner's photos of the opened unit, published in photos/: the whole top side of the board in its enclosure (2026-11-09-board-view.jpg) and the rear panel (2026-11-09-rear-buttons.jpg). All board-edge connectors and enclosure openings are visible: rear WAN and 3x LAN RJ45, DC jack, WPS button and RESET pinhole; front LED light pipe; antenna exits on the sides.",
+        "created": "2026-11-09T00:00:00Z"
+      }
+    ],
+    "claims": [
+      {
+        "refId": "claim-no-usb",
+        "target": "dlink-r18",
+        "predicate": "The device has no USB port.",
+        "reasoning": "Observed by the owner on the unit. Consistent with the photos, which show no USB receptacle on any board edge or enclosure opening, and with the external-interfaces composition.",
+        "evidence": [
+          "ev-owner-2026-11-13",
+          "ev-photos-2026-11-09"
+        ]
+      },
+      {
+        "refId": "claim-no-card-slot",
+        "target": "dlink-r18",
+        "predicate": "The device has no memory-card slot.",
+        "reasoning": "Observed by the owner on the unit. Consistent with the photos, which show no card slot on any board edge or enclosure opening, and with the external-interfaces composition.",
+        "evidence": [
+          "ev-owner-2026-11-13",
+          "ev-photos-2026-11-09"
+        ]
+      }
+    ]
+  }
 }

@@ -7,7 +7,7 @@ Run: python3 gen_hbom.py > d-link-r18.hbom.cdx.json
 import json
 
 SERIAL = "urn:uuid:46c3e053-2a89-48dc-98a3-d160ebe58ac3"
-TS = "2026-11-11T12:00:00Z"
+TS = "2026-11-13T12:00:00Z"
 
 
 def prop(name, value):
@@ -45,6 +45,18 @@ def cls(category, sub=None, hs=None):
 
 def evidence(*src):
     return prop("r18:evidence", "; ".join(src))
+
+
+# Scope markers (see HBOM-PROVENANCE.md section 7):
+# - not known: an r18:unknown property on the element it concerns (one per unknown fact);
+# - not present: the "external-interfaces" composition below asserts that the components carrying
+#   r18:external-interface are the complete list of user-accessible interfaces, and declarations.claims
+#   state the absences analysts ask about, with the photos as evidence.
+def unknown(what):
+    return prop("r18:unknown", what)
+
+
+EXTERNAL = prop("r18:external-interface", "true")
 
 
 # --- parties (declared once on the device, referenced elsewhere by refId) ---
@@ -231,19 +243,19 @@ rj45_wan = {
     "type": "device", "refId": "rj45-wan", "name": "RJ45 jack, WAN (yellow)",
     "classification": cls("connector", "rj45", ("8536.69",)), "deviceType": "pth", "quantity": {"value": 1},
     "properties": [prop("r18:switch-port", "4 (WAN)"), prop("r18:linux:ifname", "wan"), prop("r18:link", "1000 Mbps verified"),
-                   evidence("photo", "serial boot log", "cable test 2026-11-09")],
+                   evidence("photo", "serial boot log", "cable test 2026-11-09"), EXTERNAL],
 }
 rj45_lan = {
     "type": "device", "refId": "rj45-lan", "name": "RJ45 jack 1x3 ganged, LAN1-3",
     "classification": cls("connector", "rj45", ("8536.69",)), "deviceType": "pth", "quantity": {"value": 1},
     "properties": [prop("r18:switch-port", "LAN1=port 3, LAN2=port 2, LAN3=port 1"), prop("r18:link", "1000 Mbps verified on all"),
-                   evidence("photo", "cable test 2026-11-09")],
+                   evidence("photo", "cable test 2026-11-09"), EXTERNAL],
 }
 dc_jack = {
     "type": "device", "refId": "dc-jack", "name": "DC barrel power jack",
     "description": "12 V DC input, 1 A, centre positive (rating label).",
     "classification": cls("connector", "dc-power-jack", ("8536.69",)), "deviceType": "pth", "quantity": {"value": 1},
-    "properties": [prop("r18:rating", "12V 1A, centre positive"), evidence("photo", "rating label photo 2026-11-10")],
+    "properties": [prop("r18:rating", "12V 1A, centre positive"), evidence("photo", "rating label photo 2026-11-10"), EXTERNAL],
 }
 switch_btn = {
     "type": "device", "refId": "sw-rear", "name": "Rear buttons: WPS push button + RESET pinhole",
@@ -253,7 +265,7 @@ switch_btn = {
                    "board-edge switches behind the panel (one actuated via a white plastic plunger).",
     "classification": cls("electromechanical", "switch", ("8536.50",)), "deviceType": "smd", "quantity": {"value": 2},
     "properties": [prop("r18:gpio", "reset=GPIO0 (KEY_RESTART), wps=GPIO7 (KEY_WPS_BUTTON), active-low"),
-                   evidence("photo", "stock module", "press test", "rear panel photo 2026-11-09")],
+                   evidence("photo", "stock module", "press test", "rear panel photo 2026-11-09"), EXTERNAL],
 }
 leds = {
     "type": "device", "refId": "leds-front", "name": "Front status LEDs (4 lenses)",
@@ -261,14 +273,14 @@ leds = {
                    "2 internet (bicolor white GPIO6 active-low / orange GPIO4 active-high), "
                    "3 2.4 GHz Wi-Fi (white, MT7915 LED pin band 0), 4 5 GHz Wi-Fi (white, MT7915 LED pin band 1).",
     "classification": cls("optoelectronic", "led", ("8541.41",)), "deviceType": "smd", "quantity": {"value": 4},
-    "properties": [evidence("stock module", "LED test with photos 2026-11-09")],
+    "properties": [evidence("stock module", "LED test with photos 2026-11-09"), EXTERNAL],
 }
 antennas = {
     "type": "device", "refId": "antennas", "name": "External dipole antennas with coax pigtails",
     "description": "4 non-detachable external antennas; pigtails to IPEX/U.FL-style pads labelled 2.4G (x2) and 5G (x2).",
     "classification": cls("rf", "antenna", ("8529.10",)), "deviceType": {"name": "cable-assembly"},
     "quantity": {"value": 4},
-    "properties": [evidence("photo")],
+    "properties": [evidence("photo"), EXTERNAL],
 }
 uart_console = {
     "type": "device", "refId": "hdr-uart-console", "name": "Serial console header (unpopulated, 4-hole 2.54 mm)",
@@ -292,7 +304,8 @@ hdr_unpop = {
                    "likely EJTAG or SPI programming. 2x3 footprint also present. Functions unverified.",
     "classification": cls("connector", "debug-header"), "deviceType": "pth", "quantity": {"value": 2},
     "boardLocation": {"designators": ["J1001"], "layer": "top"},
-    "properties": [evidence("photo", "photo 2026-11-09")],
+    "properties": [evidence("photo", "photo 2026-11-09"),
+                   unknown("function of J1001 and of the 2x3 footprint (EJTAG or SPI programming suspected, not tested)")],
 }
 pcb = {
     "type": "device", "refId": "pcb-main", "name": "R18 main PCB",
@@ -347,7 +360,11 @@ device = {
                         "(default SSID R18-BF81; likely WAN); 2.4 GHz Wi-Fi = base+9 (stock MainSsid); 5 GHz not observed"),
                    prop("r18:power-input", "12 V DC, 1 A, centre positive (rating label)"),
                    prop("r18:country-of-origin", "TW (rating label: Made in Taiwan)"),
-                   prop("r18:openwrt-status", "RAM-boot only (2026-11-09): Ethernet, switch, NAND (ro), LEDs, buttons, Wi-Fi both bands verified")],
+                   prop("r18:openwrt-status", "RAM-boot only (2026-11-09): Ethernet, switch, NAND (ro), LEDs, buttons, Wi-Fi both bands verified"),
+                   unknown("original design manufacturer (ODM) of the board: not identified"),
+                   unknown("5 GHz Wi-Fi MAC address offset from the base MAC: not observed"),
+                   unknown("presence of a discrete secure element or TPM: the board's bottom side and the RF-shielded area "
+                           "were not inspected")],
 }
 
 bom = {
@@ -373,7 +390,38 @@ bom = {
         {"ref": "fw-stock-tclinux", "dependsOn": ["sw-linux-3.18.21", "sw-busybox-1.00", "fw-mt7915-wm"]},
     ],
     "compositions": [
-        {"kind": "components", "aggregate": "incomplete", "targets": ["inv-dlink-r18"]},
+        {"refId": "comp-inventory", "kind": "components", "aggregate": "incomplete", "targets": ["inv-dlink-r18"]},
+        {"refId": "comp-external-interfaces",
+         "kind": {"name": "external-interfaces",
+                  "description": "User-accessible ports, buttons, indicators and antennas on the enclosure: the components "
+                                 "carrying the property r18:external-interface. Any interface not listed is absent."},
+         "aggregate": "complete", "targets": ["dlink-r18"]},
     ],
+    "declarations": {
+        "evidence": [
+            {"refId": "ev-owner-2026-11-13",
+             "description": "Owner's direct observation of the unit: it has no USB port and no memory-card slot "
+                            "(evidence tag U in HBOM-PROVENANCE.md).",
+             "created": "2026-11-13T00:00:00Z"},
+            {"refId": "ev-photos-2026-11-09",
+             "description": "Owner's photos of the opened unit, published in photos/: the whole top side of the board in its "
+                            "enclosure (2026-11-09-board-view.jpg) and the rear panel (2026-11-09-rear-buttons.jpg). All board-edge "
+                            "connectors and enclosure openings are visible: rear WAN and 3x LAN RJ45, DC jack, WPS button and "
+                            "RESET pinhole; front LED light pipe; antenna exits on the sides.",
+             "created": "2026-11-09T00:00:00Z"},
+        ],
+        "claims": [
+            {"refId": "claim-no-usb", "target": "dlink-r18",
+             "predicate": "The device has no USB port.",
+             "reasoning": "Observed by the owner on the unit. Consistent with the photos, which show no USB receptacle on any "
+                          "board edge or enclosure opening, and with the external-interfaces composition.",
+             "evidence": ["ev-owner-2026-11-13", "ev-photos-2026-11-09"]},
+            {"refId": "claim-no-card-slot", "target": "dlink-r18",
+             "predicate": "The device has no memory-card slot.",
+             "reasoning": "Observed by the owner on the unit. Consistent with the photos, which show no card slot on any "
+                          "board edge or enclosure opening, and with the external-interfaces composition.",
+             "evidence": ["ev-owner-2026-11-13", "ev-photos-2026-11-09"]},
+        ],
+    },
 }
 print(json.dumps(bom, indent=2))
