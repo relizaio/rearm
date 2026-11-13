@@ -12,6 +12,11 @@ import {
     teaPublicBanner, teaPublicConfirmText, teaRowObject, teaSourceLine,
     teaInheritConfirm, teaInheritedForm, teaInitialMode, teaModeOptions, teaRowLink, teaInheritConflictHint,
 } from './teaProfile'
+import {
+    TEA_AUTO_PUBLISH_OPTIONS, TEA_DOCUMENT_KINDS, TEA_PUBLIC_CONFIRM_COUNTED, TEA_PUBLIC_CONFIRM_NONE_YET,
+    TEA_TURN_ON_TEXT, teaAutoPublishBanner, teaAutoPublishHelp, teaShownAutoPublishState, teaStartsAutoPublish,
+    teaTurnOnConfirm, teaWouldStartAutoPublish,
+} from './teaProfile'
 
 const values = (opts: { label: string, value: string }[]) => opts.map(o => o.value)
 
@@ -399,5 +404,227 @@ describe('the INHERIT conflict hint', () => {
         expect(teaInheritConflictHint('ORGANIZATION', TEA_INHERIT, 1, resolved)).toBeNull()
         expect(teaInheritConflictHint('COMPONENT', TEA_INHERIT, 0, resolved)).toBeNull()
         expect(teaInheritConflictHint('COMPONENT', TEA_INHERIT, 2, { parent: { status: 'CONFLICT' } })).toBeNull()
+    })
+})
+
+// FDAW-39 (FDAW-25 D2f), architecture-5 section 4. INPUT is the design's fixture: the stored row's
+// settings with publishing ENABLED, as the editor's input carries them.
+const INPUT = (autoPublish?: string) => ({ mode: 'OVERRIDE', publishing: 'ENABLED', visibility: 'PRIVATE', rawArtifacts: 'NONE',
+    productComponents: 'PUBLISH_WITH_PRODUCT', minimumLifecycle: 'ASSEMBLED', tei: 'DISABLED', teiDomain: null,
+    profiles: ['default'], ...(autoPublish === undefined ? {} : { autoPublish }) })
+const COUNTED = (n: number, m: number) => n + ' published release(s) resolving to this profile, with all ' + m + ' of their '
+    + 'collection versions, earlier versions included, and every document in them (SBOMs, VEX documents, device support '
+    + 'statements, published artifacts), become readable by anyone who knows the TEA URL as soon as you save; visibility is live.'
+const TODAY_FOR = (n: number) => n + ' published release(s) resolving to this profile become readable by anyone who knows '
+    + 'the TEA URL as soon as you save; visibility is live.'
+const TODAY_NONE = 'No release is published under this profile yet; every future publication under it will be public.'
+const NONE_YET = 'No release is published under this profile yet; every future publication under it will be public. Every '
+    + 'version published under it later will be public, with every document in it (SBOMs, VEX documents, device support '
+    + 'statements, published artifacts).'
+const HELP = 'When on, a release is published on TEA when it reaches Shipped and published again each time it changes after '
+    + 'that. When off, publishing is left to the Publish button and to approval-policy actions. Turning it on needs the '
+    + 'Publish Externally (TEA) permission.'
+const TURN_ON = 'Saving publishes nothing by itself. A release already at Shipped or later under this profile is published '
+    + 'the next time it changes (it is saved, its lifecycle changes or its vulnerability findings change), unless it is '
+    + 'hidden on TEA. After that, every such change publishes it again; a change that leaves the published documents as they '
+    + 'are adds no version. Component releases resolving to this profile are published on their own when they ship; a '
+    + 'product published later lists them as already published.'
+const PAUSED_OWN = (w: string) => 'Publish at shipped is paused: these settings changed since a holder confirmed them. Save '
+    + 'them as a holder of Publish Externally (TEA) on this ' + w + ', or as an organization admin, to resume.'
+const PAUSED_INHERITED = (source: string, w: string) => 'Publish at shipped is paused in the TEA profile of ' + source
+    + ' that this ' + w + ' resolves to. A holder of Publish Externally (TEA), or an organization admin, saves that profile to resume.'
+const exposureOf = (changes: Record<string, any> = {}): TeaExposureChange =>
+    ({ before: 'PRIVATE', after: 'PRIVATE', path: 'NONE', afterSource: null, afterSourceObject: null, publishedReleases: 0, ...changes } as any)
+const occurrences = (text: string, part: string) => text.split(part).length - 1
+
+describe('FDAW-39 row 22 (a)-(f): publish at shipped in the form and the counted Public confirmation', () => {
+    it('(a) the defaults turn it on, the two options in order, and TEA_PROFILE_FIELDS keeps its eight names', () => {
+        expect(teaBuiltInDefaults().autoPublish).toBe('AT_SHIPPED')
+        expect(TEA_AUTO_PUBLISH_OPTIONS).toEqual([
+            { value: 'DISABLED', label: 'Off: publish by hand or by an approval-policy action' },
+            { value: 'AT_SHIPPED', label: 'On: publish when the release reaches Shipped' },
+        ])
+        expect([...TEA_PROFILE_FIELDS]).toEqual(['publishing', 'visibility', 'rawArtifacts', 'productComponents',
+            'minimumLifecycle', 'tei', 'teiDomain', 'profiles'])
+    })
+
+    it('(b) the form pre-fills autoPublish from the stored row, else the parent, else the defaults', () => {
+        const parent = (autoPublish?: string) => ({ status: 'RESOLVED', source: 'ORGANIZATION', sourceObject: null,
+            profile: { ...teaBuiltInDefaults(), ...(autoPublish ? { autoPublish } : {}) } })
+        const row = (autoPublish: string, mode = 'OVERRIDE') => ({ ...teaBuiltInDefaults(), uuid: 'r', mode, autoPublish })
+        expect(teaFormFromView({ stored: row('DISABLED'), parent: parent('AT_SHIPPED') }, 'COMPONENT').autoPublish).toBe('DISABLED')
+        expect(teaFormFromView({ stored: row('AT_SHIPPED'), parent: parent('DISABLED') }, 'COMPONENT').autoPublish).toBe('AT_SHIPPED')
+        expect(teaFormFromView({ stored: null, parent: parent('DISABLED') }, 'COMPONENT').autoPublish).toBe('DISABLED')
+        expect(teaFormFromView({ stored: null, parent: { status: 'RESOLVED', profile: null } }, 'COMPONENT').autoPublish).toBe('AT_SHIPPED')
+        expect(teaFormFromView({ stored: { uuid: 'f', mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' }, parent: parent('DISABLED') },
+            'COMPONENT').autoPublish).toBe('DISABLED')
+        expect(teaInheritedForm({ parent: parent('DISABLED') }).autoPublish).toBe('DISABLED')
+    })
+
+    it('(c) teaProfileInput sends autoPublish only with additive true and a mode that stores fields', () => {
+        const form = (autoPublish: string) => ({ ...teaBuiltInDefaults(), mode: 'OVERRIDE', publishing: 'ENABLED', autoPublish })
+        expect(teaProfileInput(form('DISABLED'), 'COMPONENT', 'SAAS', true)).toEqual(INPUT('DISABLED'))
+        expect(teaProfileInput(form('AT_SHIPPED'), 'COMPONENT', 'SAAS', true)).toEqual(INPUT('AT_SHIPPED'))
+        const without = teaProfileInput(form('AT_SHIPPED'), 'COMPONENT', 'SAAS', false)
+        expect(without).toEqual(INPUT())
+        expect('autoPublish' in without).toBe(false)
+        const leftOut = teaProfileInput(form('AT_SHIPPED'), 'COMPONENT', 'SAAS')
+        expect(leftOut).toEqual(INPUT())
+        expect('autoPublish' in leftOut).toBe(false)
+        expect(teaProfileInput({ ...form('AT_SHIPPED'), mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' }, 'COMPONENT', 'SAAS', true))
+            .toEqual({ mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' })
+        const org = teaProfileInput({ ...form('AT_SHIPPED'), mode: null }, 'ORGANIZATION', 'SAAS', true)
+        expect(org.autoPublish).toBe('AT_SHIPPED')
+        expect('mode' in org).toBe(false)
+    })
+
+    it('(d) the help, with the CE suffix on OSS only, and the package profile help', () => {
+        expect(TEA_FIELD_HELP.autoPublish).toBe(HELP)
+        expect(teaAutoPublishHelp('SAAS')).toBe(HELP)
+        expect(teaAutoPublishHelp('OSS')).toBe(HELP + ' Takes effect on ReARM Pro.')
+        expect(teaAutoPublishHelp(undefined)).toBe(HELP)
+        expect(TEA_FIELD_HELP.packageProfile).toBe("A device with a regulatory package also publishes under its package's "
+            + 'SBOM profile, so customers can pin the serial the package carries.')
+    })
+
+    it('(e) teaPublicConfirmText counts versions where the backend serves them, today\'s words elsewhere', () => {
+        expect(teaPublicConfirmText(3, 7)).toBe(COUNTED(3, 7))
+        expect(teaPublicConfirmText(1, 1)).toBe(COUNTED(1, 1))
+        for (const m of [undefined, null, 0]) expect(teaPublicConfirmText(3, m as any), String(m)).toBe(TODAY_FOR(3))
+        expect(teaPublicConfirmText(0, 0)).toBe(NONE_YET)
+        expect(teaPublicConfirmText(0, 5)).toBe(NONE_YET)
+        expect(TEA_PUBLIC_CONFIRM_NONE_YET).toBe(NONE_YET)
+        expect(NONE_YET.endsWith(TEA_DOCUMENT_KINDS + '.')).toBe(true)
+        expect(teaPublicConfirmText(0, undefined)).toBe(TODAY_NONE)
+        expect(teaPublicConfirmText(0, null)).toBe(TODAY_NONE)
+    })
+
+    it('(f) the save, removal and membership confirmations end with the counted literal', () => {
+        const x = exposureOf({ before: 'PRIVATE', after: 'PUBLIC', path: 'ROW_PUBLIC', publishedReleases: 3, publishedVersions: 7 })
+        expect(teaConfirmBeforeSave(x, 'component')!.text.endsWith(COUNTED(3, 7))).toBe(true)
+        expect(teaConfirmBeforeRemoval({ ...x, path: 'REMOVAL_RESOLVES_PUBLIC', afterSource: 'ORGANIZATION' }, 'component')
+            .text.endsWith(COUNTED(3, 7))).toBe(true)
+        expect(teaConfirmBeforeMembership({ ...x, path: 'MEMBERSHIP_RESOLVES_PUBLIC', afterSource: 'ORGANIZATION' }, ['Payments'], [])!
+            .text.endsWith(COUNTED(3, 7))).toBe(true)
+    })
+
+    it('(g, the settings half) TEA_DOCUMENT_KINDS equals its literal and each counted and none-yet text carries it once', () => {
+        expect(TEA_DOCUMENT_KINDS).toBe('(SBOMs, VEX documents, device support statements, published artifacts)')
+        expect(occurrences(TEA_PUBLIC_CONFIRM_COUNTED(3, 7), TEA_DOCUMENT_KINDS)).toBe(1)
+        expect(occurrences(TEA_PUBLIC_CONFIRM_NONE_YET, TEA_DOCUMENT_KINDS)).toBe(1)
+        expect(TEA_PUBLIC_CONFIRM_COUNTED(3, 7)).toBe(COUNTED(3, 7))
+    })
+})
+
+describe('FDAW-39 row 36: the paused banner, the turn-on confirmation and the start sentences', () => {
+    const resolvedP = (state: string | undefined, source = 'ORGANIZATION', sourceObject: string | null = null) =>
+        ({ status: 'RESOLVED', source, sourceObject, profile: { ...teaBuiltInDefaults(), ...(state ? { autoPublishState: state } : {}) } })
+    const storedRow = (changes: Record<string, any>) => ({ ...teaBuiltInDefaults(), uuid: 'row-1', mode: 'OVERRIDE', ...changes })
+
+    it('(a) teaShownAutoPublishState and teaAutoPublishBanner', () => {
+        let v: any = { stored: storedRow({ autoPublishState: 'NEEDS_CONFIRMATION' }), effective: resolvedP('ARMED') }
+        expect(teaShownAutoPublishState(v)).toBe('NEEDS_CONFIRMATION')
+        expect(teaAutoPublishBanner(v, 'component')).toBe(PAUSED_OWN('component'))
+        expect(teaAutoPublishBanner(v, 'product')).toBe(PAUSED_OWN('product'))
+        v = { stored: storedRow({ autoPublishState: 'ARMED' }), effective: resolvedP('NEEDS_CONFIRMATION') }
+        expect(teaAutoPublishBanner(v, 'component')).toBeNull()
+        expect(teaAutoPublishBanner({ stored: storedRow({ autoPublishState: 'OFF' }), effective: resolvedP('OFF') }, 'component')).toBeNull()
+        v = { stored: null, effective: resolvedP('NEEDS_CONFIRMATION') }
+        expect(teaAutoPublishBanner(v, 'component')).toBe(PAUSED_INHERITED('organization', 'component'))
+        v = { stored: { uuid: 'f', mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1', autoPublishState: 'OFF' },
+            effective: resolvedP('NEEDS_CONFIRMATION', 'FOLLOWED_PERSPECTIVE', 'p1') }
+        expect(teaAutoPublishBanner(v, 'component', { p1: 'Payments' })).toBe(PAUSED_INHERITED('perspective Payments', 'component'))
+        expect(teaAutoPublishBanner({ stored: null, effective: resolvedP('ARMED') }, 'component')).toBeNull()
+        const noState = { stored: storedRow({}), effective: resolvedP(undefined) }
+        expect(teaShownAutoPublishState(noState)).toBeUndefined()
+        expect(teaAutoPublishBanner(noState, 'component')).toBeNull()
+    })
+
+    it('(b) teaWouldStartAutoPublish: publishing on with AT_SHIPPED on a row that does not fire yet', () => {
+        const v = (state: string) => ({ stored: storedRow({ publishing: 'DISABLED', autoPublish: 'AT_SHIPPED', autoPublishState: state }) })
+        expect(teaWouldStartAutoPublish(v('OFF'), INPUT('AT_SHIPPED'))).toBe(true)
+        expect(teaWouldStartAutoPublish(v('ARMED'), INPUT('AT_SHIPPED'))).toBe(false)
+        expect(teaWouldStartAutoPublish(v('NEEDS_CONFIRMATION'), INPUT('AT_SHIPPED'))).toBe(true)
+        expect(teaWouldStartAutoPublish(v('OFF'), INPUT('DISABLED'))).toBe(false)
+        expect(teaWouldStartAutoPublish(v('OFF'), { ...INPUT('AT_SHIPPED'), publishing: 'DISABLED' })).toBe(false)
+        expect(teaWouldStartAutoPublish(v('OFF'), INPUT())).toBe(false)
+        expect(teaWouldStartAutoPublish({ stored: null, effective: resolvedP('ARMED') }, INPUT('AT_SHIPPED'))).toBe(false)
+        expect(teaWouldStartAutoPublish({ stored: null, effective: resolvedP('OFF') }, INPUT('AT_SHIPPED'))).toBe(true)
+    })
+
+    it('(c) teaTurnOnConfirm: OVERRIDE on teaWouldStartAutoPublish, FOLLOW on the dry-run only', () => {
+        const off = { stored: storedRow({ publishing: 'DISABLED', autoPublishState: 'OFF' }) }
+        expect(TEA_TURN_ON_TEXT).toBe(TURN_ON)
+        expect(teaTurnOnConfirm(off, INPUT('AT_SHIPPED'), exposureOf(), 'component'))
+            .toEqual({ title: 'Turn on publish at shipped?', text: TURN_ON, confirmButtonText: 'Turn on' })
+        expect(teaTurnOnConfirm(off, INPUT('DISABLED'), exposureOf({ autoPublishStarts: true }), 'component')).toBeNull()
+        const follow = { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' }
+        const starts = exposureOf({ autoPublishStarts: true, afterSource: 'PERSPECTIVE', afterSourceObject: 'p1' })
+        expect(teaTurnOnConfirm(off, follow, starts, 'component', { p1: 'Payments' })).toEqual({
+            title: 'Turn on publish at shipped?',
+            text: 'Following perspective Payments turns on publish at shipped for this component through the TEA profile of '
+                + 'perspective Payments. ' + TURN_ON,
+            confirmButtonText: 'Turn on',
+        })
+        expect(teaTurnOnConfirm(off, follow, { ...starts, autoPublishStarts: false }, 'component', { p1: 'Payments' })).toBeNull()
+        const absent: any = { ...starts }
+        delete absent.autoPublishStarts
+        expect(teaTurnOnConfirm(off, follow, absent, 'component', { p1: 'Payments' })).toBeNull()
+    })
+
+    it('(d) teaStartsAutoPublish on the object flag or a member list', () => {
+        const member = { component: 'c', name: 'n' }
+        expect(teaStartsAutoPublish(exposureOf({ autoPublishStarts: true, autoPublishStartsFor: [] }))).toBe(true)
+        expect(teaStartsAutoPublish(exposureOf({ autoPublishStarts: false, autoPublishStartsFor: [member] }))).toBe(true)
+        expect(teaStartsAutoPublish(exposureOf({ autoPublishStarts: false, autoPublishStartsFor: [] }))).toBe(false)
+        expect(teaStartsAutoPublish(exposureOf())).toBe(false)
+        expect(teaStartsAutoPublish(null)).toBe(false)
+    })
+
+    it('(e) teaConfirmBeforeRemoval says when the removal starts publish at shipped', () => {
+        expect(teaConfirmBeforeRemoval(exposureOf({ autoPublishStarts: true, afterSource: 'ORGANIZATION' }), 'component')).toEqual({
+            title: 'Remove this TEA profile override?',
+            text: 'The component then resolves its TEA profile from its parent again. Removing this override turns on '
+                + 'publish at shipped for this component through the TEA profile of organization; its releases at Shipped '
+                + 'or later are published the next time they change.',
+            confirmButtonText: 'Remove',
+        })
+        const members = (names: string[]) => names.map(n => ({ component: 'c-' + n, name: n }))
+        expect(teaConfirmBeforeRemoval(exposureOf({ autoPublishStartsFor: members(['zeta', 'alpha']) }), 'perspective').text
+            .endsWith('Removing this override turns on publish at shipped for 2 component(s) of this perspective: zeta, alpha; '
+                + 'their releases at Shipped or later are published the next time they change.')).toBe(true)
+        expect(teaConfirmBeforeRemoval(exposureOf({ autoPublishStartsFor: members(['m1', 'm2', 'm3', 'm4', 'm5', 'm6']) }), 'perspective')
+            .text).toContain('for 6 component(s) of this perspective: m1, m2, m3, m4, m5, and 1 more;')
+        // Exactly LISTED_NAMES (5): every name is listed, with no "and <n> more" suffix (the boundary of listedNames).
+        expect(teaConfirmBeforeRemoval(exposureOf({ autoPublishStartsFor: members(['m1', 'm2', 'm3', 'm4', 'm5']) }), 'perspective')
+            .text).toContain('for 5 component(s) of this perspective: m1, m2, m3, m4, m5;')
+        const pub = exposureOf({ before: 'PRIVATE', after: 'PUBLIC', path: 'REMOVAL_RESOLVES_PUBLIC', afterSource: 'ORGANIZATION', publishedReleases: 2 })
+        const today = teaConfirmBeforeRemoval(pub, 'component')
+        const both = teaConfirmBeforeRemoval({ ...pub, autoPublishStarts: true }, 'component')
+        expect(both.title).toBe(today.title)
+        expect(both.text).toBe(today.text + ' Removing this override turns on publish at shipped for this component through '
+            + 'the TEA profile of organization; its releases at Shipped or later are published the next time they change.')
+        expect(teaConfirmBeforeRemoval(exposureOf(), 'component')).toEqual({ title: 'Remove this TEA profile override?',
+            text: 'The component then resolves its TEA profile from its parent again.', confirmButtonText: 'Remove' })
+    })
+
+    it('(f) teaConfirmBeforeMembership asks for a start, a public change, or both', () => {
+        expect(teaConfirmBeforeMembership(exposureOf(), ['Payments'], [])).toBeNull()
+        const start = exposureOf({ autoPublishStarts: true, afterSource: 'PERSPECTIVE', afterSourceObject: 'p1' })
+        expect(teaConfirmBeforeMembership(start, ['Payments'], [], { p1: 'Payments' })).toEqual({
+            title: 'Turn on publish at shipped?',
+            text: "Changing this component's perspectives (adding Payments) turns on publish at shipped for it through the TEA "
+                + 'profile of perspective Payments; its releases at Shipped or later are published the next time they change.',
+            confirmButtonText: 'Change perspectives',
+        })
+        const pub = exposureOf({ before: 'PRIVATE', after: 'PUBLIC', path: 'MEMBERSHIP_RESOLVES_PUBLIC', afterSource: 'PERSPECTIVE',
+            afterSourceObject: 'p1', publishedReleases: 1 })
+        const today = teaConfirmBeforeMembership(pub, ['Payments'], [], { p1: 'Payments' })!
+        const both = teaConfirmBeforeMembership({ ...pub, autoPublishStarts: true }, ['Payments'], [], { p1: 'Payments' })!
+        expect(both.title).toBe('Make this component public?')
+        expect(both.text).toBe(today.text + " Changing this component's perspectives (adding Payments) turns on publish at "
+            + 'shipped for it through the TEA profile of perspective Payments; its releases at Shipped or later are published '
+            + 'the next time they change.')
+        expect(teaConfirmBeforeMembership({ ...pub, autoPublishStarts: false }, ['Payments'], [], { p1: 'Payments' })).toEqual(today)
     })
 })

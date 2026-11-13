@@ -63,6 +63,11 @@ import AppWrapper from '@/components/AppWrapper.vue'
 .swal-wide {
     width: 90% !important;
 }
+/* The partial-publish list of a product's TEA publish or share dialog (FDAW-39): one line per child. */
+.tea-partial-children {
+    white-space: pre-line;
+    text-align: left;
+}
 
 /* short key id next to a key's name (apiKeyLabelColumn, the CLI login picker); same look as the agent cards' uuid chip */
 .key-id-chip {

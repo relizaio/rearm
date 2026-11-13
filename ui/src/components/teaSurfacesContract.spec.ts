@@ -523,3 +523,18 @@ describe('TEA surfaces contract', () => {
     })
 })
 
+
+// FDAW-39 row 52 (l): every read of the editor view and the two dry-runs goes through the drift fallback.
+describe('TEA reads with additive fields go through loadTeaDocument (FDAW-39 row 52 (l))', () => {
+    const DIRECT = /graphqlClient\.query\(\{\s*query: graphqlQueries\.(TeaProfileEditorViewGql|TeaProfileExposureChangeGql|TeaMembershipExposureChangeGql)\b/
+
+    it('the expression matches a direct read (the control)', () => {
+        expect('graphqlClient.query({\n            query: graphqlQueries.TeaProfileEditorViewGql,').toMatch(DIRECT)
+    })
+
+    it.each(['TeaProfileEditor.vue', 'ComponentView.vue', 'OrgSettings.vue'])('%s has no direct read and reads through loadTeaDocument', (f) => {
+        const s = src(f)
+        expect(s).not.toMatch(DIRECT)
+        expect(s).toContain('loadTeaDocument(graphqlClient, {')
+    })
+})

@@ -13,6 +13,9 @@ import { outputEventTypeOptionsForEdition, TEA_OUTPUT_EVENT_TYPE_OPTIONS } from 
 import profilesQueries from './profilesQueries'
 import { MEDICAL_DEVICE_SETUP_STATUS_QUERY, SET_UP_MEDICAL_DEVICE } from './medicalDeviceSetup'
 import { withoutAdditiveFields } from './graphqlDriftFallback'
+import { teaCoreDocument } from './teaDocuments'
+import { TEA_AUTO_PUBLISH_OPTIONS } from './teaProfile'
+import { TEA_CHILD_REFUSAL_REASONS, TEA_CHILD_SKIP_REASONS, TEA_SHARE_REFUSAL_TEXTS, TEA_SHARE_STATES } from './teaPublication'
 import { COMPONENT_DEVICE_WINDOW_QUERY } from './componentDeviceWindow'
 import submissionQueries from './submissionQueries'
 import { PACKAGE_SELECTION_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, regulatoryPackagesAvailable } from './packageSettings'
@@ -74,7 +77,7 @@ describe('TEA profile documents and the edition gate', () => {
     })
 
     it('the CE schema answers either every TEA document or none, so the one gate covers them all', () => {
-        const valid = Object.values(DOCS).map(d => validate(ceSchema, d).length === 0)
+        const valid = Object.values(DOCS).map(d => validate(ceSchema, teaCoreDocument(d)).length === 0)
         expect(valid.every(v => v === ceServesTea())).toBe(true)
     })
 
@@ -84,7 +87,7 @@ describe('TEA profile documents and the edition gate', () => {
     })
 
     it('the membership dry-run is one of the documents the CE schema does not serve', () => {
-        expect(validate(ceSchema, DOCS.TeaMembershipExposureChangeGql).length > 0).toBe(!ceServesTea())
+        expect(validate(ceSchema, teaCoreDocument(DOCS.TeaMembershipExposureChangeGql)).length > 0).toBe(!ceServesTea())
     })
 
     it.runIf(proSchema)('every TEA document validates against the Pro schema', () => {
@@ -442,5 +445,80 @@ describe('Medical device setup documents (FDAW-18)', () => {
     it('the device window read with the UDI fields validates on CE, full and core', () => {
         expect(validate(ceSchema, COMPONENT_DEVICE_WINDOW_QUERY).map(e => e.message)).toEqual([])
         expect(validate(ceSchema, withoutAdditiveFields(COMPONENT_DEVICE_WINDOW_QUERY)).map(e => e.message)).toEqual([])
+    })
+})
+
+/**
+ * FDAW-39 (design 3.2, row 52 (g) to (k), (m)): the four TEA documents with #additive-field lines and
+ * the children read. Their core forms validate on CE; each full form validates on CE exactly when the
+ * CE schema has every field it adds (a canary per document, so the CE catch-up turns them by itself).
+ */
+const ADDITIVE_DOCS: Record<string, [any, [string, string][]]> = {
+    TeaProfileEditorViewGql: [graphqlQueries.TeaProfileEditorViewGql,
+        [['TeaProfile', 'autoPublish'], ['TeaProfile', 'autoPublishState'], ['TeaProfileEditorView', 'publishedVersions']]],
+    SaveTeaProfileGql: [graphqlQueries.SaveTeaProfileGql, [['TeaProfile', 'autoPublish'], ['TeaProfile', 'autoPublishState']]],
+    TeaProfileExposureChangeGql: [graphqlQueries.TeaProfileExposureChangeGql,
+        [['TeaExposureChange', 'publishedVersions'], ['TeaExposureChange', 'autoPublishStarts'], ['TeaExposureChange', 'autoPublishStartsFor']]],
+    TeaMembershipExposureChangeGql: [graphqlQueries.TeaMembershipExposureChangeGql,
+        [['TeaExposureChange', 'publishedVersions'], ['TeaExposureChange', 'autoPublishStarts'], ['TeaExposureChange', 'autoPublishStartsFor']]],
+}
+const CHILDREN_DOC = graphqlQueries.ReleaseTeaPublishChildrenGql
+const fieldOf = (schema: any, type: string, field: string) => Boolean(schema.getType(type)?.getFields?.()[field])
+
+describe('FDAW-39 additive TEA documents (row 52 (g), (h))', () => {
+    it('(g) the core form of each of the four additive documents validates against the CE schema', () => {
+        for (const [name, [doc]] of Object.entries(ADDITIVE_DOCS)) {
+            expect(validate(ceSchema, teaCoreDocument(doc)).map(e => e.message), name).toEqual([])
+        }
+    })
+
+    it('(g) the publication view selects profiles, not children, and validates on CE', () => {
+        const body = graphqlQueries.ReleaseTeaPublicationViewGql.loc!.source.body
+        expect(body).toMatch(/\bprofiles\b/)
+        expect(body).not.toMatch(/\bchildren\b/)
+        expect(validate(ceSchema, graphqlQueries.ReleaseTeaPublicationViewGql).map(e => e.message)).toEqual([])
+    })
+
+    it('(h) each full document validates on CE exactly when the CE schema has every field it adds', () => {
+        for (const [name, [doc, fields]] of Object.entries(ADDITIVE_DOCS)) {
+            const served = fields.every(([t, f]) => fieldOf(ceSchema, t, f))
+            expect(validate(ceSchema, doc).length === 0, name).toBe(served)
+        }
+        expect(validate(ceSchema, CHILDREN_DOC).length === 0, 'ReleaseTeaPublishChildrenGql')
+            .toBe(fieldOf(ceSchema, 'TeaPublishPreview', 'children'))
+    })
+})
+
+describe('FDAW-39 TEA documents and tables against the Pro schema (row 52 (i) to (k), (m))', () => {
+    it.runIf(proSchema)('(i) the four additive documents in full and the children read validate', () => {
+        for (const [name, [doc]] of Object.entries(ADDITIVE_DOCS)) {
+            expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
+        }
+        expect(validate(proSchema!, CHILDREN_DOC).map(e => e.message)).toEqual([])
+    })
+
+    it.runIf(proSchema)('(j) the option values, refusal keys, outcomes and states are Pro enum values', () => {
+        expect(TEA_AUTO_PUBLISH_OPTIONS.map(o => o.value).sort()).toEqual(enumValuesOf(proSchema!, 'TeaAutoPublish').sort())
+        const refusals = enumValuesOf(proSchema!, 'TeaPublishRefusal')
+        for (const r of [...Object.keys(TEA_CHILD_REFUSAL_REASONS), ...Object.keys(TEA_SHARE_REFUSAL_TEXTS)]) expect(refusals, r).toContain(r)
+        expect([...Object.keys(TEA_CHILD_SKIP_REASONS), 'WILL_PUBLISH', 'REFUSED'].sort())
+            .toEqual(enumValuesOf(proSchema!, 'TeaPreviewChildOutcome').sort())
+        for (const st of TEA_SHARE_STATES) expect(enumValuesOf(proSchema!, 'SubmissionState'), st).toContain(st)
+        expect(['OFF', 'ARMED', 'NEEDS_CONFIRMATION'].sort()).toEqual(enumValuesOf(proSchema!, 'TeaAutoPublishState').sort())
+    })
+
+    it.runIf(proSchema)('(k) INPUT(AT_SHIPPED) coerces against TeaProfileInput', () => {
+        const arg = proSchema!.getMutationType()!.getFields().saveTeaProfile.args.find(a => a.name === 'profile')!
+        const errors: string[] = []
+        const input = { mode: 'OVERRIDE', publishing: 'ENABLED', visibility: 'PRIVATE', rawArtifacts: 'NONE',
+            productComponents: 'PUBLISH_WITH_PRODUCT', minimumLifecycle: 'ASSEMBLED', tei: 'DISABLED', teiDomain: null,
+            profiles: ['default'], autoPublish: 'AT_SHIPPED' }
+        coerceInputValue(input, arg.type, (_p, _v, err: GraphQLError) => errors.push(err.message))
+        expect(errors).toEqual([])
+    })
+
+    it('(m) with REARM_PRO_SCHEMA set, the Pro schema loaded', () => {
+        if (process.env.REARM_PRO_SCHEMA) expect(proSchema).not.toBeNull()
+        else expect(process.env.REARM_PRO_SCHEMA ?? '').toBe('')
     })
 })

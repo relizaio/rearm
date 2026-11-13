@@ -615,3 +615,123 @@ describe('ReleaseSubmissionsPanel in words (FDAW-78 row 15)', () => {
         w.unmount()
     })
 })
+
+// FDAW-39 row 51 (d) and row 53 (e): Share with customers on the package head.
+describe('ReleaseSubmissionsPanel: Share with customers (FDAW-39 row 51 (d))', () => {
+    const LIFECYCLE_TEXT = 'This release has not reached the lifecycle its TEA settings require.'
+    const ENABLED = { publishing: 'ENABLED', canPublish: true, publication: null, refusal: null }
+    const BLOCKED = { publishing: 'ENABLED', canPublish: false, publication: null, refusal: 'LIFECYCLE_TOO_LOW',
+        refusalMessage: 'Release Pump 1.2.0 is ASSEMBLED; the TEA profile\'s minimum lifecycle is GENERAL_AVAILABILITY' }
+    const fdaHead = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastActKind: 'RESUBMITTED',
+        lastActDate: '2026-10-02T00:00:00Z', lastActBy: 'u1',
+        versions: [v(1), v(2, { sbomProfile: { name: 'fda', row: null, revision: 0, source: 'DEFAULT' } })] }
+    const testHead = (state: string, changes: Record<string, any> = {}) => ({ uuid: 's2', release: 'r1', kind: 'TEST_KIND', state,
+        latestVersion: 1, lastActKind: 'CREATED', lastActDate: '2026-10-03T00:00:00Z', lastActBy: 'u1', legacyState: null,
+        versions: [v(1, { submission: 's2', kind: 'TEST_KIND' })], ...changes })
+    let heads: any[] = []
+    const shareIn = (w: any, kind: string) => w.find(`[data-testid="submission-head-${kind}"] [data-testid="submission-share"]`)
+    const panel = (w: any) => w.findComponent(Panel)
+
+    beforeEach(() => {
+        query.mockReset()
+        fire.mockReset()
+        heads = [fdaHead, testHead('SENT')]
+        query.mockImplementation(async (opts: any) => {
+            switch (operation(opts)) {
+            case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }, { kind: 'TEST_KIND', parts: [] }] } }
+            case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: heads } }
+            default: throw new Error('unexpected query ' + operation(opts))
+            }
+        })
+    })
+
+    it('the button on a Final head, last in its actions, enabled with no title', async () => {
+        const w = await mountPanel({ teaView: ENABLED })
+        const b = shareIn(w, 'FDA_PREMARKET')
+        expect(b.exists()).toBe(true)
+        expect(b.text()).toBe('Share with customers')
+        expect((b.element as HTMLButtonElement).disabled).toBe(false)
+        expect(b.attributes('title') ?? '').toBe('')
+        const actions = w.find('[data-testid="submission-head-FDA_PREMARKET"] .submission-actions')
+        expect(actions.findAll('button[data-testid]').map((e: any) => e.attributes('data-testid')))
+            .toEqual(['submission-resubmit', 'submission-withdraw', 'submission-share'])
+        w.unmount()
+    })
+
+    it('Sent and Amended heads have it; Superseded, Withdrawn and Cancelled do not, while the Final head keeps its own', async () => {
+        for (const [state, has] of [['SENT', true], ['AMENDED', true], ['SUPERSEDED', false], ['WITHDRAWN', false], ['CANCELLED', false]] as const) {
+            heads = [fdaHead, testHead(state)]
+            const w = await mountPanel({ teaView: ENABLED })
+            expect(shareIn(w, 'TEST_KIND').exists(), state).toBe(has)
+            expect(shareIn(w, 'FDA_PREMARKET').exists(), state).toBe(true)
+            w.unmount()
+        }
+        heads = [fdaHead]
+        const none = await mountPanel({ teaView: ENABLED })
+        expect(none.find('[data-testid="submission-head-TEST_KIND"]').exists()).toBe(true)
+        expect(shareIn(none, 'TEST_KIND').exists()).toBe(false)
+        expect(shareIn(none, 'FDA_PREMARKET').exists()).toBe(true)
+        none.unmount()
+    })
+
+    it('no button without a view, with publishing off, or for a reader; the head still renders', async () => {
+        for (const props of [{ teaView: null }, { teaView: { ...ENABLED, publishing: 'DISABLED' } }, { teaView: ENABLED, isWritable: false }]) {
+            const w = await mountPanel(props)
+            expect(w.find('[data-testid="submission-share"]').exists(), JSON.stringify(props)).toBe(false)
+            expect(w.find('[data-testid="submission-head-FDA_PREMARKET"] [data-testid="submission-state"]').text())
+                .toBe('Final (no confirmation record) - not sent')
+            w.unmount()
+        }
+    })
+
+    it('disabled with the refusal in words when nothing is published and it cannot be; enabled with a publication; disabled while an act runs', async () => {
+        const blocked = await mountPanel({ teaView: BLOCKED })
+        const b = shareIn(blocked, 'FDA_PREMARKET')
+        expect((b.element as HTMLButtonElement).disabled).toBe(true)
+        expect(b.attributes('title')).toBe(LIFECYCLE_TEXT)
+        blocked.unmount()
+
+        const published = await mountPanel({ teaView: { ...ENABLED, canPublish: false, publication: { state: 'PUBLISHED' },
+            refusal: 'ALREADY_PUBLISHED' } })
+        expect((shareIn(published, 'FDA_PREMARKET').element as HTMLButtonElement).disabled).toBe(false)
+        published.unmount()
+
+        const acting = await mountPanel({ teaView: ENABLED, teaActing: true })
+        expect((shareIn(acting, 'FDA_PREMARKET').element as HTMLButtonElement).disabled).toBe(true)
+        acting.unmount()
+    })
+
+    it('a click emits share once with the head\'s kind, version, state and package profile; a disabled one emits nothing', async () => {
+        const w = await mountPanel({ teaView: ENABLED })
+        await shareIn(w, 'FDA_PREMARKET').trigger('click')
+        expect(panel(w).emitted('share')).toEqual([[{ kind: 'FDA_PREMARKET', latestVersion: 2, state: 'FINAL', profileName: 'fda' }]])
+        await shareIn(w, 'TEST_KIND').trigger('click')
+        expect(panel(w).emitted('share')![1]).toEqual([{ kind: 'TEST_KIND', latestVersion: 1, state: 'SENT', profileName: 'default' }])
+        w.unmount()
+
+        heads = [fdaHead, testHead('SENT', { versions: [v(1, { submission: 's2', kind: 'TEST_KIND', sbomProfile: null })] })]
+        const noProfile = await mountPanel({ teaView: ENABLED })
+        await shareIn(noProfile, 'TEST_KIND').trigger('click')
+        expect(panel(noProfile).emitted('share')).toEqual([[{ kind: 'TEST_KIND', latestVersion: 1, state: 'SENT', profileName: null }]])
+        noProfile.unmount()
+
+        const blocked = await mountPanel({ teaView: BLOCKED })
+        await shareIn(blocked, 'FDA_PREMARKET').trigger('click')
+        expect(panel(blocked).emitted('share')).toBeUndefined()
+        blocked.unmount()
+    })
+
+    it('row 53 (e): the panel with the share button and its title swept, with the refusalMessage\'s words as the positive control', async () => {
+        expect(BLOCKED.refusalMessage).toMatch(/\b[A-Z][A-Z0-9]+(_[A-Z0-9]+)+\b/)
+        const w = await mountPanel({ teaView: BLOCKED })
+        const b = shareIn(w, 'FDA_PREMARKET')
+        expect(b.exists()).toBe(true)
+        const root = w.find('[data-testid="submission-head-FDA_PREMARKET"]').element.closest('div')!.parentElement!.cloneNode(true) as HTMLElement
+        root.querySelectorAll('[data-testid="submission-sha256"]').forEach(e => e.remove())
+        const swept = (root.textContent ?? '') + ' ' + (b.attributes('title') ?? '')
+        expect(swept).toContain('Share with customers')
+        expect(swept).toContain(LIFECYCLE_TEXT)
+        expectSwept(swept, 'release panel with share')
+        w.unmount()
+    })
+})

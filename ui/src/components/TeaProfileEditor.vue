@@ -3,6 +3,9 @@
         <n-alert v-if="banner" data-testid="tea-public-banner" type="error" :closable="false" class="tea-alert">
             {{ banner }}
         </n-alert>
+        <n-alert v-if="autoPublishBanner" data-testid="tea-autopublish-reconfirm" type="warning" :closable="false" class="tea-alert">
+            {{ autoPublishBanner }}
+        </n-alert>
         <n-spin :show="loading">
             <div v-if="loadError" data-testid="tea-load-error" class="text-danger">{{ loadError }}</div>
             <template v-else-if="view">
@@ -39,6 +42,10 @@
                             <n-select data-testid="tea-publishing" v-model:value="shown.publishing" :options="TEA_PUBLISHING_OPTIONS" />
                             <template #feedback>{{ TEA_FIELD_HELP.publishing }}</template>
                         </n-form-item>
+                        <n-form-item v-if="additive" :label="TEA_AUTO_PUBLISH_LABEL">
+                            <n-select data-testid="tea-auto-publish" v-model:value="shown.autoPublish" :options="TEA_AUTO_PUBLISH_OPTIONS" />
+                            <template #feedback>{{ teaAutoPublishHelp(installationType) }}</template>
+                        </n-form-item>
                         <n-form-item label="Visibility">
                             <n-select data-testid="tea-visibility" v-model:value="shown.visibility"
                                 :options="TEA_VISIBILITY_OPTIONS" :disabled="!isOrgAdmin || readOnly" />
@@ -57,6 +64,7 @@
                             <template #feedback>
                                 <span v-if="catalogError" data-testid="tea-profiles-error" class="text-danger">{{ catalogError }}</span>
                                 <span v-else>{{ TEA_FIELD_HELP.profiles }}</span>
+                                <div data-testid="tea-package-profile-help" class="text-muted">{{ TEA_FIELD_HELP.packageProfile }}</div>
                             </template>
                         </n-form-item>
                         <n-form-item label="Raw artifacts">
@@ -97,13 +105,15 @@ import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
+import { loadTeaDocument, teaCoreDocument } from '@/utils/teaDocuments'
 import profilesQueries from '@/utils/profilesQueries'
 import {
-    CE_SBOM_PROFILE, Option, TeaProfileForm, TeaScope, TEA_FIELD_HELP, TEA_INHERIT, TEA_MINIMUM_LIFECYCLE_OPTIONS,
-    TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS, TEA_TEI_OPTIONS,
-    TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults, teaConfirmBeforeRemoval, teaConfirmBeforeSave, teaFormFromView,
-    teaInheritConfirm, teaInheritConflictHint, teaInheritedForm, teaModeOptions, teaNeedsPublicConfirm, teaProfileInput, teaPublicBanner,
-    teaSourceLine, TeaConfirm, TeaExposureChange,
+    CE_SBOM_PROFILE, Option, TeaProfileForm, TeaScope, TEA_AUTO_PUBLISH_LABEL, TEA_AUTO_PUBLISH_OPTIONS, TEA_FIELD_HELP,
+    TEA_INHERIT, TEA_MINIMUM_LIFECYCLE_OPTIONS, TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PUBLISHING_OPTIONS,
+    TEA_RAW_ARTIFACTS_OPTIONS, TEA_TEI_OPTIONS, TEA_VISIBILITY_OPTIONS, teaAutoPublishBanner, teaAutoPublishHelp,
+    teaBuiltInDefaults, teaConfirmBeforeRemoval, teaConfirmBeforeSave, teaFormFromView, teaInheritConfirm,
+    teaInheritConflictHint, teaInheritedForm, teaModeOptions, teaNeedsPublicConfirm, teaProfileInput, teaPublicBanner,
+    teaSourceLine, teaStartsAutoPublish, teaTurnOnConfirm, TeaConfirm, TeaExposureChange,
 } from '@/utils/teaProfile'
 import { sbomProfileNamesAvailable } from '@/utils/sbomProfile'
 import SbomProfilePicker from './SbomProfilePicker.vue'
@@ -139,6 +149,8 @@ const form = ref<TeaProfileForm>(teaBuiltInDefaults())
 const loading = ref(false)
 const saving = ref(false)
 const loadError = ref<string | null>(null)
+// Whether the backend served the full view (publish at shipped and the version count, FDAW-39 3.2).
+const additive = ref(false)
 // The SBOM profile catalog at this scope, for the picker (TEA-30); its own error line under the picker.
 const catalog = ref<any[]>([])
 const catalogError = ref<string | null>(null)
@@ -162,6 +174,7 @@ const showProductComponents = computed(() => props.scope !== 'COMPONENT' || prop
 const sourceLine = computed(() => teaSourceLine(view.value, perspectiveNames.value, form.value.mode))
 const inheritHint = computed(() => teaInheritConflictHint(props.scope, form.value.mode, props.perspectiveOptions.length, view.value))
 const banner = computed(() => teaPublicBanner(view.value, perspectiveNames.value))
+const autoPublishBanner = computed(() => teaAutoPublishBanner(view.value, scopeWord.value, perspectiveNames.value))
 const conflictNames = computed(() => (view.value?.parent?.conflictingPerspectives ?? []).map((p: any) => p.name).join(', '))
 const scopeWord = computed(() => props.objectIsProduct ? 'product' : props.scope.toLowerCase())
 
@@ -170,13 +183,14 @@ async function load () {
     loadError.value = null
     try {
         const [resp]: any[] = await Promise.all([
-            graphqlClient.query({
+            loadTeaDocument(graphqlClient, {
                 query: graphqlQueries.TeaProfileEditorViewGql,
                 variables: { org: props.orgUuid, scope: props.scope, object: props.objectUuid },
                 fetchPolicy: 'no-cache',
             }),
             reloadCatalog(),
         ])
+        additive.value = resp.additive
         view.value = resp.data.teaProfileEditorView
         form.value = teaFormFromView(view.value, props.scope)
         // CE follows no perspective: a FOLLOW row (none is stored there) edits as an override.
@@ -217,7 +231,7 @@ async function reloadCatalog () {
  */
 async function exposureOf (profile: Record<string, any> | null): Promise<TeaExposureChange | null> {
     try {
-        const resp: any = await graphqlClient.query({
+        const resp: any = await loadTeaDocument(graphqlClient, {
             query: graphqlQueries.TeaProfileExposureChangeGql,
             variables: { org: props.orgUuid, scope: props.scope, object: props.objectUuid, profile },
             fetchPolicy: 'no-cache',
@@ -238,15 +252,16 @@ async function confirmed (c: TeaConfirm | null): Promise<boolean> {
 
 async function save () {
     if (inherits.value) return
-    const profile = teaProfileInput(form.value, props.scope, props.installationType)
+    const profile = teaProfileInput(form.value, props.scope, props.installationType, additive.value)
     const exposure = await exposureOf(profile)
     if (!exposure) return
     if (!await confirmed(teaConfirmBeforeSave(exposure, scopeWord.value, perspectiveNames.value,
         follows.value ? form.value.followedPerspective : null))) return
+    if (!await confirmed(teaTurnOnConfirm(view.value, profile, exposure, scopeWord.value, perspectiveNames.value))) return
     saving.value = true
     try {
         const resp: any = await graphqlClient.mutate({
-            mutation: graphqlQueries.SaveTeaProfileGql,
+            mutation: additive.value ? graphqlQueries.SaveTeaProfileGql : teaCoreDocument(graphqlQueries.SaveTeaProfileGql),
             variables: { org: props.orgUuid, scope: props.scope, object: props.objectUuid, profile },
         })
         emit('saved', resp.data.saveTeaProfile)
@@ -266,7 +281,7 @@ async function save () {
 async function remove (askedToInherit = false) {
     const exposure = await exposureOf(null)
     if (!exposure) return
-    if (!(askedToInherit && !teaNeedsPublicConfirm(exposure))
+    if (!(askedToInherit && !teaNeedsPublicConfirm(exposure) && !teaStartsAutoPublish(exposure))
         && !await confirmed(teaConfirmBeforeRemoval(exposure, scopeWord.value, perspectiveNames.value))) return
     try {
         await graphqlClient.mutate({
