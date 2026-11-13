@@ -595,6 +595,9 @@ describe('FDAW-39 row 36: the paused banner, the turn-on confirmation and the st
                 + 'their releases at Shipped or later are published the next time they change.')).toBe(true)
         expect(teaConfirmBeforeRemoval(exposureOf({ autoPublishStartsFor: members(['m1', 'm2', 'm3', 'm4', 'm5', 'm6']) }), 'perspective')
             .text).toContain('for 6 component(s) of this perspective: m1, m2, m3, m4, m5, and 1 more;')
+        // Exactly LISTED_NAMES (5): every name is listed, with no "and <n> more" suffix (the boundary of listedNames).
+        expect(teaConfirmBeforeRemoval(exposureOf({ autoPublishStartsFor: members(['m1', 'm2', 'm3', 'm4', 'm5']) }), 'perspective')
+            .text).toContain('for 5 component(s) of this perspective: m1, m2, m3, m4, m5;')
         const pub = exposureOf({ before: 'PRIVATE', after: 'PUBLIC', path: 'REMOVAL_RESOLVES_PUBLIC', afterSource: 'ORGANIZATION', publishedReleases: 2 })
         const today = teaConfirmBeforeRemoval(pub, 'component')
         const both = teaConfirmBeforeRemoval({ ...pub, autoPublishStarts: true }, 'component')
