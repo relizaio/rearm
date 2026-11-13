@@ -310,7 +310,7 @@ async function deleteSecret(secretId: string) {
     let secret = secrets.value?.filter(s => (s.uuid === secretId))
     selectedSecret.value = secret === undefined ? commonFunctions.deepCopy(emptySecret) : secret[0]
     Swal.fire({
-        title: `Are you sure you want to delete the ${selectedSecret.value.name} secret?`,
+        titleText: `Are you sure you want to delete the ${selectedSecret.value.name} secret?`,
         text: `If you proceed, the secret will be deleted and you will not have access to its data.`,
         icon: 'warning',
         showCancelButton: true,

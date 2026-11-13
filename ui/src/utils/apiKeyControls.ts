@@ -9,6 +9,7 @@ import { ApiKeyTableKind, DetailLine, fmtKeyDate as fmtDate, isSecretExpired as 
 import { apiKeyDeniedReason, apiKeyLabel, apiKeyName, apiKeyNotesUncut, apiKeyShortId, cleanLabelText } from '@/utils/apiKeyLabel'
 import { normalizeSearchTerm, textMatches, uuidMatches, UUID_PREFIX_MIN } from '@/utils/tableSearch'
 import { type NotifyFn, uuidCopyColumn } from '@/utils/uuidCopyColumn'
+import { escapeHtml } from '@/utils/escapeHtml'
 
 /**
  * Shared API key status + secrets controls (kill switch, two-secret rotation, delete).
@@ -33,10 +34,8 @@ function usableSecrets (row: any): any[] { return (row.secrets || []).filter((s:
 /** A flex row that wraps onto the next line rather than overflowing a narrow column. */
 const WRAP_ROW = 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;'
 
-/** Text made safe to sit in a SweetAlert2 html string or option label (a dialog may carry a key label or a user name). */
-export function escapeHtml (s: string): string {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
+// Re-exported for the callers that import it from this module; it has its own module with no imports (FDAW-95).
+export { escapeHtml }
 
 /** local datetime-local value -> ISO instant, or null when empty */
 function toIso (local: string): string | null { return local ? new Date(local).toISOString() : null }
@@ -48,6 +47,7 @@ async function askExpiry (title: string, text: string, confirmButtonText: string
     const r = await Swal.fire({
         titleText: title, icon: 'warning', showCancelButton: true, confirmButtonText, cancelButtonText: 'Cancel',
         showDenyButton: allowClear, denyButtonText: 'Clear expiry',
+        // eslint-disable-next-line no-restricted-syntax -- the text through escapeHtml, constants and a local date
         html: `<p style="text-align:left">${escapeHtml(text)}</p><label style="display:block;text-align:left;margin-top:8px">Expiry (optional, local time; the secret is refused after it and its tokens end there at the latest)</label><input id="swal-expiry" type="datetime-local" class="swal2-input" style="width: 80%" value="${curLocal}">`,
         preConfirm: () => {
             const v = (document.getElementById('swal-expiry') as HTMLInputElement).value
@@ -67,6 +67,7 @@ async function confirmThen (title: string, text: string, confirmButtonText: stri
 }
 
 export async function showMintedSecret (forUser: any, title: string) {
+    // eslint-disable-next-line no-restricted-syntax -- getGeneratedApiKeyHTML: a key id, a secret and a header the server minted, no user text
     await Swal.fire({ titleText: title, customClass: { popup: 'swal-wide' }, html: commonFunctions.getGeneratedApiKeyHTML(forUser), icon: 'success' })
 }
 

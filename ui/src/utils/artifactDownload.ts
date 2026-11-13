@@ -3,7 +3,7 @@
 // artifact uuid and an integer version only: no file name, media type or user text reaches the URL.
 // A named version that is not an integer throws rather than turning into a silent "latest" fetch
 // (D17); a part with no integer version recorded is not downloadable at all (D9).
-import { fetchArrayBufferWithAuth } from './fetchClient'
+import { fetchArrayBufferWithAuth, fetchWithAuth } from './fetchClient'
 
 export interface ArtifactDownloadRef { uuid: string, version: number | null, fileName: string }
 
@@ -51,6 +51,22 @@ export function artifactDownloadRef (artifact: string | null | undefined, artifa
 /** The bytes behind a download URL, with the session's bearer token and XSRF header. */
 export async function downloadArtifactBytes (url: string): Promise<ArrayBuffer> {
     return fetchArrayBufferWithAuth(url)
+}
+
+/** A downloaded file: its bytes and the Content-Disposition and Content-Type the server sent (null when absent). */
+export interface ArtifactFile { bytes: ArrayBuffer, disposition: string | null, mediaType: string | null }
+
+/**
+ * The bytes behind a download URL with the response's file headers (FDAW-32 3.6: a draft part has no
+ * stored file name, so the server's Content-Disposition names it). Throws on a status that is not ok.
+ */
+export async function downloadArtifactFile (url: string): Promise<ArtifactFile> {
+    const response = await fetchWithAuth(url)
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    return { bytes: await response.arrayBuffer(), disposition: response.headers.get('Content-Disposition'),
+        mediaType: response.headers.get('Content-Type') }
 }
 
 /** Hands the bytes to the browser as a file; the name is set through the DOM property, never as markup. */

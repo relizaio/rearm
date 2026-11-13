@@ -528,11 +528,7 @@ async function releaseMarketingRelease() {
             marketingRelease.value = mrResponse.data.releaseMarketingRelease
             updatedMarketingRelease.value = deepCopyRelease(marketingRelease.value)
         } catch (err: any) {
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(err.message),
-                'error'
-            )
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
             throw err
         }
     }

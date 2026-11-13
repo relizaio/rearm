@@ -1,10 +1,11 @@
 // Regulatory submissions (task TEA-30, the UI of TEA-35): the labels, the table rows of the product
-// page's Submissions tab and the release page's section, the confirmations of the three acts, the
-// reason check and the History text. Pure logic, so the specs pin it. Names and reasons go into the
-// confirmations' `text` only; titles and buttons are constants (design 3.8).
+// page's Submissions tab and the release page's section, the label tables of the draft flow (FDAW-32
+// 3.3), the Cancel confirmation, the reason check and the History text. Pure logic, so the specs pin
+// it. Names and reasons go into the confirmations' `text` only; titles and buttons are constants
+// (design 3.8).
 
 import { regulatoryPackagesAvailable, packageKindLabel, packagePartLabel, packageSourceLabel } from './packageSettings'
-import { teaActErrorText, teaShortSha } from './teaPublication'
+import { teaActErrorText, teaOneLine, teaShortSha } from './teaPublication'
 import { humanizeEnum, SUBMISSION_STATE_LABELS, submissionHistoryShape } from './fdaLabels'
 import { SBOM_DEFAULT_NAME } from './sbomProfile'
 import { artifactDownloadRef, ArtifactDownloadRef } from './artifactDownload'
@@ -15,12 +16,47 @@ export const submissionsAvailable = regulatoryPackagesAvailable
 /** Defined in fdaLabels.ts (the release History parses with it) and read here under its old name. */
 export { SUBMISSION_STATE_LABELS }
 
-export const SUBMISSION_ACT_LABELS: Record<string, string> = {
-    CREATED: 'Created',
-    RESUBMITTED: 'Resubmitted',
-    WITHDRAWN: 'Withdrawn',
-    CANCELLED: 'Cancelled',
-    UNCHANGED: 'Unchanged',
+/** The kind of a submission act (SubmissionActKind), in the Pro enum's order (FDAW-32 3.3). */
+export const SUBMISSION_ACT_KIND_LABELS: Record<string, string> = {
+    START_DRAFT: 'Draft started',
+    DISCARD_DRAFT: 'Draft discarded',
+    RETURN_TO_DRAFT: 'Returned to draft',
+    CONFIRM: 'Confirmed',
+    FINALIZE: 'Finalized',
+    RECORD_SENT: 'Recorded as sent',
+    FDA_NUMBER_ADDED: 'FDA number added',
+    TIMELINE_ENTRY: 'Timeline entry',
+    AMENDED: 'Amended',
+    SUPERSEDED: 'Superseded',
+    WITHDRAW: 'Withdrawn',
+    CANCEL: 'Cancelled',
+    MIGRATED: 'Migrated',
+}
+
+/** The reason of a package's first version: offered alone without a head, never over one. */
+export const FIRST_VERSION_REASON = 'FIRST_VERSION'
+
+/** Why a next version is drafted (NewVersionReason). */
+export const NEW_VERSION_REASON_LABELS: Record<string, string> = {
+    FIRST_VERSION: 'First version',
+    FDA_REQUEST_RESPONSE: 'Response to an FDA request',
+    CORRECTION: 'Correction',
+    OTHER: 'Other',
+}
+
+/** Where a draft stands (SubmissionDraftState). */
+export const DRAFT_STATE_LABELS: Record<string, string> = {
+    EDITING: 'Editing',
+    AWAITING_CONFIRMATION: 'Awaiting second confirmation',
+}
+
+/** Where a draft's build job stands (DraftBuildState). */
+export const DRAFT_JOB_STATE_LABELS: Record<string, string> = {
+    NONE: 'Not built yet',
+    REQUESTED: 'Rebuild requested',
+    RUNNING: 'Rebuilding',
+    BUILT: 'Built',
+    FAILED: 'Rebuild failed',
 }
 
 export const SUBMISSION_PART_OUTCOME_LABELS: Record<string, string> = {
@@ -46,13 +82,28 @@ export function submissionDateText (d: string | null | undefined): string {
     return d ? new Date(d).toLocaleString('en-CA') : ''
 }
 
+/** The head line's word for the last act (FDAW-32 3.3): from lastAct.kind; `Last act` for a head stored before Finalize. */
+export function submissionLastActWord (head: any): string {
+    const kind = head?.lastAct?.kind
+    return kind ? labelOf(SUBMISSION_ACT_KIND_LABELS, kind) : 'Last act'
+}
+
+/** The head's newest version: `latest` when read, else the entry of `versions` at latestVersion. */
+function newestVersionOf (head: any): any {
+    if (head?.latest) return head.latest
+    return (head?.versions ?? []).find((v: any) => v?.version === head?.latestVersion) ?? null
+}
+
 /**
- * The head's state as its tag reads (FDAW-8). Every FINAL version of the one-click acts has no
- * confirmation record and is not sent; a head the FINAL/CANCELLED migration moved says so.
+ * The head's state as its tag reads (FDAW-8). A FINAL head whose newest version holds a confirmation
+ * (written by Finalize) is `Final - not sent` (FDAW-32 3.3); one without is said to have no confirmation
+ * record; a head the FINAL/CANCELLED migration moved says so.
  */
 export function submissionStateText (head: any): string {
     const state = head?.state
     if (state === 'FINAL') {
+        const confirmations = newestVersionOf(head)?.confirmations
+        if (Array.isArray(confirmations) && confirmations.length > 0) return 'Final - not sent'
         return head?.legacyState === 'ACTIVE' ? 'Final (legacy, no confirmation record) - not sent'
             : 'Final (no confirmation record) - not sent'
     }
@@ -246,10 +297,10 @@ export function submissionPartRows (version: any): any[] {
     })
 }
 
-/** A Swal confirmation: constant title and button, the names in `text` only. */
-export interface SubmissionConfirm { title: string, text: string, confirmButtonText: string }
+/** A Swal confirmation: constant title (titleText) and button, the names in `text` only. */
+export interface SubmissionConfirm { titleText: string, text: string, confirmButtonText: string }
 
-/** The release an act names; componentType words the KIND_DISABLED explanation (product or component). */
+/** The release an act names. */
 export interface SubmissionNames {
     componentName?: string | null
     releaseVersion?: string | null
@@ -266,55 +317,20 @@ export function submissionActorText (name: string | null | undefined, uuid: stri
     return uuid ? 'removed user' : ''
 }
 
-/** The KIND_DISABLED refusal, said for a reader: what is switched off and where to switch it on (B18). */
-export function submissionKindDisabledText (kind: string, componentType: string | null | undefined): string {
-    const typeWord = componentTypeWord(componentType)
-    return packageKindLabel(kind) + ' is switched off for this ' + typeWord
-        + '; switch it on under Settings > Regulatory and try again.'
+/**
+ * The `<release>` of every dialog (FDAW-32 3.3): the component name and the release version, each one line
+ * with no bidirectional control (teaOneLine), joined by one space.
+ */
+export function submissionReleaseLabel (n: SubmissionNames | null | undefined): string {
+    return [teaOneLine(n?.componentName), teaOneLine(n?.releaseVersion)].filter(Boolean).join(' ')
 }
 
-function planText (preview: any): string {
-    const plan: any[] = preview?.plan ?? []
-    return plan.map(p => packagePartLabel(p.part) + ' ' + (p.selection === 'INCLUDE' ? 'included' : 'excluded')).join(', ')
-}
-
-function previewFacts (preview: any, names: Record<string, string>, typeWord: string): string {
-    return 'Parts: ' + planText(preview) + '; SBOM profile ' + submissionProfileLabel(preview?.sbomProfile, names, typeWord)
-        + '; settings: ' + submissionRefLabel(preview?.settings, names, typeWord) + '.'
-}
-
-function releaseLabel (n: SubmissionNames): string {
-    return [n.componentName, n.releaseVersion].filter(Boolean).join(' ')
-}
-
-export function submissionCreateConfirm (preview: any, kind: string, n: SubmissionNames,
-    names: Record<string, string> = {}): SubmissionConfirm {
-    const next = preview?.nextVersion ?? 1
+export function submissionCancelConfirm (head: any, n: SubmissionNames): SubmissionConfirm {
     return {
-        title: 'Create submission?',
-        text: 'Writes v' + next + ' of the ' + packageKindLabel(kind) + ' submission of ' + releaseLabel(n) + '. '
-            + previewFacts(preview, names, componentTypeWord(n.componentType)),
-        confirmButtonText: 'Create v' + next,
-    }
-}
-
-export function submissionResubmitConfirm (preview: any, kind: string, n: SubmissionNames,
-    names: Record<string, string> = {}): SubmissionConfirm {
-    const next = preview?.nextVersion ?? 1
-    return {
-        title: 'Resubmit?',
-        text: 'Writes v' + next + ' of the ' + packageKindLabel(kind) + ' submission of ' + releaseLabel(n) + '. '
-            + previewFacts(preview, names, componentTypeWord(n.componentType)) + ' A resubmission always writes a new version, equal content or not.',
-        confirmButtonText: 'Resubmit v' + next,
-    }
-}
-
-export function submissionWithdrawConfirm (head: any, n: SubmissionNames): SubmissionConfirm {
-    return {
-        title: 'Cancel submission?',
-        text: 'Cancels the ' + packageKindLabel(head?.kind) + ' submission of ' + releaseLabel(n) + ' at v'
-            + (head?.latestVersion ?? '') + '. Every version and document is kept; the version is marked cancelled '
-            + 'and a resubmission writes a new version.',
+        titleText: 'Cancel submission?',
+        text: 'Cancels the ' + packageKindLabel(head?.kind) + ' submission of ' + submissionReleaseLabel(n) + ' at v'
+            + (head?.latestVersion ?? '') + '. Every version and document is kept; the version is marked cancelled, '
+            + 'and a new draft writes the next version.',
         confirmButtonText: 'Cancel submission',
     }
 }
@@ -347,7 +363,7 @@ export function submissionHistoryText (row: any): string {
 }
 
 /**
- * The text of a create or resubmit result (FDAW-78 3.5, L11): `Version 1 created.`; with no version number
+ * The text of a Finalize result (FDAW-78 3.5, L11): `Version 1 created.`; with no version number
  * `Submission created.`. The act's outcome is not echoed.
  */
 export function submissionWrittenText (result: any): string {

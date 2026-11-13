@@ -223,9 +223,9 @@ async function uploadLicense() {
         licenseData.value = resp.data.uploadLicense
         showLicenseModal.value = false
         licenseString.value = ''
-        Swal.fire('Success!', 'License uploaded successfully.', 'success')
+        Swal.fire({ titleText: 'Success!', text: 'License uploaded successfully.', icon: 'success' })
     } catch (err: any) {
-        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     }
 }
 
@@ -296,17 +296,9 @@ async function setEmailProps(){
     let swalResp: SweetAlertResult<any>
     showEmailPropsModal.value = false
     if (!isSuccess) {
-        swalResp = await Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(errMsg),
-            'error'
-        )
+        swalResp = await Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(errMsg), icon: 'error' })
     } else {
-        swalResp = await Swal.fire(
-            'Success!',
-            'Email sending configuration is now set.',
-            'info'
-        )
+        swalResp = await Swal.fire({ titleText: 'Success!', text: 'Email sending configuration is now set.', icon: 'info' })
     }
     if (swalResp) {
         await initLoad()
@@ -326,12 +318,12 @@ async function sendTestEmail() {
             `
         })
         if (resp.data && resp.data.sendTestEmail === true) {
-            Swal.fire('Success!', 'Test email sent successfully.', 'success')
+            Swal.fire({ titleText: 'Success!', text: 'Test email sent successfully.', icon: 'success' })
         } else {
-            Swal.fire('Error!', 'Failed to send test email.', 'error')
+            Swal.fire({ titleText: 'Error!', text: 'Failed to send test email.', icon: 'error' })
         }
     } catch (err: any) {
-        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         sendingTestEmail.value = false
     }
@@ -352,11 +344,7 @@ async function setDefaultOrganization(){
         })
     } catch (err: any) {
         showDefaultOrgModal.value = false
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     }
     await initLoad()
     showDefaultOrgModal.value = false
@@ -381,9 +369,9 @@ async function finalizeAllReleases() {
                     finalizeAllReleases
                 }`
         })
-        Swal.fire('Submitted!', 'Finalize all releases has been triggered. Check server logs for progress.', 'success')
+        Swal.fire({ titleText: 'Submitted!', text: 'Finalize all releases has been triggered. Check server logs for progress.', icon: 'success' })
     } catch (err: any) {
-        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         finalizingAllReleases.value = false
     }

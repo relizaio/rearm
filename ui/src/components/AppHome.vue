@@ -888,11 +888,7 @@ async function searchHashVersion (e: Event) {
         searchResultsModalMode.value = 'hash'
         showSearchResultsModal.value = true
     } catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         document.body.style.cursor = 'default'
     }
@@ -909,7 +905,7 @@ function validateSbomSearchInput(input: any): input is { name: string; version?:
 function parsePlainTextBatch(text: string): { name: string; version?: string }[] | null {
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
     if (lines.length === 0) {
-        Swal.fire('Error!', 'Input must not be empty', 'error')
+        Swal.fire({ titleText: 'Error!', text: 'Input must not be empty', icon: 'error' })
         return null
     }
     const results: { name: string; version?: string }[] = []
@@ -919,7 +915,7 @@ function parsePlainTextBatch(text: string): { name: string; version?: string }[]
         const parts = line.split(/\t+|\s{1,}/).map(p => p.trim()).filter(p => p.length > 0)
         if (parts.length === 0) continue
         if (parts.length > 2) {
-            Swal.fire('Error!', `Invalid format on line ${i + 1}: "${line}". Each line must have only a package name and optionally a version separated by tab.`, 'error')
+            Swal.fire({ titleText: 'Error!', text: `Invalid format on line ${i + 1}: "${line}". Each line must have only a package name and optionally a version separated by tab.`, icon: 'error' })
             return null
         }
         const entry: { name: string; version?: string } = { name: parts[0] }
@@ -943,7 +939,7 @@ function parseSbomSearchQueries(): { name: string; version?: string }[] | null {
     } else {
         const inputText = sbomSearchJson.value.trim()
         if (!inputText) {
-            Swal.fire('Error!', 'Input must not be empty', 'error')
+            Swal.fire({ titleText: 'Error!', text: 'Input must not be empty', icon: 'error' })
             return null
         }
         
@@ -952,22 +948,22 @@ function parseSbomSearchQueries(): { name: string; version?: string }[] | null {
             try {
                 const parsed = JSON.parse(inputText)
                 if (!Array.isArray(parsed)) {
-                    Swal.fire('Error!', 'JSON must be an array', 'error')
+                    Swal.fire({ titleText: 'Error!', text: 'JSON must be an array', icon: 'error' })
                     return null
                 }
                 if (parsed.length === 0) {
-                    Swal.fire('Error!', 'Array must not be empty', 'error')
+                    Swal.fire({ titleText: 'Error!', text: 'Array must not be empty', icon: 'error' })
                     return null
                 }
                 for (const item of parsed) {
                     if (!validateSbomSearchInput(item)) {
-                        Swal.fire('Error!', 'Each element must have a "name" (string, required) and optional "version" (string)', 'error')
+                        Swal.fire({ titleText: 'Error!', text: 'Each element must have a "name" (string, required) and optional "version" (string)', icon: 'error' })
                         return null
                     }
                 }
                 return parsed
             } catch (err) {
-                Swal.fire('Error!', 'Invalid JSON format', 'error')
+                Swal.fire({ titleText: 'Error!', text: 'Invalid JSON format', icon: 'error' })
                 return null
             }
         } else {
@@ -1043,11 +1039,7 @@ async function searchSbomComponent (e: Event) {
         }
     } catch (err: any) {
         searchFailed.value = true
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         document.body.style.cursor = 'default'
         dtrackSearchLoading.value = false
@@ -1095,11 +1087,7 @@ async function searchReleasesBySbomComponents (sbomComponentUuids: string[]) {
         })
         dtrackSearchReleases.value = (response.data as any).releasesBySbomComponents || []
     } catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
         dtrackSearchReleases.value = []
     } finally {
         document.body.style.cursor = 'default'
@@ -1148,11 +1136,7 @@ async function searchReleasesByTags (e: Event) {
         searchResultsModalMode.value = 'tags'
         showSearchResultsModal.value = true
     } catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         document.body.style.cursor = 'default'
     }

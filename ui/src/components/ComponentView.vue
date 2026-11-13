@@ -1664,6 +1664,7 @@ async function genApiKeyRoutine (type : string, compUuid : string) {
         Swal.fire({
             title: 'Generated!',
             customClass: {popup: 'swal-wide'},
+            // eslint-disable-next-line no-restricted-syntax -- getGeneratedApiKeyHTML: a key id, a secret and a header the server minted, no user text
             html: newKeyMessage,
             icon: 'success'
         })
@@ -3480,11 +3481,7 @@ const setComponentVisibility = async function (newVisValue: string) {
             updatedComponent.value.visibilitySetting = newVisValue
             updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('setComponentVisibility', updatedComponent.value))
         } catch (err: any) {
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(err.message),
-                'error'
-            )
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
         }
     }
     const swalData: SwalData = {
@@ -3599,7 +3596,7 @@ const navigateToVulnAnalysis = function () {
 
 const archiveComponent = async function () {
     const swalResult = await Swal.fire({
-        title: `Are you sure you want to archive the ${updatedComponent.value.name} ${words.value.component}?`,
+        titleText: `Are you sure you want to archive the ${updatedComponent.value.name} ${words.value.component}?`,
         text: `If you proceed, the ${words.value.component} will be archived and you will not have access to its data.`,
         icon: 'warning',
         showCancelButton: true,
@@ -3618,11 +3615,7 @@ const archiveComponent = async function () {
         try {
             let archived = await store.dispatch('archiveComponent', archiveComponentParams)
             if (archived) {
-                Swal.fire(
-                    'Archived!',
-                    `${words.value.componentFirstUpper} "${componentName}" has been archived successfully.`,
-                    'success'
-                )
+                Swal.fire({ titleText: 'Archived!', text: `${words.value.componentFirstUpper} "${componentName}" has been archived successfully.`, icon: 'success' })
                 if (isComponent) {
                     router.push({ name: 'ComponentsOfOrg', params: { orguuid: orgUuid } })
                 } else {
@@ -3630,11 +3623,7 @@ const archiveComponent = async function () {
                 }
             }
         } catch (err: any) {
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(err.message),
-                'error'
-            )
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
         }
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
         notify('info', 'Cancelled', `${words.value.componentFirstUpper} archiving cancelled. Your ${words.value.component} is still active.`)
@@ -3924,7 +3913,7 @@ async function archiveBranchFromList (row: any) {
                 componentUuid: componentUuid,
             })
         } catch (err: any) {
-            Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
         }
     }
     const swalData: SwalData = {

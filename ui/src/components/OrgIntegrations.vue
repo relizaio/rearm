@@ -1550,7 +1550,7 @@ async function testGithubCredentials(target: 'create' | 'edit') {
 async function onDeleteCiInstance(inst: any) {
     const label = `${kindLabel(inst.type)}${inst.note ? ` (${inst.note})` : ''}`
     const confirm = await Swal.fire({
-        title: `Delete ${label}?`,
+        titleText: `Delete ${label}?`,
         text: 'This integration will only be removed if nothing references it (webhooks, PR validation rules, per-VCS overrides, approval-policy actions).',
         icon: 'warning',
         showCancelButton: true,
@@ -1582,7 +1582,7 @@ async function onDeleteCiInstance(inst: any) {
 
 async function onDeleteBaseInstance(card: CardConfig) {
     const result = await Swal.fire({
-        title: `Delete ${card.name} integration?`,
+        titleText: `Delete ${card.name} integration?`,
         text: 'This will remove the integration configuration.',
         icon: 'warning',
         showCancelButton: true,
@@ -1721,7 +1721,7 @@ async function deleteVulncheckToken() {
 async function confirmToggleCisaKev() {
     const enabled = configuredIntegrations.value.includes('CISA_KEV')
     const confirm = await Swal.fire({
-        title: enabled ? 'Disable CISA KEV for this organization?' : 'Enable CISA KEV for this organization?',
+        titleText: enabled ? 'Disable CISA KEV for this organization?' : 'Enable CISA KEV for this organization?',
         text: enabled
             ? 'KEV assertions sourced from CISA will stop syncing. Existing data is removed.'
             : 'CISA KEV will start syncing for this organization. The first sync runs in the background.',
@@ -2335,7 +2335,7 @@ async function toggleChannelStatus(ch: ChannelCatalogRow) {
 
 async function onDeleteChannel(card: CardConfig, ch: ChannelCatalogRow) {
     const confirm = await Swal.fire({
-        title: `Delete ${card.name} channel "${ch.name}"?`,
+        titleText: `Delete ${card.name} channel "${ch.name}"?`,
         text: 'Subscriptions and channel groups referencing this channel will stop delivering to it. To pause sending without removing the channel, disable it instead.',
         icon: 'warning',
         showCancelButton: true,

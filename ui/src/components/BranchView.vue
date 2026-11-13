@@ -889,7 +889,7 @@ async function saveModifiedBranch () {
         // Check if branch type is being changed to BASE
         if (modifiedBranch.value.type === 'BASE' && branchData.value.type !== 'BASE') {
             const result = await Swal.fire({
-                title: `Change ${words.value.branchFirstUpper} Type to Base?`,
+                titleText: `Change ${words.value.branchFirstUpper} Type to Base?`,
                 text: `Changing this ${words.value.branch} to Base will automatically convert the current Base ${words.value.branch} to Regular. Only one Base ${words.value.branch} can exist per ${branchData.value.componentDetails.type === 'PRODUCT' ? 'product' : 'component'}.`,
                 icon: 'warning',
                 showCancelButton: true,
@@ -2045,11 +2045,7 @@ const setNextVersion = async function(){
             }
         })
     }   catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     }
     
     showSetNextVersionModal.value = false

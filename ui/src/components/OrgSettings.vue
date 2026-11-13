@@ -1426,6 +1426,9 @@
                                 :is-writable="isOrgAdmin"
                                 :installation-type="myUser.installationType"
                                 :names="perspectiveNamesMap" />
+                            <SubmissionSecondConfirmerSetting
+                                :org-uuid="orgResolved"
+                                :is-writable="isOrgAdmin" />
                         </div>
                     </n-tab-pane>
                     <n-tab-pane name="tea" tab="Transparency Exchange API" v-if="teaProfilesAvailable(myUser.installationType)">
@@ -1561,6 +1564,7 @@ import TeaOrgPanel from './TeaOrgPanel.vue'
 import SbomProfilesPanel from './SbomProfilesPanel.vue'
 import SbomProfileOverrides from './SbomProfileOverrides.vue'
 import PackageSettingsEditor from './PackageSettingsEditor.vue'
+import SubmissionSecondConfirmerSetting from './SubmissionSecondConfirmerSetting.vue'
 import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
 import { teaConfirmBeforeMembership, teaMembershipDelta, teaProfilesAvailable } from '@/utils/teaProfile'
 import { loadTeaDocument } from '@/utils/teaDocuments'
@@ -3336,11 +3340,7 @@ async function deletePerspective(perspective: any) {
                 notify('success', 'Archived!', `Perspective "${perspective.name}" has been archived successfully.`)
             }
         } catch (error: any) {
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(error.message),
-                'error'
-            )
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(error.message), icon: 'error' })
         }
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
         notify('info', 'Cancelled', 'Archiving perspective cancelled.')
@@ -4597,13 +4597,9 @@ async function genApiKey() {
         confirmButtonText: 'Generate it!',
         cancelButtonText: 'Cancel'
     }
-    const swalResult = await Swal.fire(swalObject)
+    const swalResult = await Swal.fire({ ...swalObject })
     if (swalResult.dismiss === Swal.DismissReason.cancel) {
-        Swal.fire(
-            'Cancelled',
-            'Aborted API Key Generation',
-            'error'
-        )
+        Swal.fire({ titleText: 'Cancelled', text: 'Aborted API Key Generation', icon: 'error' })
     } else {
         const setKeyPayload = {
             orgUuid: orgResolved.value,
@@ -4674,6 +4670,7 @@ async function genUserRegistryToken(type: string, notes: string) {
     Swal.fire({
         title: 'Organization Registry Token',
         customClass: {popup: 'swal-wide'},
+        // eslint-disable-next-line no-restricted-syntax -- getGeneratedRegistryTokenHTML: a registry user name and a token the server minted, no user text
         html: newKeyMessage,
         icon: 'success'
     })
