@@ -416,3 +416,601 @@ describe('the TEA act progress (the server publishes within the request)', () =>
             .not.toContain('component releases are published')
     })
 })
+
+// ---------------------------------------------------------------------------------------------
+// FDAW-39 (FDAW-25 D2f), architecture round 5 section 4: rows 22 (h) to (l), 50 (a) to (e), (j),
+// (q), (v), and 53 (a) to (d), (f). Fixtures as the design names them.
+import {
+    teaOneLine, TEA_NAME_MAX, teaChildName, teaChildReason, teaPartialChildren, teaPartialOfferText,
+    teaShareConfirm, teaShareButtonState, teaShareRefusalText, teaShareErrorText, teaTurnOnPublicConfirm,
+    teaTurnOnStopText, teaTurnOnStopSentence, teaServerAnswered, teaChildrenReadProgress, teaTurnOnProgress,
+    teaNotStartedText, TEA_CHILD_PUBLISH_FAILED, TEA_TURN_ON_PUBLIC_TITLE, TEA_TURN_ON_PUBLIC_BUTTON,
+    TEA_SHARE_NOT_AUTHORIZED, TEA_PARTIAL_HINT, TEA_CHILDREN_READ_FAILED,
+} from './teaPublication'
+import {
+    TEA_AUTO_PUBLISH_OPTIONS, TEA_AUTO_PUBLISH_PAUSED_OWN, TEA_AUTO_PUBLISH_PAUSED_INHERITED, teaAutoPublishHelp,
+    TEA_TURN_ON_TEXT, TEA_START_REMOVAL_OBJECT, TEA_START_REMOVAL_MEMBERS, TEA_START_MEMBERSHIP,
+    TEA_PUBLIC_CONFIRM_COUNTED, TEA_PUBLIC_CONFIRM_NONE_YET,
+} from './teaProfile'
+import { TEA_ACTION_COUNTED, TEA_ACTION_NONE_YET, TEA_GLOBAL_ACTION_COUNTED, TEA_GLOBAL_ACTION_NONE_YET } from './teaOutputEvents'
+import { FDA_PROSE_TEA_NOTE } from './fdaProseInput'
+import { PACKAGE_PART_LABELS } from './packageSettings'
+import { ENUM_RE, UUID_RE, WORD_RE, expectSwept } from './__fixtures__/fdaSweep'
+
+const HOSTILE = '<img src=x onerror="window.__teaHit=1"></script><script>window.__teaHit=2</script><b>b</b>'
+const BREAK = (a: string, b: string) => a + '\n' + b
+const BIDI = String.fromCodePoint(0x202E)
+const UUID7 = '3bef7cde-2edb-47cb-aa4e-94487c2cdced'
+
+const child = (release: string, componentName: string | null, version: string | null, outcome: string,
+    more: Record<string, any> = {}) => ({ release, componentName, version, outcome, refusal: null, detail: null, ownRow: null, ...more })
+
+const LIST = [
+    child('r-api', 'Api', '1.0', 'WILL_PUBLISH'),
+    child('r-db', 'Db', '2.0', 'REFUSED', { refusal: 'PUBLISHING_DISABLED', ownRow: 'row-db' }),
+    child('r-ui', 'Ui', '3.0', 'SKIPPED_DIRECT'),
+    child('r-fw', 'Fw', '4.0', 'REFUSED', { refusal: 'LIFECYCLE_TOO_LOW',
+        detail: "Release Fw 4.0 is DRAFT; the TEA profile's minimum lifecycle is ASSEMBLED" }),
+    child('r-kit', 'Kit', '5.0', 'SKIPPED_HIDDEN'),
+    child('r-lib', 'Lib', '6.0', 'SKIPPED_OTHER_PRODUCT', { detail: 'published with product Suite 9' }),
+    child(UUID7, null, null, 'REFUSED', { refusal: 'RELEASE_NOT_FOUND', detail: 'not found' }),
+    child('r-gw', 'Gw', '8.0', 'REFUSED', { refusal: 'GENERATION_FAILED', detail: 'could not be checked' }),
+    child('r-web', 'Web', '9.0', 'WILL_PUBLISH'),
+]
+const LIST_LINES = ['Db 2.0: its TEA profile has publishing disabled', 'Ui 3.0: published on its own already',
+    'Fw 4.0: its lifecycle is below the minimum for publishing', 'Kit 5.0: hidden on TEA by a person',
+    'Lib 6.0: published with product Suite 9',
+    'A component release that could not be read: it could not be found in this organization', 'Gw 8.0: it could not be checked']
+const OFFERING = [LIST[0], LIST[1], LIST[2]]
+const PRODUCT = { release: 'r1', kind: 'PRODUCT_RELEASE', canPublish: true, effectiveVisibility: 'PRIVATE',
+    profileSource: 'ORGANIZATION', cascades: true, cascadeChildren: 9, profileRevision: 3, publication: null,
+    profiles: ['default'], publishing: 'ENABLED' }
+const COMPONENT = { ...PRODUCT, kind: 'COMPONENT_RELEASE', cascades: false, cascadeChildren: 0 }
+const PNAMES = { component: 'Pump', version: '1.2.0', perspectives: {} }
+const HEAD = 'Published as a TEA product release under the organization TEA profile (revision 3). Visibility: PRIVATE: '
+    + 'readable with an external key that covers this product. '
+const componentOf = (release: string) => 'comp-' + release
+const ADMIN = { isOrgAdmin: true, componentOf }
+const PUB = child('r-pub', 'Pub', '1.0', 'REFUSED', { refusal: 'PUBLISHING_DISABLED', ownRow: 'rp' })
+const SAME = { before: 'PUBLIC', after: 'PUBLIC', path: 'ROW_PUBLIC', publishedReleases: 3, publishedVersions: 7 }
+const PUBTEXT = 'The TEA settings of Pub are public, with publishing turned off. Turning publishing on makes its published '
+    + 'releases readable by anyone who knows the TEA URL, without a key: a release published on its own always, and a '
+    + "release published with a product, as Pub 1.0 is here, when that product's TEA settings are public too. 3 published "
+    + 'release(s) resolving to this profile, with all 7 of their collection versions, earlier versions included, and every '
+    + 'document in them (SBOMs, VEX documents, device support statements, published artifacts), become readable by anyone '
+    + 'who knows the TEA URL as soon as you save; visibility is live.'
+const PUBCONFIRM = { title: 'Publish this component publicly?', text: PUBTEXT, confirmButtonText: 'Publish publicly',
+    confirmButtonColor: '#d33', focusCancel: true }
+const PCP = { mode: 'OVERRIDE', publishing: 'ENABLED', visibility: 'PUBLIC', rawArtifacts: 'NONE',
+    productComponents: 'PUBLISH_WITH_PRODUCT', minimumLifecycle: 'ASSEMBLED', tei: 'DISABLED', teiDomain: null,
+    profiles: ['default'], autoPublish: 'DISABLED' }
+const NOANSWER = 'No answer arrived for saving the TEA settings of Pub 1.0, so publishing may or may not be turned on for '
+    + 'it. Open its TEA settings to check.'
+const FAILED = 'publishing it on TEA failed (the server log has the cause)'
+const GW = { release: 'h', componentName: 'Gw', version: '8.0', outcome: 'REFUSED', refusal: 'GENERATION_FAILED',
+    detail: 'Release Gw 8.0: publishing on TEA failed: Connection refused' }
+const REFUSED_RIGHT = { message: 'Not authorized', errors: [{ message: 'Not authorized' },
+    { message: 'The field at path ...', extensions: { classification: 'NullValueInNonNullableField' } }] }
+const ANSWERED = (m: string) => ({ errors: [{ message: m }] })
+const GATEWAY = 'The server is still working on this act and will finish it on its own. Reload the release page in a '
+    + 'minute to see the result; repeating the act is safe.'
+const OWN_WORDS = /\b(PUBLIC|PRIVATE|HIDDEN|PUBLISHED|REFUSED|SKIPPED)\b/
+const swept = (text: string, label = '') => {
+    expectSwept(text, label)
+    expect('Visibility is PUBLIC').toMatch(OWN_WORDS)
+    expect(text, label + ' own words').not.toMatch(OWN_WORDS)
+}
+
+const SHARE = { kind: 'FDA_PREMARKET', latestVersion: 2, state: 'FINAL', profileName: 'fda' }
+const PRIV_COMPONENT = { ...COMPONENT, profiles: ['default', 'fda'] }
+const LEAD = 'Sharing Pump 1.2.0. Customers get, on TEA: the release SBOM per profile (default, fda), its living VEX, and '
+    + 'the device support statement when the organization text is authored. They never get the regulatory package: its '
+    + 'Narrative, Support addendum and VDR are not published, and the package cannot be downloaded from TEA. Package v2 is Final.'
+const T = LEAD + ' Its TEA settings are private: only a customer whose key covers this component can read it.'
+
+describe('FDAW-39 row 22 (h): teaShareConfirm', () => {
+    it('a private component: the whole object, the part labels, no cover summary or zip', () => {
+        expect(teaShareConfirm(PRIV_COMPONENT, PNAMES, SHARE)).toEqual({ titleText: 'Share with customers?', text: T,
+            showCancelButton: true, confirmButtonText: 'Share' })
+        expect([PACKAGE_PART_LABELS.NARRATIVE, PACKAGE_PART_LABELS.SUPPORT_ADDENDUM, PACKAGE_PART_LABELS.VDR])
+            .toEqual(['Narrative', 'Support addendum', 'VDR'])
+        expect(T).toContain('its Narrative, Support addendum and VDR are not published')
+        expect(T).not.toContain('cover summary')
+        expect(T).not.toContain('zip')
+    })
+
+    it('the package state reads through the state labels, an unknown one humanized', () => {
+        const text = (state: string) => teaShareConfirm(PRIV_COMPONENT, PNAMES, { ...SHARE, state }).text
+        expect(text('SENT')).toContain('Package v2 is Sent.')
+        expect(text('AMENDED')).toContain('Package v2 is Amended.')
+        expect(text('SOME_NEW_STATE')).toContain('Package v2 is Some new state.')
+    })
+
+    it('a public product that does not cascade: warning, red, the URL sentence', () => {
+        const v = { ...PRODUCT, cascades: false, effectiveVisibility: 'PUBLIC', profiles: ['default', 'fda'],
+            publicUrl: 'https://tea.example/v1.0.0/productRelease/abc' }
+        const c = teaShareConfirm(v, PNAMES, SHARE)
+        expect(c.icon).toBe('warning')
+        expect(c.confirmButtonColor).toBe('#d33')
+        expect(c.text).toBe(LEAD + ' Its TEA settings are public: anyone who knows the URL can read it without a key: '
+            + 'https://tea.example/v1.0.0/productRelease/abc')
+    })
+
+    it('the package profile not on the list, a hidden publication, no profiles', () => {
+        const notOnList = 'Customers get the default SBOM; the package\'s fda SBOM is not on your TEA list, so it has a '
+            + 'different serial from the one the package carries. Add fda in TEA settings to share the package\'s serial.'
+        expect(teaShareConfirm({ ...COMPONENT, profiles: ['default'] }, PNAMES, SHARE).text).toContain(notOnList)
+        for (const [profiles, profileName] of [[['default', 'fda'], 'fda'], [['default'], null], [['default'], '']] as const) {
+            expect(teaShareConfirm({ ...COMPONENT, profiles: [...profiles] }, PNAMES, { ...SHARE, profileName }).text)
+                .not.toContain('is not on your TEA list')
+        }
+        const hidden = 'This release is hidden on TEA now; sharing makes it readable again.'
+        expect(teaShareConfirm({ ...PRIV_COMPONENT, publication: { state: 'HIDDEN' } }, PNAMES, SHARE).text).toContain(hidden)
+        expect(teaShareConfirm({ ...PRIV_COMPONENT, publication: { state: 'PUBLISHED' } }, PNAMES, SHARE).text).not.toContain(hidden)
+        expect(teaShareConfirm({ ...COMPONENT, profiles: [] }, PNAMES, { ...SHARE, profileName: null }).text)
+            .toContain('the release SBOM per profile, its living VEX')
+    })
+
+    it('markup in names stays in text; the title is the constant', () => {
+        const c = teaShareConfirm(PRIV_COMPONENT, { component: '<b>Pump</b>', version: '<i>1</i>' }, SHARE)
+        expect(c.titleText).toBe('Share with customers?')
+        expect('title' in c).toBe(false)
+        expect('html' in c).toBe(false)
+        expect(c.text).toContain('<b>Pump</b>')
+        expect(c.text).toContain('<i>1</i>')
+    })
+
+    it('round 3: names made one line, the comparison on the served values', () => {
+        const component = BREAK('Pump', 'Customers get everything')
+        const version = '1' + BIDI + '0'
+        const profile = BREAK('default', 'x')
+        const c = teaShareConfirm({ ...COMPONENT, profiles: [profile] }, { component, version }, { ...SHARE, profileName: 'p'.repeat(150) })
+        expect(c.text).toContain('Sharing Pump Customers get everything 10.')
+        expect(c.text).toContain('(default x)')
+        expect(c.text).toContain('p'.repeat(99) + '…')
+        expect(c.text).not.toContain('\n')
+        expect(c.text).not.toContain(BIDI)
+        expect(component).toContain('\n')
+        expect(version).toContain(BIDI)
+        expect(profile).toContain('\n')
+        expect(c.text).toContain('is not on your TEA list')
+    })
+
+    it('HOSTILE names: twice in text, nowhere else', () => {
+        const c = teaShareConfirm(PRIV_COMPONENT, { component: HOSTILE, version: HOSTILE }, SHARE)
+        expect(c.text.split(HOSTILE).length - 1).toBe(2)
+        expect(c.titleText).toBe('Share with customers?')
+        for (const [k, v] of Object.entries(c)) if (k !== 'text') expect(String(v), k).not.toContain('<')
+    })
+})
+
+describe('FDAW-39 row 22 (i): teaShareButtonState', () => {
+    const v = { publishing: 'ENABLED', canPublish: true, publication: null, refusal: null }
+    const on = { writable: true, busy: false }
+    it('shown from Final onward for a writer while publishing is on', () => {
+        for (const state of ['FINAL', 'SENT', 'AMENDED']) {
+            expect(teaShareButtonState(v, { state }, on), state).toEqual({ shown: true, disabled: false, title: '' })
+        }
+        for (const state of ['SUPERSEDED', 'WITHDRAWN', 'CANCELLED', 'SOME_NEW_STATE']) {
+            expect(teaShareButtonState(v, { state }, on).shown, state).toBe(false)
+        }
+        expect(teaShareButtonState(v, null, on).shown).toBe(false)
+        expect(teaShareButtonState({ ...v, publishing: 'DISABLED' }, { state: 'FINAL' }, on).shown).toBe(false)
+        expect(teaShareButtonState({ ...v, publishing: null }, { state: 'FINAL' }, on).shown).toBe(false)
+        expect(teaShareButtonState(null, { state: 'FINAL' }, on).shown).toBe(false)
+        expect(teaShareButtonState(v, { state: 'FINAL' }, { writable: false, busy: false }).shown).toBe(false)
+    })
+    it('disabled with the reason when nothing is published and it cannot be; busy disables', () => {
+        expect(teaShareButtonState({ ...v, canPublish: false, refusal: 'LIFECYCLE_TOO_LOW' }, { state: 'FINAL' }, on))
+            .toEqual({ shown: true, disabled: true, title: 'This release has not reached the lifecycle its TEA settings require.' })
+        expect(teaShareButtonState({ ...v, canPublish: false, refusal: 'ALREADY_PUBLISHED', publication: { state: 'PUBLISHED' } },
+            { state: 'FINAL' }, on)).toEqual({ shown: true, disabled: false, title: '' })
+        const busy = teaShareButtonState(v, { state: 'FINAL' }, { writable: true, busy: true })
+        expect(busy.disabled).toBe(true)
+        expect(busy.title).toBe('')
+    })
+})
+
+describe('FDAW-39 row 22 (j): teaShareRefusalText', () => {
+    const TEXTS: Record<string, string> = {
+        LIFECYCLE_TOO_LOW: 'This release has not reached the lifecycle its TEA settings require.',
+        PROFILE_CONFLICT: "This release's TEA settings conflict between perspectives.",
+        PROFILE_NOT_FOUND: 'An SBOM profile named in the TEA settings is not defined for this release.',
+        RELEASE_ARCHIVED: 'This release is archived.',
+        COMPONENT_ARCHIVED: "This release's component is archived.",
+    }
+    it('words each refusal, never the server message', () => {
+        const msg = 'Release ' + UUID7 + ' is DRAFT'
+        for (const [refusal, text] of Object.entries(TEXTS)) {
+            expect(teaShareRefusalText({ refusal }), refusal).toBe(text)
+            expect(teaShareRefusalText({ refusal, refusalMessage: msg })).toBe(text)
+        }
+        expect(teaShareRefusalText({ refusal: 'NO_SBOM_ARTIFACTS' })).toBe('Cannot be shared: no sbom artifacts.')
+        expect(teaShareRefusalText({ refusal: null })).toBe('Cannot be shared now.')
+        for (const refusal of [...Object.keys(TEXTS), 'NO_SBOM_ARTIFACTS', null]) {
+            const r = teaShareRefusalText({ refusal, refusalMessage: msg })
+            expect(r).not.toContain('3bef7cde')
+            expect(r).not.toContain('DRAFT')
+        }
+    })
+})
+
+describe('FDAW-39 row 22 (k): teaShareErrorText', () => {
+    it('names the missing permission for the refused right only', () => {
+        expect(teaShareErrorText(REFUSED_RIGHT)).toBe('Sharing needs the Publish Externally (TEA) permission on this '
+            + 'release. An organization admin can grant it.')
+        expect(teaShareErrorText({ errors: [{ message: 'Not authorized to read this release' }] }))
+            .toBe('Not authorized to read this release')
+        expect(teaShareErrorText({ networkError: { statusCode: 502 } })).toBe(GATEWAY)
+        expect(teaActErrorText(REFUSED_RIGHT)).toBe('Not authorized')
+    })
+})
+
+describe('FDAW-39 row 22 (l): teaOneLine', () => {
+    const cp = (...c: number[]) => String.fromCodePoint(...c)
+    it('one line, no bidi controls, cut at the maximum', () => {
+        expect(teaOneLine('Db')).toBe('Db')
+        expect(teaOneLine('  Db \n Evil 1.0: published on its own already\r\n')).toBe('Db Evil 1.0: published on its own already')
+        expect(teaOneLine('a' + cp(0x202E) + 'gnp.exe' + cp(0x2066) + 'b' + cp(0x200F) + cp(0x061C))).toBe('agnp.exeb')
+        expect(teaOneLine('a' + cp(0) + 'b' + cp(7) + 'c' + cp(0x2028) + 'd\te' + cp(0x2029) + 'f' + cp(0x85) + 'g'))
+            .toBe('a b c d e f g')
+        expect(teaOneLine('x'.repeat(100))).toBe('x'.repeat(100))
+        expect(teaOneLine('x'.repeat(101))).toBe('x'.repeat(99) + '…')
+        const emoji = Array.from(teaOneLine(cp(0x1F600).repeat(150)))
+        expect(emoji.length).toBe(100)
+        expect(emoji[99]).toBe('…')
+        expect(Array.from(teaOneLine('x'.repeat(250), 200)).length).toBe(200)
+        for (const v of [null, undefined, 7, ' \n ']) expect(teaOneLine(v)).toBe('')
+        expect(teaOneLine(HOSTILE)).toBe(HOSTILE)
+        expect(TEA_NAME_MAX).toBe(100)
+    })
+})
+
+describe('FDAW-39 row 50 (a) to (e): the list before the click', () => {
+    it('(a) the lines of LIST, in order', () => {
+        const p = teaPartialChildren(LIST, ADMIN)
+        expect(p.loaded).toBe(true)
+        expect(p.total).toBe(9)
+        expect(p.notPublished).toBe(7)
+        expect(p.lines).toEqual(LIST_LINES)
+    })
+
+    it('(b) teaChildReason, every line of the table', () => {
+        const r = (outcome: string, more: Record<string, any> = {}) => teaChildReason(child('x', 'X', '1', outcome, more))
+        expect(r('SKIPPED_DIRECT')).toBe('published on its own already')
+        expect(r('SKIPPED_HIDDEN')).toBe('hidden on TEA by a person')
+        expect(r('SKIPPED_OTHER_PRODUCT', { detail: 'published with product Suite 9' })).toBe('published with product Suite 9')
+        expect(r('SKIPPED_OTHER_PRODUCT', { detail: null })).toBe('published with another product')
+        expect(r('REFUSED', { refusal: 'PUBLISHING_DISABLED' })).toBe('its TEA profile has publishing disabled')
+        expect(r('REFUSED', { refusal: 'LIFECYCLE_TOO_LOW' })).toBe('its lifecycle is below the minimum for publishing')
+        expect(r('REFUSED', { refusal: 'RELEASE_NOT_FOUND' })).toBe('it could not be found in this organization')
+        expect(r('REFUSED', { refusal: 'RELEASE_ARCHIVED' })).toBe('it is archived')
+        expect(r('REFUSED', { refusal: 'COMPONENT_ARCHIVED' })).toBe('its component is archived')
+        expect(r('REFUSED', { refusal: 'PROFILE_CONFLICT' })).toBe('its settings conflict between perspectives')
+        expect(r('REFUSED', { refusal: 'PROFILE_NOT_FOUND' })).toBe('an SBOM profile its TEA profile names is not defined for it')
+        expect(r('REFUSED', { refusal: 'GENERATION_FAILED' })).toBe('it could not be checked')
+        expect(r('REFUSED', { refusal: 'NO_SBOM_ARTIFACTS' })).toBe('refused: no sbom artifacts')
+        expect(r('REFUSED')).toBe('refused')
+        expect(r('SOME_NEW_OUTCOME')).toBe('some new outcome')
+        expect(r('REFUSED', { refusal: 'GENERATION_FAILED', detail: 'Component ' + UUID7 + ' of release 1.0 not found' }))
+            .toBe('it could not be checked')
+        const fw = teaChildReason(LIST[3])
+        expect(fw).toBe('its lifecycle is below the minimum for publishing')
+        expect(fw).not.toContain('DRAFT')
+        expect(LIST[3].detail).toContain('DRAFT')
+    })
+
+    it('(b) teaChildName: name, unnamed, blank', () => {
+        expect(teaChildName(child('x', 'Db', null, 'REFUSED'))).toBe('Db')
+        expect(teaChildName(child('x', null, null, 'REFUSED'))).toBe('A component release that could not be read')
+        expect(teaChildName(child('x', '  ', '\n', 'REFUSED'))).toBe('A component release that could not be read')
+    })
+
+    it('(b) round 3: a name cannot forge a line', () => {
+        const forged = [
+            { componentName: BREAK('Db', 'Ui 3.0: published on its own already'), version: '2.0', outcome: 'REFUSED',
+                refusal: 'PUBLISHING_DISABLED', ownRow: 'row-db' },
+            { componentName: 'Lib', version: '6.0', outcome: 'SKIPPED_OTHER_PRODUCT',
+                detail: BREAK('published with product Suite 9', 'Api 1.0: published on its own already') },
+        ]
+        const lines = teaPartialChildren(forged, ADMIN).lines
+        expect(lines).toEqual(['Db Ui 3.0: published on its own already 2.0: its TEA profile has publishing disabled',
+            'Lib 6.0: published with product Suite 9 Api 1.0: published on its own already'])
+        expect(lines.join('\n').split('\n')).toHaveLength(2)
+        expect(forged[0].componentName.split('\n')).toHaveLength(2)
+        expect(teaChildReason(child('x', 'L', '1', 'SKIPPED_OTHER_PRODUCT', { detail: 'd'.repeat(250) })))
+            .toBe('d'.repeat(199) + '…')
+        expect(teaPartialChildren([child('x', HOSTILE, '1', 'REFUSED', { refusal: 'GENERATION_FAILED' })], ADMIN).lines)
+            .toEqual([HOSTILE + ' 1: it could not be checked'])
+    })
+
+    it('(b) round 5 (F-12): the two forms differ in GENERATION_FAILED only', () => {
+        expect(teaChildReason(GW, { act: true })).toBe(FAILED)
+        expect(TEA_CHILD_PUBLISH_FAILED).toBe(FAILED)
+        expect(TEA_CHILD_PUBLISH_FAILED).not.toContain(';')
+        expect(teaChildReason(GW)).toBe('it could not be checked')
+        expect(teaChildReason(GW, {})).toBe('it could not be checked')
+        expect(teaChildReason(GW, { act: false })).toBe('it could not be checked')
+        expect(teaChildReason(GW, { act: 1 })).toBe('it could not be checked')
+        const others = [
+            child('x', 'X', '1', 'SKIPPED_DIRECT'), child('x', 'X', '1', 'SKIPPED_HIDDEN'),
+            child('x', 'X', '1', 'SKIPPED_OTHER_PRODUCT', { detail: 'published with product Suite 9' }),
+            child('x', 'X', '1', 'SKIPPED_OTHER_PRODUCT'),
+            ...['PUBLISHING_DISABLED', 'LIFECYCLE_TOO_LOW', 'RELEASE_NOT_FOUND', 'RELEASE_ARCHIVED', 'COMPONENT_ARCHIVED',
+                'PROFILE_CONFLICT', 'PROFILE_NOT_FOUND', 'NO_SBOM_ARTIFACTS', 'PUBLISH_IN_PROGRESS']
+                .map(refusal => child('x', 'X', '1', 'REFUSED', { refusal })),
+            child('x', 'X', '1', 'REFUSED'), child('x', 'X', '1', 'SOME_NEW_OUTCOME'),
+        ]
+        for (const c of others) {
+            expect(teaChildReason(c, { act: true }), c.outcome + c.refusal).toBe(teaChildReason(c))
+            expect(teaChildReason(c, { act: true })).not.toBe(FAILED)
+        }
+    })
+
+    it('(c) empty, unread and all-published lists', () => {
+        expect(teaPartialChildren([], ADMIN)).toEqual({ loaded: true, total: 0, notPublished: 0, lines: [], offer: [], hint: false })
+        const unread = { loaded: false, total: 0, notPublished: 0, lines: [], offer: [], hint: false }
+        expect(teaPartialChildren(null, ADMIN)).toEqual(unread)
+        expect(teaPartialChildren(undefined, ADMIN)).toEqual(unread)
+        const two = teaPartialChildren([LIST[0], LIST[8]], ADMIN)
+        expect([two.total, two.notPublished, two.lines]).toEqual([2, 0, []])
+    })
+
+    it('(d) the offer', () => {
+        const zed = child('r-zed', 'Zed', '1.0', 'REFUSED', { refusal: 'PUBLISHING_DISABLED', ownRow: 'rz' })
+        const ada = child('r-ada', 'Ada', '2.0', 'REFUSED', { refusal: 'PUBLISHING_DISABLED', ownRow: 'ra' })
+        const p = (list: any[], opts: any = ADMIN) => { const r = teaPartialChildren(list, opts); return [r.offer, r.hint] }
+        expect(p(LIST)).toEqual([[], true])
+        expect(p(OFFERING)).toEqual([[LIST[1]], false])
+        expect(p([zed, LIST[0], ada])).toEqual([[zed, ada], false])
+        expect(p([zed, LIST[0], ada], { isOrgAdmin: false, componentOf })).toEqual([[], true])
+        expect(p([zed, { ...ada, ownRow: null }])).toEqual([[], true])
+        expect(p([zed, ada], { isOrgAdmin: true, componentOf: (r: string) => (r === 'r-ada' ? null : 'c') })).toEqual([[], true])
+        expect(p([zed, ada, LIST[3]])).toEqual([[], true])
+        expect(p([LIST[2], LIST[4]])).toEqual([[], false])
+        expect(p([LIST[3]])).toEqual([[], false])
+        const zed11 = { ...zed, release: 'r-zed11', version: '1.1' }
+        const r = teaPartialChildren([zed, zed11, ada], ADMIN)
+        expect(r.offer).toEqual([zed, ada])
+        expect(r.lines).toHaveLength(3)
+        const nulls = teaPartialChildren([LIST[0], null, LIST[8]], ADMIN)
+        expect([nulls.total, nulls.notPublished]).toEqual([2, 0])
+    })
+
+    it('(e) the publish dialog with the list', () => {
+        const withList = teaPublishConfirm(PRODUCT, PNAMES, teaPartialChildren(LIST, ADMIN))
+        expect(withList.text).toBe(HEAD + '\n7 of 9 component releases will not be published with it:\n' + LIST_LINES.join('\n')
+            + '\nCustomers still see these components inside the product SBOM; they cannot open the component releases on '
+            + "TEA. To publish them too, a component or organization admin turns publishing on in each component's TEA settings.")
+        expect(withList.customClass).toEqual({ htmlContainer: 'tea-partial-children' })
+        expect('showDenyButton' in withList).toBe(false)
+
+        const offering = teaPublishConfirm(PRODUCT, PNAMES, teaPartialChildren(OFFERING, ADMIN))
+        expect(offering.text).toBe(HEAD + '\n2 of 3 component releases will not be published with it:\nDb 2.0: its TEA profile '
+            + 'has publishing disabled\nUi 3.0: published on its own already\nCustomers still see these components inside the '
+            + 'product SBOM; they cannot open the component releases on TEA. "Turn on for both" turns on TEA publishing in '
+            + 'the TEA settings of Db, and it stays on for their later releases; this product is then published.')
+        expect(offering.showDenyButton).toBe(true)
+        expect(offering.denyButtonText).toBe('Turn on for both')
+        expect(offering.customClass).toEqual({ htmlContainer: 'tea-partial-children', denyButton: 'tea-turn-on-both' })
+        expect(offering.text).not.toContain(TEA_PARTIAL_HINT)
+        expect(withList.text).toContain(TEA_PARTIAL_HINT)
+
+        const six = ['A', 'B', 'C', 'D', 'E', 'F'].map(n => child('r-' + n, n, '1', 'REFUSED', { refusal: 'PUBLISHING_DISABLED', ownRow: n }))
+        expect(teaPartialOfferText(six)).toBe('"Turn on for both" turns on TEA publishing in the TEA settings of A, B, C, D, E, '
+            + 'and 1 more, and it stays on for their later releases; this product is then published.')
+        const ofDb = (b: string) => teaPartialOfferText([child('1', 'Db', '1', 'REFUSED'), child('2', b, '2', 'REFUSED')])
+        const once = '"Turn on for both" turns on TEA publishing in the TEA settings of Db, and it stays on for their later '
+            + 'releases; this product is then published.'
+        expect(ofDb('Db')).toBe(once)
+        expect(ofDb(BREAK('Db', ''))).toBe(once)
+
+        const all3 = teaPublishConfirm(PRODUCT, PNAMES, teaPartialChildren([LIST[0], LIST[8], { ...LIST[0], release: 'r-3' }], ADMIN))
+        expect(all3.text).toBe(HEAD + 'All 3 of its component releases are expected to be published with it.')
+        expect('customClass' in all3).toBe(false)
+        expect(teaPublishConfirm(PRODUCT, PNAMES, teaPartialChildren([LIST[0]], ADMIN)).text)
+            .toBe(HEAD + 'Its 1 component release is expected to be published with it.')
+        expect(teaPublishConfirm(PRODUCT, PNAMES, teaPartialChildren([], ADMIN)).text)
+            .toBe(HEAD + 'It lists no component release, so nothing is published with it.')
+        expect(teaPublishConfirm(PRODUCT, PNAMES).text)
+            .toBe(HEAD + 'Its 9 component releases are published with it unless their own TEA profile forbids it.')
+        expect(teaPublishConfirm(PRODUCT, PNAMES, teaPartialChildren(null, ADMIN))).toEqual(teaPublishConfirm(PRODUCT, PNAMES))
+        expect(teaPublishConfirm(COMPONENT, PNAMES, teaPartialChildren(LIST, ADMIN)).text).not.toContain('component releases')
+        expect(withList.text).toContain('component releases')
+    })
+})
+
+describe('FDAW-39 row 50 (q): teaTurnOnPublicConfirm', () => {
+    it('a PUBLIC row is confirmed in red, whatever the dry-run says', () => {
+        expect(teaTurnOnPublicConfirm(PUB, PCP, SAME)).toEqual(PUBCONFIRM)
+        expect(teaTurnOnPublicConfirm(PUB, PCP, { publishedReleases: 3 })!.text.endsWith(' 3 published release(s) resolving '
+            + 'to this profile become readable by anyone who knows the TEA URL as soon as you save; visibility is live.')).toBe(true)
+        expect(teaTurnOnPublicConfirm(PUB, PCP, { publishedReleases: 0, publishedVersions: 0 })!.text.endsWith(' No release is '
+            + 'published under this profile yet; every future publication under it will be public. Every version published '
+            + 'under it later will be public, with every document in it (SBOMs, VEX documents, device support statements, '
+            + 'published artifacts).')).toBe(true)
+        expect(teaTurnOnPublicConfirm(PUB, PCP, null)!.text.endsWith(' No release is published under this profile yet; every '
+            + 'future publication under it will be public.')).toBe(true)
+        expect(teaTurnOnPublicConfirm(PUB, { ...PCP, visibility: 'PRIVATE' }, SAME)).toBeNull()
+        expect(teaTurnOnPublicConfirm({ ...PUB, componentName: null }, PCP, SAME)!.text.startsWith('The TEA settings of 1.0 are public')).toBe(true)
+        const broken = teaTurnOnPublicConfirm({ ...PUB, componentName: BREAK('Pub', 'x') }, PCP, SAME)!.text
+        expect(broken.startsWith('The TEA settings of Pub x are public')).toBe(true)
+        expect(broken).not.toContain('\n')
+        expect(TEA_TURN_ON_PUBLIC_TITLE).toBe('Publish this component publicly?')
+        expect(TEA_TURN_ON_PUBLIC_BUTTON).toBe('Publish publicly')
+    })
+})
+
+const stopOf = (kind: string, name: string, refusal = '') => ({ kind, child: name, text: teaTurnOnStopSentence(kind, name, refusal) })
+
+describe('FDAW-39 row 50 (j): teaTurnOnStopText, the progress dialogs and the not-started text', () => {
+    it('(j) the stop texts', () => {
+        expect(teaTurnOnStopText({ saved: ['Zed 1.0'], stop: stopOf('declined', 'Ada 2.0') }))
+            .toBe('Stopped at Ada 2.0: its confirmation was declined. Publishing stays turned on for Zed 1.0. Nothing was published.')
+        expect(teaTurnOnStopText({ saved: [], stop: stopOf('changed', 'Zed 1.0') }))
+            .toBe('The TEA settings of Zed 1.0 changed since this dialog opened, so nothing was saved for it. Nothing was published.')
+        expect(teaTurnOnStopText({ saved: ['Zed 1.0', 'Ada 2.0'], stop: stopOf('refused', 'X 1', 'boom') }))
+            .toBe('boom Publishing stays turned on for Zed 1.0, Ada 2.0. Nothing was published.')
+        expect(teaTurnOnStopText({ saved: ['Zed 1.0'], stop: stopOf('unanswered', 'Ada 2.0') }))
+            .toBe('No answer arrived for saving the TEA settings of Ada 2.0, so publishing may or may not be turned on for it. '
+                + 'Open its TEA settings to check. Publishing stays turned on for Zed 1.0. Nothing was published.')
+        expect(teaTurnOnStopSentence('unanswered', 'Pub 1.0')).toBe(NOANSWER)
+    })
+
+    it('the progress dialogs, whole, and the not-started text', () => {
+        expect(teaChildrenReadProgress()).toEqual({ titleText: 'Checking the component releases…',
+            text: 'Reading what a publish would do with each component release of this product. The publish has not started yet.',
+            allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false })
+        expect(teaTurnOnProgress()).toEqual({ titleText: 'Turning publishing on…',
+            text: 'Checking and saving the TEA settings of the listed components. The publish of this product release has not started yet.',
+            allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false })
+        expect(teaNotStartedText([])).toBe('Another TEA act on this release is still running, so this one was not started.')
+        expect(teaNotStartedText(['Pub 1.0'])).toBe('Another TEA act on this release is still running, so this one was not '
+            + 'started. Publishing stays turned on for Pub 1.0.')
+        expect(teaNotStartedText(['Pub 1.0'])).not.toContain('Nothing was published')
+    })
+})
+
+describe('FDAW-39 row 50 (v): teaServerAnswered', () => {
+    it('true only for an error the server answered', () => {
+        expect(teaServerAnswered(ANSWERED('boom'))).toBe(true)
+        expect(teaServerAnswered({ errors: [REFUSED_RIGHT.errors[1]] })).toBe(false)
+        expect(teaServerAnswered(ANSWERED('  '))).toBe(false)
+        expect(teaServerAnswered(new TypeError('Failed to fetch'))).toBe(false)
+        expect(teaServerAnswered(null)).toBe(false)
+    })
+})
+
+describe('FDAW-39 row 53: the sweep', () => {
+    it('positive controls: the fixtures carry what the sweep forbids', () => {
+        expect(LIST[3].detail).toMatch(WORD_RE)
+        expect(LIST[6].release).toMatch(UUID_RE)
+        expect(LIST[1].refusal).toMatch(ENUM_RE)
+        expect("Release Pump 1.2.0 is ASSEMBLED; the TEA profile's minimum lifecycle is GENERAL_AVAILABILITY").toMatch(ENUM_RE)
+    })
+
+    it('(a) the lines and the dialog texts without HEAD', () => {
+        for (const l of teaPartialChildren(LIST, ADMIN).lines) swept(l, l)
+        for (const list of [LIST, OFFERING]) {
+            const text = teaPublishConfirm(PRODUCT, PNAMES, teaPartialChildren(list, ADMIN)).text
+            expect(text.startsWith(HEAD)).toBe(true)
+            swept(text.slice(HEAD.length))
+        }
+    })
+
+    it('(b) teaChildReason, both forms, every row and unknown values', () => {
+        const rows = [
+            child('x', 'X', '1', 'SKIPPED_DIRECT'), child('x', 'X', '1', 'SKIPPED_HIDDEN'),
+            LIST[5], child('x', 'X', '1', 'SKIPPED_OTHER_PRODUCT'),
+            ...['PUBLISHING_DISABLED', 'LIFECYCLE_TOO_LOW', 'RELEASE_NOT_FOUND', 'RELEASE_ARCHIVED', 'COMPONENT_ARCHIVED',
+                'PROFILE_CONFLICT', 'PROFILE_NOT_FOUND', 'GENERATION_FAILED', 'NO_SBOM_ARTIFACTS', 'SOME_NEW_REFUSAL']
+                .map(refusal => child('x', 'X', '1', 'REFUSED', { refusal, detail: LIST[3].detail })),
+            child('x', 'X', '1', 'REFUSED'), child('x', 'X', '1', 'SOME_NEW_OUTCOME'),
+        ]
+        for (const c of rows) {
+            swept(teaChildReason(c), String(c.refusal ?? c.outcome))
+            swept(teaChildReason(c, { act: true }), String(c.refusal ?? c.outcome))
+        }
+    })
+
+    it('(c) the share dialog', () => {
+        const priv = teaShareConfirm(PRIV_COMPONENT, PNAMES, SHARE)
+        swept(priv.text)
+        swept(priv.titleText)
+        const hidden = teaShareConfirm({ ...COMPONENT, profiles: ['default'], publication: { state: 'HIDDEN' } }, PNAMES, SHARE)
+        swept(hidden.text)
+        swept(hidden.titleText)
+        const v = { ...PRODUCT, cascades: false, effectiveVisibility: 'PUBLIC', profiles: ['default', 'fda'],
+            publicUrl: 'https://tea.example/v1.0.0/productRelease/' + UUID7 }
+        const pub = teaShareConfirm(v, PNAMES, SHARE).text
+        const url = teaPublicUrlText(v)
+        expect(pub.split(url).length - 1).toBe(1)
+        expect(pub.endsWith('without a key: ' + url)).toBe(true)
+        swept(pub.replace(url, ''))
+    })
+
+    it('(d) the texts this child adds', () => {
+        const texts: string[] = [
+            ...['LIFECYCLE_TOO_LOW', 'PROFILE_CONFLICT', 'PROFILE_NOT_FOUND', 'RELEASE_ARCHIVED', 'COMPONENT_ARCHIVED',
+                'NO_SBOM_ARTIFACTS', null].map(refusal => teaShareRefusalText({ refusal })),
+            TEA_SHARE_NOT_AUTHORIZED,
+            teaTurnOnStopText({ saved: ['Zed 1.0'], stop: stopOf('declined', 'Ada 2.0') }),
+            teaTurnOnStopText({ saved: [], stop: stopOf('changed', 'Zed 1.0') }),
+            teaTurnOnStopText({ saved: ['Zed 1.0'], stop: stopOf('unanswered', 'Ada 2.0') }),
+            FDA_PROSE_TEA_NOTE,
+            teaPartialOfferText([LIST[1], { ...LIST[1], componentName: 'Ui', ownRow: 'row-ui' }]),
+            TEA_PARTIAL_HINT, TEA_CHILDREN_READ_FAILED,
+            teaChildrenReadProgress().titleText, teaChildrenReadProgress().text,
+            TEA_AUTO_PUBLISH_PAUSED_OWN('component'), TEA_AUTO_PUBLISH_PAUSED_INHERITED('organization', 'component'),
+            teaAutoPublishHelp('SAAS'), teaAutoPublishHelp('OSS'), ...TEA_AUTO_PUBLISH_OPTIONS.map(o => o.label),
+            TEA_TURN_ON_TEXT, TEA_START_REMOVAL_OBJECT('component', 'organization'),
+            TEA_START_REMOVAL_MEMBERS(2, 'zeta, alpha'), TEA_START_MEMBERSHIP('component', ' (adding Payments)', 'perspective Payments'),
+            TEA_PUBLIC_CONFIRM_COUNTED(3, 7), TEA_PUBLIC_CONFIRM_NONE_YET,
+            PUBTEXT, TEA_ACTION_COUNTED(3, 7), TEA_GLOBAL_ACTION_COUNTED(3, 7), TEA_ACTION_NONE_YET, TEA_GLOBAL_ACTION_NONE_YET,
+            TEA_TURN_ON_PUBLIC_TITLE, TEA_TURN_ON_PUBLIC_BUTTON,
+            NOANSWER, teaNotStartedText(['Zed 1.0']), teaTurnOnProgress().titleText, teaTurnOnProgress().text, FAILED,
+        ]
+        for (const t of texts) swept(t, t)
+    })
+
+    const PUBLISHED_API = { ...LIST[0], outcome: 'PUBLISHED' }
+    const R = { outcome: 'PUBLISHED', collection: { version: 4 }, publication: { aggregateArtifacts: [] },
+        artifacts: [{ status: 'PUBLISHED' }, { status: 'SKIPPED_NO_CHECKSUM' }, { status: 'SKIPPED_SOME_NEW_REASON' }],
+        children: [PUBLISHED_API, LIST[1], LIST[2], LIST[3], LIST[5], LIST[6], GW] }
+    const REASONS = 'Ui 3.0: published on its own already; Lib 6.0: published with product Suite 9; Db 2.0: its TEA '
+        + 'profile has publishing disabled; Fw 4.0: its lifecycle is below the minimum for publishing; A component release '
+        + 'that could not be read: it could not be found in this organization; Gw 8.0: publishing it on TEA failed (the '
+        + 'server log has the cause)'
+
+    it('(f) the share\'s worded result, and its control', () => {
+        const worded = teaPublishSummary(R, { worded: true })
+        expect(worded).toBe('Published: collection version 4; 1 artifacts published, 2 skipped (1 no checksum, 1 skipped some '
+            + 'new reason); 1 component releases published, 2 skipped, 4 refused. Ui 3.0: published on its own already; Lib '
+            + '6.0: published with product Suite 9; Db 2.0: its TEA profile has publishing disabled; Fw 4.0: its lifecycle is '
+            + 'below the minimum for publishing; A component release that could not be read: it could not be found in this '
+            + 'organization; Gw 8.0: publishing it on TEA failed (the server log has the cause)')
+        swept(worded)
+        expect(worded).not.toContain('could not be checked')
+        expect(worded).not.toContain('Connection refused')
+        expect(teaChildReason(GW)).toBe('it could not be checked')
+        expect(teaPartialChildren([GW], ADMIN).lines).toEqual(['Gw 8.0: it could not be checked'])
+        const plain = teaPublishSummary(R)
+        expect(plain).toMatch(ENUM_RE)
+        expect(plain).toMatch(UUID_RE)
+        expect(plain).toMatch(WORD_RE)
+    })
+
+    it('(f) round 4: an outcome the UI does not know is counted and named', () => {
+        const R2 = { ...R, children: [...R.children, null, { release: 'n', componentName: 'New', version: '1', outcome: 'SOME_NEW_OUTCOME' }] }
+        const worded = teaPublishSummary(R2, { worded: true })
+        expect(worded).toBe('Published: collection version 4; 1 artifacts published, 2 skipped (1 no checksum, 1 skipped some '
+            + 'new reason); 1 component releases published, 2 skipped, 4 refused, 1 other. Ui 3.0: published on its own '
+            + 'already; Lib 6.0: published with product Suite 9; Db 2.0: its TEA profile has publishing disabled; Fw 4.0: its '
+            + 'lifecycle is below the minimum for publishing; A component release that could not be read: it could not be '
+            + 'found in this organization; Gw 8.0: publishing it on TEA failed (the server log has the cause); New 1: some new outcome')
+        swept(worded)
+        expect(teaPublishSummary(R, { worded: true })).not.toContain(' other')
+    })
+
+    it('(f) round 5: a release that is itself unchanged still names its children', () => {
+        const RU = { ...R, outcome: 'UNCHANGED' }
+        const worded = teaPublishSummary(RU, { worded: true })
+        expect(worded).toBe('This release is unchanged since collection version 4; 1 component releases published, 2 skipped, '
+            + '4 refused. Ui 3.0: published on its own already; Lib 6.0: published with product Suite 9; Db 2.0: its TEA '
+            + 'profile has publishing disabled; Fw 4.0: its lifecycle is below the minimum for publishing; A component release '
+            + 'that could not be read: it could not be found in this organization; Gw 8.0: publishing it on TEA failed (the '
+            + 'server log has the cause)')
+        expect(worded).toBe('This release is unchanged since collection version 4; 1 component releases published, 2 skipped, 4 refused. ' + REASONS)
+        swept(worded)
+        expect(teaPublishSummary(RU)).toBe('Nothing changed since collection version 4')
+        for (const children of [[], [null], undefined]) {
+            const r: any = { outcome: 'UNCHANGED', collection: { version: 4 } }
+            if (children !== undefined) r.children = children
+            expect(teaPublishSummary(r, { worded: true })).toBe('Nothing changed since collection version 4')
+        }
+        expect(teaPublishSummary({ outcome: 'UNCHANGED', collection: { version: 4 }, children: [PUBLISHED_API] }, { worded: true }))
+            .toBe('This release is unchanged since collection version 4; 1 component releases published, 0 skipped, 0 refused')
+        expect(teaPublishSummary({ ...R, artifacts: [{ status: 'PUBLISHED' }, { status: 'SKIPPED_SOME_OTHER_REASON' }] }, { worded: true }))
+            .toContain('1 skipped (1 skipped some other reason)')
+    })
+})

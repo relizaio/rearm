@@ -6,6 +6,10 @@ import {
     teaConfirmBeforeAutoPublish, teaConfirmBeforeGlobalAutoPublish, teaOrgPublicBadgeTitle, teaOrgPublicSources,
     teaPublicBadgeTitle, teaPublishWiring, teaPublishWiringAdded, teaScopeIsPublic,
 } from './teaOutputEvents'
+import {
+    TEA_ACTION_COUNTED, TEA_ACTION_NONE_YET, TEA_GLOBAL_ACTION_COUNTED, TEA_GLOBAL_ACTION_NONE_YET,
+} from './teaOutputEvents'
+import { TEA_DOCUMENT_KINDS } from './teaProfile'
 
 const BASE = [
     { label: 'Release Lifecycle Change', value: 'RELEASE_LIFECYCLE_CHANGE' },
@@ -339,5 +343,64 @@ describe('the badge titles (row 9)', () => {
             .toBe('Publishes to the public: the organization profile is PUBLIC; 1 perspective profile(s) are PUBLIC.')
         expect(teaOrgPublicBadgeTitle({ organization: false, perspectives: 0, components: 2, publishedReleases: 0 }))
             .toBe('Publishes to the public: 2 component profile(s) are PUBLIC.')
+    })
+})
+
+// FDAW-39 row 22 (g): the action editors' published-count clauses name the collection versions and the
+// document kinds where the backend serves the count (F-10), and keep today's words where it does not.
+describe('FDAW-39 row 22 (g): the counted clauses of the action editors', () => {
+    const KINDS = '(SBOMs, VEX documents, device support statements, published artifacts)'
+    const ACTION = ' 2 release(s), with all 5 of their collection versions and every document in them (SBOMs, VEX documents, '
+        + 'device support statements, published artifacts), are already published under this profile; every release the action '
+        + 'publishes joins them.'
+    const ACTION_NONE = ' No release is published under this profile yet; every release the action publishes will be public, '
+        + 'with every document in it (SBOMs, VEX documents, device support statements, published artifacts).'
+    const GLOBAL = '3 published release(s), with all 7 of their collection versions and every document in them (SBOMs, VEX '
+        + 'documents, device support statements, published artifacts), are already under the organization profile, and every '
+        + 'release the action publishes joins them. '
+    const GLOBAL_NONE = 'no release is published under the organization profile yet, and every release the action publishes '
+        + 'will be public, with every document in it (SBOMs, VEX documents, device support statements, published artifacts). '
+    const TODAY_ACTION = ' 2 release(s) are already published under this profile; every release the action publishes joins them.'
+    const TODAY_ACTION_NONE = ' No release is published under this profile yet; every release the action publishes will be public.'
+    const withVersions = (n: number, m?: number) => ({ ...PUBLIC_OWN(n), ...(m === undefined ? {} : { publishedVersions: m }) })
+    const occurrences = (text: string, part: string) => text.split(part).length - 1
+
+    it('teaConfirmBeforeAutoPublish names versions and kinds with the count, today\'s clause without it', () => {
+        expect(teaConfirmBeforeAutoPublish(withVersions(2, 5), {}, 'component', ['Publish it'])!.text.endsWith(ACTION)).toBe(true)
+        const today = teaConfirmBeforeAutoPublish(withVersions(2), {}, 'component', ['Publish it'])!.text
+        expect(today.endsWith(TODAY_ACTION)).toBe(true)
+        expect(today).not.toContain('VEX documents')
+        expect(teaConfirmBeforeAutoPublish(withVersions(0, 0), {}, 'component', ['Publish it'])!.text.endsWith(ACTION_NONE)).toBe(true)
+        expect(TEA_ACTION_NONE_YET).toBe(ACTION_NONE)
+        expect(teaConfirmBeforeAutoPublish(withVersions(0), {}, 'component', ['Publish it'])!.text.endsWith(TODAY_ACTION_NONE)).toBe(true)
+    })
+
+    it('each counted and none-yet clause carries TEA_DOCUMENT_KINDS exactly once', () => {
+        expect(TEA_DOCUMENT_KINDS).toBe(KINDS)
+        expect(TEA_ACTION_COUNTED(2, 5)).toBe(ACTION)
+        expect(TEA_GLOBAL_ACTION_COUNTED(3, 7)).toBe(GLOBAL)
+        expect(TEA_GLOBAL_ACTION_NONE_YET).toBe(GLOBAL_NONE)
+        for (const t of [TEA_ACTION_COUNTED(3, 7), TEA_ACTION_NONE_YET, TEA_GLOBAL_ACTION_COUNTED(3, 7), TEA_GLOBAL_ACTION_NONE_YET]) {
+            expect(occurrences(t, KINDS), t).toBe(1)
+        }
+    })
+
+    it('teaOrgPublicSources copies publishedVersions only when it is a number', () => {
+        const org = (m?: number) => ({ effective: { status: 'RESOLVED', source: 'ORGANIZATION', sourceObject: null,
+            profile: { publishing: 'ENABLED', visibility: 'PUBLIC' } }, publishedReleases: 3, ...(m === undefined ? {} : { publishedVersions: m }) })
+        const counted = teaOrgPublicSources(org(7), [])
+        expect(counted).toEqual({ organization: true, perspectives: 0, components: 0, publishedReleases: 3, publishedVersions: 7 })
+        const plain = teaOrgPublicSources(org(), [])
+        expect(plain).toEqual({ organization: true, perspectives: 0, components: 0, publishedReleases: 3 })
+        expect('publishedVersions' in plain!).toBe(false)
+
+        expect(teaConfirmBeforeGlobalAutoPublish(counted, 'Pub')!.text).toContain(GLOBAL)
+        const todayText = teaConfirmBeforeGlobalAutoPublish(plain, 'Pub')!.text
+        expect(todayText).toContain('3 published release(s) are already under the organization profile, and every release the action publishes joins them. ')
+        expect(todayText).not.toContain('VEX documents')
+        const none = { organization: true, perspectives: 0, components: 0, publishedReleases: 0 }
+        expect(teaConfirmBeforeGlobalAutoPublish({ ...none, publishedVersions: 0 }, 'Pub')!.text).toContain(GLOBAL_NONE)
+        expect(teaConfirmBeforeGlobalAutoPublish(none, 'Pub')!.text)
+            .toContain('no release is published under the organization profile yet, and every release the action publishes will be public. ')
     })
 })
