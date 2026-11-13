@@ -8,7 +8,7 @@ Files in this directory:
 | `d-link-r18.hbom.cdx.json` | Output, **version 2** (2026-11-09). `python3 gen_hbom.py > d-link-r18.hbom.cdx.json` |
 | `gen_hbom.py.v1`, `d-link-r18.hbom.cdx.v1.json` | Version 1 (2026-11-08), kept for diffing. |
 | `HBOM-PROVENANCE.md` | This file. |
-| `photos/` | Photos available on disk (2026-11-09 only). |
+| `photos/` | The published photos: board, rear buttons, UART header and SoC/DRAM/flash area (2026-11-09), and the U15 flash close-up (2026-11-11). |
 
 Format: CycloneDX **2.0-dev** (HBOM/"inventories" model). Validated with Python `jsonschema` 4.10.3
 against `schema/2.0/cyclonedx-2.0-bundled.schema.json` from `github.com/CycloneDX/specification` at commit
@@ -16,20 +16,22 @@ against `schema/2.0/cyclonedx-2.0-bundled.schema.json` from `github.com/CycloneD
 
 Each component carries an `r18:evidence` property naming its sources. This document expands those tags.
 
+Only the files listed above are published. Paths under `~/openwrt/` and `HANDOFF.md` are the owner's private working files (logs, the NAND backup, which contains ODM secrets, and session notes); they are cited as evidence but **not published**.
+
 ---
 
 ## 1. Evidence sources
 
-| Tag | Source | Date | Where it lives now |
+| Tag | Source | Date | Where it lives |
 |---|---|---|---|
 | **P** | Board photos taken by the owner, case opened (top side of PCB) | 2026-11-08 | Uploaded to the earlier Claude session; **not saved on disk**. The facts read from them are only preserved as text in `gen_hbom.py`. |
-| **L** | Stock firmware serial boot log, captured over UART at 115200 8N1 | 2026-11-08 | `~/openwrt/r18-boot-clean.txt` (1544 lines), raw: `r18-boot-full.raw` |
-| **A** | Offline analysis of the stock firmware from the verified NAND backup | 2026-11-08/09 | `~/openwrt/backup/` (private: contains ODM secrets), extracted rootfs in `~/openwrt/wifi/rootfs-slave/`, kernel in `~/openwrt/stockkernel/` |
+| **L** | Stock firmware serial boot log, captured over UART at 115200 8N1 | 2026-11-08 | `~/openwrt/r18-boot-clean.txt` (1544 lines), raw: `r18-boot-full.raw` (not published) |
+| **A** | Offline analysis of the stock firmware from the verified NAND backup | 2026-11-08/09 | `~/openwrt/backup/` (contains ODM secrets), extracted rootfs in `~/openwrt/wifi/rootfs-slave/`, kernel in `~/openwrt/stockkernel/` (not published) |
 | **P3** | Photo of the bottom rating label by the owner | 2026-11-10 | **Not stored** (shows default Wi-Fi/admin passwords and S/N); facts transcribed here |
-| **T** | Hardware tests while running OpenWrt from RAM (no flash writes) | 2026-11-09 | Serial logs `~/openwrt/logs/kexec*.out`, `HANDOFF.md` §11 |
-| **U** | Owner's direct observation during tests (incl. LED photos uploaded in the 2026-11-09 session) | 2026-11-09 | `photos/2026-11-09-led-test-*.jpg` |
-| **P2** | Close-up photos by the owner: SoC/DRAM/flash area; rear panel with buttons | 2026-11-09 | `photos/2026-11-09-soc-dram-flash.webp`, `photos/2026-11-09-rear-buttons.jpg`, `photos/2026-11-09-uart-header.jpg` |
-| **P4** | Close-up of SPI-NAND U15 (package, marking, white dot) by the owner | 2026-11-11 | `photos/2026-11-11-u15-flash-closeup.webp` |
+| **T** | Hardware tests while running OpenWrt from RAM (no flash writes) | 2026-11-09 | Serial logs `~/openwrt/logs/kexec*.out`, `HANDOFF.md` §11 (not published) |
+| **U** | Owner's direct observation during tests (incl. LED photos uploaded in the 2026-11-09 session) | 2026-11-09 | LED photos uploaded to the 2026-11-09 session; **not published** (not in `photos/`) |
+| **P2** | Close-up photos by the owner: SoC/DRAM/flash area; rear panel with buttons | 2026-11-09 | `photos/2026-11-09-soc-dram-flash.png`, `photos/2026-11-09-rear-buttons.jpg`, `photos/2026-11-09-uart-header.jpg` |
+| **P4** | Close-up of SPI-NAND U15 (package, marking, white dot) by the owner | 2026-11-11 | `photos/2026-11-11-u15-flash-closeup.png` |
 | **X** | External public reference | — | URLs in the HBOM |
 | **I** | Inference / general knowledge, not measured on this unit | — | Marked below; treat as unverified |
 
@@ -42,7 +44,7 @@ Each component carries an `r18:evidence` property naming its sources. This docum
 | Model / marketing name | R18, "EAGLE PRO AI AX1800" | P, L, X | Case/label in photos; `model name: (R18)` (L:37); D-Link product page |
 | FCC ID | KA2R18A1 | P, X | Label photo; fccid.io |
 | ROM id | DLK6E8112001 | L | `romid: (DLK6E8112001)` (L:35), read by bootloader from ODM CSID |
-| Base MAC | C8:78:7D:65:BF:80 | L, A, T | `beid mac:` (L:40); located as TLV value at **ODM partition + 0x82** by byte search in `backup/parts/mtd-ODM.bin`; OpenWrt eth0 got exactly this MAC via nvmem (T) |
+| Base MAC | C8:78:7D:65:BF:80 | L, A, T | `beid mac:` (L:40); located as TLV value at **ODM partition + 0x82** by byte search in `backup/parts/mtd-ODM.bin` (private NAND backup, not published); OpenWrt eth0 got exactly this MAC via nvmem (T) |
 | MAC allocation | eth = base, 2.4 GHz = base+9, 5 GHz unknown | L, T | `now bb MainSsid mac c8:78:7d:65:bf:89` (L:1048). 5 GHz = base+10 is only our DTS choice (**I**) |
 | HW revision | **A1** | P3 | M/N `R18A1`, P/N `CR18LCA.......A1` (dots printed on label), FCC ID KA2R18A1, IC 4216A-R18A1, CAN ICES-003(B)/NMB-003(B), CE, "Made in Taiwan", input 12 V ⎓ 1 A centre-positive |
 | Label MAC | C8:78:7D:65:BF:81 = base+1 | P3, L | Label `MAC:C8787D65BF81`; default SSID `R18-BF81` and stock backhaul SSID `R18-backhaul-BF81` (L) use the same suffix ⇒ likely WAN MAC. Deliberately NOT recorded: label Wi-Fi password, device password, serial number |
@@ -158,7 +160,7 @@ All on OpenWrt main @ `7edc67adadb1` (kernel 6.18.60), booted from RAM via bootl
 |---|---|
 | CPU/RAM/flash identity | OpenWrt boot log on serial |
 | PCIe topology / IDs | `/sys/bus/pci/devices/*/{vendor,device,resource,config}` |
-| PCIe RC0 hang + fix | Instrumented mt76 probe (`pr_emerg` per step), `devmem` reads of BAR space and of the AHB window registers `0x1fb81438`/`0x1fb83438`; variants: window size, probe order, driver_override, no-retrain. Power cycles via Kasa plug (`power.sh`) |
+| PCIe RC0 hang + fix | Instrumented mt76 probe (`pr_emerg` per step), `devmem` reads of BAR space and of the AHB window registers `0x1fb81438`/`0x1fb83438`; variants: window size, probe order, driver_override, no-retrain. Power cycles via Kasa plug (`power.sh`, a private script, not published) |
 | Wi-Fi chains / rev | `iw phy`, mt76 dmesg |
 | Wi-Fi function | `iw dev scan`; hostapd AP with the owner's phone; `iw station dump` for PHY rate/RSSI |
 | LEDs | Each LED forced on/off via sysfs, owner reported position/colour with photos |
