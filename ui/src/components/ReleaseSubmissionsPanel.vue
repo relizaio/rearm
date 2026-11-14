@@ -51,32 +51,29 @@
                 :pagination="false" :bordered="false" size="small" @update:expanded-row-keys="(keys: any) => expanded[k] = keys" />
         </div>
 
-        <!-- The assessment narrative a package of a NARRATIVE kind carries, chosen before the Start form opens
-             (FDAW-32 3.6); the form follows the write. -->
+        <!-- The assessment narrative a package of a NARRATIVE kind carries, written before the Start form opens
+             (FDAW-32 3.6); the form follows the write. The organization default is a starting point only, never
+             a choice a package is finalized on (FDAW-16 3.8, F-2). -->
         <n-modal :show="pending !== null" preset="card" title="Assessment narrative" style="max-width: 720px"
             data-testid="narrative-prompt" :mask-closable="!narrativeSaving" @update:show="(v: boolean) => { if (!v) closePrompt() }">
             <div v-if="pending" data-testid="narrative-form">
                 <p class="text-muted">
                     The {{ packageKindLabel(pending.kind) }} package carries the release's assessment narrative.
-                    Choose the one this draft uses.
                 </p>
-                <n-radio-group data-testid="narrative-choice" v-model:value="narrativeChoice" :disabled="narrativeSaving">
-                    <n-space vertical>
-                        <n-radio :value="NARRATIVE_CHOICE_ORGANIZATION" :disabled="!hasOrgNarrative"
-                            data-testid="narrative-choice-organization" label="Use the organization default" />
-                        <div class="narrative-block">
-                            <n-input v-if="hasOrgNarrative" data-testid="narrative-org-default" type="textarea" :rows="3"
-                                readonly :value="orgNarrative ?? ''" />
-                            <span v-else data-testid="narrative-no-org-default" class="text-muted">{{ NO_ORG_NARRATIVE }}</span>
-                        </div>
-                        <n-radio :value="NARRATIVE_CHOICE_RELEASE" data-testid="narrative-choice-release" label="Write one for this release" />
-                        <div v-if="narrativeChoice === NARRATIVE_CHOICE_RELEASE" class="narrative-block">
-                            <n-input data-testid="narrative-text" v-model:value="narrativeText" type="textarea" :rows="5"
-                                :maxlength="FDA_PROSE_MAX_LENGTH" show-count :disabled="narrativeSaving"
-                                @update:value="narrativeSaveError = null" />
-                        </div>
-                    </n-space>
-                </n-radio-group>
+                <n-space vertical>
+                    <div>
+                        <div class="narrative-heading">Organization default (a starting point)</div>
+                        <n-input v-if="hasOrgNarrative" data-testid="narrative-org-default" type="textarea" :rows="3"
+                            readonly :value="orgNarrative ?? ''" />
+                        <span v-else data-testid="narrative-no-org-default" class="text-muted">{{ NO_ORG_NARRATIVE }}</span>
+                    </div>
+                    <div>
+                        <div class="narrative-heading">Cover summary for this release</div>
+                        <n-input data-testid="narrative-text" v-model:value="narrativeText" type="textarea" :rows="5"
+                            :maxlength="FDA_PROSE_MAX_LENGTH" show-count :disabled="narrativeSaving"
+                            @update:value="narrativeSaveError = null" />
+                    </div>
+                </n-space>
                 <div v-if="narrativeProblem" data-testid="narrative-problem" class="text-muted narrative-line">{{ narrativeProblem }}</div>
                 <n-alert v-if="narrativeSaveError" data-testid="narrative-save-error" type="error" :show-icon="true" class="narrative-line">
                     {{ narrativeSaveError }}
@@ -129,7 +126,7 @@
 // file names and the manifest are text bindings; downloads go through the one URL builder with the
 // record's uuid and integer version (design 3.5.2).
 import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { NAlert, NButton, NDataTable, NInput, NModal, NRadio, NRadioGroup, NSelect, NSpace, NTag, useNotification } from 'naive-ui'
+import { NAlert, NButton, NDataTable, NInput, NModal, NSelect, NSpace, NTag, useNotification } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
 import submissionQueries from '@/utils/submissionQueries'
@@ -150,8 +147,8 @@ import { useSubmissionActs } from '@/utils/submissionActs'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { TEA_SHARE_BUTTON, teaShareButtonState, type TeaShare } from '@/utils/teaPublication'
 import {
-    NARRATIVE_CHOICE_ORGANIZATION, NARRATIVE_CHOICE_RELEASE, NO_ORG_NARRATIVE, NarrativeChoice, UPDATE_RELEASE_NARRATIVE_GQL,
-    kindNeedsNarrative, narrativeChoiceError, narrativeChoiceVariables, narrativeInitialChoice, narrativeInitialText,
+    NO_ORG_NARRATIVE, UPDATE_RELEASE_NARRATIVE_GQL, kindNeedsNarrative, narrativeChoiceError, narrativeChoiceVariables,
+    narrativeInitialText,
 } from '@/utils/submissionNarrative'
 import SubmissionDraftCard from './SubmissionDraftCard.vue'
 
@@ -225,7 +222,6 @@ const versionKey = (r: any) => r.version
 // NARRATIVE part; the release's stored override is held here too, so a second act right after a
 // write starts from it before the host's refresh lands.
 const pending = ref<{ act: 'start', kind: string, head: any } | null>(null)
-const narrativeChoice = ref<NarrativeChoice | null>(null)
 const narrativeText = ref('')
 const narrativeSaving = ref(false)
 const narrativeSaveError = ref<string | null>(null)
@@ -233,14 +229,13 @@ const storedOverride = ref<string | null>(props.narrativeOverride)
 watch(() => props.narrativeOverride, (v) => { storedOverride.value = v })
 const hasOrgNarrative = computed(() => Boolean((props.orgNarrative || '').trim()))
 const narrativeProblem = computed(() => pending.value
-    ? narrativeChoiceError(narrativeChoice.value, narrativeText.value, props.orgNarrative) : null)
+    ? narrativeChoiceError(narrativeText.value, props.orgNarrative) : null)
 
 function needsNarrative (kind: string): boolean {
     return kindNeedsNarrative(catalogKinds.value.find((k: any) => k?.kind === kind))
 }
 
 function openPrompt (act: 'start', kind: string, head: any) {
-    narrativeChoice.value = narrativeInitialChoice(storedOverride.value, props.orgNarrative)
     narrativeText.value = narrativeInitialText(storedOverride.value, props.orgNarrative)
     narrativeSaveError.value = null
     pending.value = { act, kind, head }
@@ -299,10 +294,10 @@ async function confirmStartForm () {
     if (started && startForm.value === form) startForm.value = null
 }
 
-/** Writes the chosen narrative when it changes the release; false (the error shown) when the write fails. */
+/** Writes the release's narrative when the text changes it; false (the error shown) when the write fails. */
 async function saveNarrativeChoice (): Promise<boolean> {
     const vars = narrativeChoiceVariables(props.releaseUuid as string, props.orgUuid as string,
-        narrativeChoice.value as NarrativeChoice, narrativeText.value, storedOverride.value)
+        narrativeText.value, storedOverride.value)
     if (!vars) return true
     narrativeSaving.value = true
     try {
@@ -643,8 +638,9 @@ defineExpose({ read })
 .submission-manifest-block {
     margin-top: 6px;
 }
-.narrative-block {
-    margin-left: 24px;
+.narrative-heading {
+    font-weight: 600;
+    margin-bottom: 4px;
 }
 .narrative-line {
     margin-top: 8px;
