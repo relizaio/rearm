@@ -40,6 +40,15 @@ describe('when the prompt can confirm', () => {
         expect(narrativeChoiceError('Mine', 'Text')).toBeNull()
         expect(narrativeChoiceError('Mine', null)).toBeNull()
         expect(narrativeChoiceError('  ', 'Text')).toBe('Write the assessment narrative for this release')
+        // The blank check answers before the organization-default check: a blank text with a blank
+        // (or absent) default must not read as "equals the default" (FDAW-16 3.8 item 2: the cut
+        // "and not blank" condition relies on the blank test always answering first).
+        expect(narrativeChoiceError('', '')).toBe('Write the assessment narrative for this release')
+        expect(narrativeChoiceError('   ', null)).toBe('Write the assessment narrative for this release')
+        // The blank check also answers before the length check: an over-length text that is blank
+        // once trimmed (all whitespace) is still "write one", not "too long".
+        expect(narrativeChoiceError(' '.repeat(FDA_PROSE_MAX_LENGTH + 1), null))
+            .toBe('Write the assessment narrative for this release')
     })
 })
 
