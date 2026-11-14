@@ -69,7 +69,7 @@ describe('ReleaseView scan status wiring (row 21)', () => {
         expect(tabler).toMatch(/\bStethoscope\b/)
     })
 
-    it('(b) the icon sits after Score, under the BOM and latch conditions, once', () => {
+    it('(b) the icon sits after Check this export, under the BOM and latch conditions, once', () => {
         const helper = code.match(/function renderArtifactActionIcons \(row: any\): any\[\] \{[\s\S]*?\n\}/)?.[0] || ''
         expect(helper).toContain('if (!isDownloadable) return els')
         expect(helper).toContain("row.type === 'BOM'")

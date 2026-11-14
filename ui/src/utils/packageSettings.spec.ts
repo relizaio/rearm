@@ -5,7 +5,7 @@ import {
     PACKAGE_ARTIFACT_TYPE_OPTIONS, PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS, PACKAGE_KIND_LABELS, PACKAGE_PART_LABELS,
     PACKAGE_SELECTION_OPTIONS, PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine,
     PACKAGE_COMPONENT_QUESTION_HINT, packageEnabledHelp, packageEnabledLine, packageStateOf, packageFormError, packageFormFromView, packageKindLabel, packagePartFields, packageRemoveConfirm,
-    packageSettingsInput, packageSourceLine, regulatoryPackagesAvailable,
+    packagePartLabel, packageSettingsInput, packageSourceLine, regulatoryPackagesAvailable,
     PACKAGE_MODE_OPTIONS, PACKAGE_PERSPECTIVE_MODE_OPTIONS, packageInheritConfirm, packageInheritedForm, packageModeOptions,
     packageInheritConflictHint, PACKAGE_INHERIT, PACKAGE_FIELD_HELP, packageEnabledLabel,
 } from './packageSettings'
@@ -50,6 +50,11 @@ describe('parts and options (row 20)', () => {
         expect(values(PACKAGE_SUPPRESSED_FINDINGS_OPTIONS).sort()).toEqual(enumValuesOf(proSchema!, 'SuppressedFindings').sort())
         expect(values(PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS).sort()).toEqual(enumValuesOf(proSchema!, 'InTriageFindings').sort())
         for (const k of Object.keys(PACKAGE_KIND_LABELS)) expect(enumValuesOf(proSchema!, 'PackageKind')).toContain(k)
+    })
+
+    it('labels the stored check part Check report (FDAW-16 row 16)', () => {
+        expect(PACKAGE_PART_LABELS.CHECK_REPORT).toBe('Check report')
+        expect(packagePartLabel('CHECK_REPORT')).toBe('Check report')
     })
 
     it('an unknown kind renders humanized (FDAW-78 X1); the gate is the Pro edition', () => {

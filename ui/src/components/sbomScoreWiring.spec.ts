@@ -52,9 +52,26 @@ describe('ReleaseView SBOM score wiring', () => {
     it('puts Score beside Export in the SBOM form, disabled for anything but a JSON SBOM', () => {
         expect(code).toMatch(/@click="scoreReleaseSbom"/)
         expect(code).toMatch(/exportBomType\.value !== 'SBOM' \|\| selectedSbomMediaType\.value !== 'JSON'/)
-        expect(code).toMatch(/Scoring applies to SBOM exports in JSON/)
+        expect(code).toMatch(/The check applies to SBOM exports in JSON/)
         expect(code).toMatch(/<sbom-score-panel[\s\S]*?:load="loadReleaseSbomScore"/)
         expect(code).toMatch(/<sbom-score-panel[\s\S]*?:load="loadArtifactSbomScore"/)
+    })
+
+    // FDAW-16 3.9 (parent D4): the export dialog's button is relabelled; the artifact tables'
+    // own check keeps its name, so the sweep must not reach the Score SBOM icon.
+    it('labels the export check Check this export, with the package note in the score block', () => {
+        for (const now of ['<span v-else>Check this export</span>', '>Checking...</span>',
+            'The check applies to SBOM exports in JSON', 'Options changed; check again']) {
+            expect(code, now).toContain(now)
+        }
+        for (const old of ['<span v-else>Score</span>', '>Scoring...</span>',
+            'Scoring applies to SBOM exports in JSON', 'Options changed; score again']) {
+            expect(code, old).not.toContain(old)
+        }
+        const block = code.match(/<div v-if="sbomScoreRequested"[\s\S]*?:file-id="updatedRelease\.uuid" \/>/)?.[0] || ''
+        const note = block.match(/<div data-testid="release-sbom-score-note"[^>]*>([\s\S]*?)<\/div>/)?.[1] || ''
+        expect(note.trim()).toBe('This checks the document this dialog would export. It is not the SBOM of a regulatory package; a package is checked when its draft is rebuilt.')
+        expect(code).toMatch(/title: 'Score SBOM'[^\n]*data-testid': 'artifact-sbom-score'/)
     })
 
     it('starts a reopened export dialog without a score', () => {
@@ -72,7 +89,7 @@ describe('ReleaseView SBOM score wiring', () => {
         expect(button).toMatch(/:disabled="releaseSbomScoreButtonDisabled"/)
         expect(button).toMatch(/@click="scoreReleaseSbom"/)
         const block = code.match(/<div v-if="sbomScoreRequested"[\s\S]*?:file-id="updatedRelease\.uuid" \/>/)?.[0] || ''
-        expect(block).toMatch(/v-if="releaseSbomScoreOptionsChanged"[^>]*>\s*Options changed; score again/)
+        expect(block).toMatch(/v-if="releaseSbomScoreOptionsChanged"[^>]*>\s*Options changed; check again/)
         expect(block).toMatch(/<sbom-score-panel\s+:key="sbomScoreRun"\s+v-model:pending="sbomScorePending"\s+:load="loadReleaseSbomScore"/)
         const load = code.match(/async function loadReleaseSbomScore[\s\S]*?\n\}/)?.[0] || ''
         expect(load).toMatch(/variables: releaseSbomScore\.scoredVariables\(\)/)

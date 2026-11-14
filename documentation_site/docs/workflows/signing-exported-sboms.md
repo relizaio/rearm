@@ -14,7 +14,7 @@ See also [Exporting Compliance Artifacts](./exporting-compliance-artifacts) and
 ## What a signed export is
 
 Every merged CycloneDX JSON export of a release is signed: the one the **Export Release BOM**
-dialog downloads, the one `rearm exportreleasebom` writes, and the document the release **Score**
+dialog downloads, the one `rearm exportreleasebom` writes, and the document the release's **Check this export**
 reads. The signature is a root `signature` object in the CycloneDX JSON Signature Format (JSF),
 over the whole document:
 
@@ -168,7 +168,7 @@ A retired key still verifies; the detail says it is retired.
 
 ## What the UI shows
 
-**Export Release BOM dialog.** After an export, one line under the **Export** and **Score** buttons
+**Export Release BOM dialog.** After an export, one line under the **Export** and **Check this export** buttons
 says what the file you just received says about itself:
 
 - `Signed with organization key <key id>`

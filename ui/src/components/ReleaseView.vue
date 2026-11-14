@@ -355,12 +355,12 @@
                                             data-testid="release-sbom-score"
                                             :disabled="releaseSbomScoreButtonDisabled"
                                             @click="scoreReleaseSbom">
-                                            <span v-if="sbomScorePending" class="ml-2">Scoring...</span>
-                                            <span v-else>Score</span>
+                                            <span v-if="sbomScorePending" class="ml-2">Checking...</span>
+                                            <span v-else>Check this export</span>
                                         </n-button>
                                     </span>
                                 </template>
-                                Scoring applies to SBOM exports in JSON
+                                The check applies to SBOM exports in JSON
                             </n-tooltip>
                         </n-spin>
                         <n-spin :show="bomExportPending" small>
@@ -697,7 +697,11 @@
                 <div v-if="sbomScoreRequested" v-show="releaseSbomScoreShown" style="margin-top: 12px;">
                     <div v-if="releaseSbomScoreOptionsChanged" data-testid="release-sbom-score-stale"
                         style="color: #999; font-size: 12px; margin-bottom: 6px;">
-                        Options changed; score again
+                        Options changed; check again
+                    </div>
+                    <div data-testid="release-sbom-score-note"
+                        style="color: #999; font-size: 12px; margin-bottom: 6px;">
+                        This checks the document this dialog would export. It is not the SBOM of a regulatory package; a package is checked when its draft is rebuilt.
                     </div>
                     <sbom-score-panel
                         :key="sbomScoreRun"

@@ -135,7 +135,7 @@ describe('ReleaseView export dialog: the support metadata switch', () => {
 })
 
 /**
- * T-26 (SCORE-35, design 3.5): one status line under Export and Score, read from the document the
+ * T-26 (SCORE-35, design 3.5): one status line under Export and Check this export, read from the document the
  * export just received. The texts and the per-fixture lines are run in utils/sbomSigning.spec.ts
  * (T-27); this pins where the line reads its status and where it renders.
  */
@@ -166,7 +166,7 @@ describe('ReleaseView export dialog: the signing status line', () => {
         expect(code).toMatch(/import \{ exportSigningLine as signingLineFor, signatureStatus \} from '@\/utils\/sbomSigning'/)
     })
 
-    it('renders one element, bound to the line alone, between the Export and Score buttons and the score block', () => {
+    it('renders one element, bound to the line alone, between the Export and Check this export buttons and the score block', () => {
         expect(line).toHaveLength(1)
         const node = line[0][line[0].length - 1]
         expect(directive(node, 'if')).toBe('exportSigningLine')

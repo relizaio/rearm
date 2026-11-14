@@ -264,7 +264,7 @@ The **History** tab of each release shows who added or updated each artifact and
 
 ### Scoring the export
 
-Beside **Export**, **Score** checks the document the export would give you, with the same content options,
+Beside **Export**, **Check this export** checks the document the export would give you, with the same content options,
 against the CISA 2026 minimum elements and the FDA premarket SBOM expectations, and shows the
 report in the same dialog. It applies to the CycloneDX 1.6 (JSON) format. See
 [Scoring an SBOM for CISA 2026 and FDA Readiness](./sbom-scoring).

@@ -4,7 +4,7 @@ import { useReleaseSbomScore } from './useReleaseSbomScore'
 
 /**
  * The Export Release BOM dialog's score state (SCORE-6, design 3.7, D-10): what ReleaseView
- * binds to the Score button, the "Options changed; score again" line and the panel's key.
+ * binds to the Check this export button, the "Options changed; check again" line and the panel's key.
  */
 function setup () {
     const form = ref({ release: 'r1', tldOnly: true, ignoreDev: false })
