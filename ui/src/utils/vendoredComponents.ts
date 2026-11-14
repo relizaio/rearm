@@ -1,4 +1,4 @@
-// The "Components without an identifier" panel (FDAW-15 3.6, FDAW-51 3.3): the keyless nodes
+// The "Software components without an identifier" panel (FDAW-15 3.6, FDAW-51 3.3): the keyless nodes
 // of a release's merged SBOM, which the organisation can describe as vendored code, attest and
 // un-describe. The server mints every key from the node's name and version; nothing here
 // sends a key or a purl. Documents and rules live in this module so they are tested here
@@ -125,7 +125,12 @@ export interface VendoredCopySource extends VendoredDescription {
     version: string | null
 }
 
-export const VENDORED_PANEL_TITLE = 'Components without an identifier'
+export const VENDORED_PANEL_TITLE = 'Software components without an identifier'
+export const VENDORED_EMPTY_TEXT = 'No software component of the merged SBOM lacks an identifier. Files, data,'
+    + ' cryptographic assets, models and devices are not listed here.'
+export const VENDORED_NO_SBOM_NOTE = 'A component release that has no SBOM and no purl is listed here by its name and'
+    + ' version. A description of it is written to the JSON SBOM export of this release. An FDA package leaves such'
+    + ' a release out of its SBOM, so the description is not in the package.'
 export const VENDORED_ORG_WRITE_SENTENCE = orgWriteSentence('Describing a vendored component')
 export const VENDORED_IDENTIFIER_NOTE = 'minted by ReARM from the component\'s name and version; the exported'
     + ' purl carries ?vendored=true'
@@ -144,9 +149,19 @@ export function vendoredStateTag (row: Pick<VendoredRow, 'described' | 'componen
     return row.component?.attestationState === 'ATTESTED' ? 'described, assessed' : 'described'
 }
 
-/** `Components without an identifier <middle dot> N`: every listed node, the non-describable ones too. */
+/** `Software components without an identifier <middle dot> N`: every listed node, the non-describable ones too. */
 export function vendoredPanelTitle (rows: VendoredRow[] | null | undefined): string {
     return `${VENDORED_PANEL_TITLE} \u00b7 ${(rows ?? []).length}`
+}
+
+/**
+ * The note under a product's list (FDAW-98 3.6): only a product's merge lists a component release
+ * that has no SBOM, and the FDA package's merge leaves it out. Null for any other release and for
+ * an empty list.
+ */
+export function vendoredNoSbomNote (rows: VendoredRow[] | null | undefined,
+    componentType: string | null | undefined): string | null {
+    return componentType === 'PRODUCT' && (rows ?? []).length > 0 ? VENDORED_NO_SBOM_NOTE : null
 }
 
 /** `libdosecalc 2.3`, or the name alone for a node without a version. */
@@ -157,8 +172,8 @@ export function vendoredLabel (row: { name: string | null, version: string | nul
 /** The Remove confirmation's consequence sentence (FDAW-15 3.10). */
 export function vendoredRemoveSentence (row: { name: string, version: string | null }): string {
     return `Removing the description makes ${vendoredLabel(row)} unidentified again in the next export, and an`
-        + ' open draft must be rebuilt before Finalize. Its support attestation, if any, is kept and reunited if'
-        + ' the component is described again.'
+        + ' open draft built with the description must be rebuilt before Finalize. Its support attestation, if any,'
+        + ' is kept and reunited if the component is described again.'
 }
 
 /**
