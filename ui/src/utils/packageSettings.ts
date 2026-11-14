@@ -59,6 +59,7 @@ export const PACKAGE_PART_LABELS: Record<string, string> = {
     NARRATIVE: 'Narrative',
     CLE: 'CLE',
     RAW_ARTIFACTS: 'Raw artifacts',
+    CHECK_REPORT: 'Check report',
 }
 
 /** Defined in fdaLabels.ts (the release History parses with it) and read here under its old name. */

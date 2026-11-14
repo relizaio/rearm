@@ -308,10 +308,6 @@ describe('ReleaseSubmissionsPanel', () => {
             fire.mockResolvedValue({ isConfirmed: true, value: 'Updated narrative' })
         }
 
-        const radio = (w: any, value: string) => w.findAll('[data-testid="narrative-choice"] input[type="radio"]')
-            .find((i: any) => (i.element as HTMLInputElement).value === value)!
-        const chosen = (w: any) => (w.findAll('[data-testid="narrative-choice"] input[type="radio"]')
-            .find((i: any) => (i.element as HTMLInputElement).checked)?.element as HTMLInputElement | undefined)?.value ?? null
         const mutations = () => mutate.mock.calls.map(c => operation(c[0]))
         const ops = () => [...query.mock.calls.map(c => operation(c[0])), ...mutations()]
 
@@ -327,8 +323,8 @@ describe('ReleaseSubmissionsPanel', () => {
         it('Create of a kind with a REQUIRED NARRATIVE part opens the prompt first, nothing sent yet', async () => {
             const w = await openCreate({ orgNarrative: 'Org text' })
             expect(w.find('[data-testid="narrative-form"]').exists()).toBe(true)
-            expect(w.text()).toContain('Use the organization default')
-            expect(w.text()).toContain('Write one for this release')
+            expect(w.find('[data-testid="narrative-choice"]').exists()).toBe(false)
+            expect(w.find('[data-testid="narrative-text"]').exists()).toBe(true)
             expect(ops()).not.toContain('SubmissionsOfComponent')
             expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(false)
             expect(mutate).not.toHaveBeenCalled()
@@ -347,30 +343,30 @@ describe('ReleaseSubmissionsPanel', () => {
 
         it('preselects the override when the release has one, the text pre-filled with it', async () => {
             const w = await openCreate({ narrativeOverride: 'Release text', orgNarrative: 'Org text' })
-            expect(chosen(w)).toBe('RELEASE')
             expect((w.find('[data-testid="narrative-text"] textarea').element as HTMLTextAreaElement).value).toBe('Release text')
             w.unmount()
         })
 
-        it('preselects the organization default when there is no override, shown read-only', async () => {
+        it('starts from the organization default when there is no override, and cannot continue on it unchanged', async () => {
             const w = await openCreate({ narrativeOverride: '  ', orgNarrative: 'Org text' })
-            expect(chosen(w)).toBe('ORGANIZATION')
             const org = w.find('[data-testid="narrative-org-default"] textarea')
             expect((org.element as HTMLTextAreaElement).value).toBe('Org text')
             expect(org.attributes('readonly')).toBeDefined()
-            expect(w.find('[data-testid="narrative-text"]').exists()).toBe(false)
-            // Writing one starts from the organization default.
-            await radio(w, 'RELEASE').setValue(true)
-            await flushPromises()
             expect((w.find('[data-testid="narrative-text"] textarea').element as HTMLTextAreaElement).value).toBe('Org text')
+            // FDAW-16 3.9 text 14: the default unchanged is not a cover summary of this release.
+            expect(w.find('[data-testid="narrative-confirm"]').attributes('disabled')).toBeDefined()
+            expect(w.find('[data-testid="narrative-problem"]').text())
+                .toBe("Write this release's own cover summary; the organization default is only a starting point")
+            await w.find('[data-testid="narrative-text"] textarea').setValue('Org text, and more')
+            await flushPromises()
+            expect(w.find('[data-testid="narrative-confirm"]').attributes('disabled')).toBeUndefined()
+            expect(w.find('[data-testid="narrative-problem"]').exists()).toBe(false)
             w.unmount()
         })
 
-        it('without an organization default, that option is disabled with its reason and Write one is chosen', async () => {
+        it('without an organization default, says so, and the empty text cannot confirm until written', async () => {
             const w = await openCreate({ narrativeOverride: null, orgNarrative: '' })
-            expect(radio(w, 'ORGANIZATION').attributes('disabled')).toBeDefined()
             expect(w.find('[data-testid="narrative-no-org-default"]').text()).toBe('No organization default is set')
-            expect(chosen(w)).toBe('RELEASE')
             // An empty narrative cannot confirm.
             expect(w.find('[data-testid="narrative-confirm"]').attributes('disabled')).toBeDefined()
             await w.find('[data-testid="narrative-text"] textarea').setValue('  Written here  ')
@@ -414,28 +410,6 @@ describe('ReleaseSubmissionsPanel', () => {
             w.unmount()
         })
 
-        it('the organization default over an override clears it with an empty string', async () => {
-            const w = await openCreate({ narrativeOverride: 'Release text', orgNarrative: 'Org text' })
-            await radio(w, 'ORGANIZATION').setValue(true)
-            await flushPromises()
-            await w.find('[data-testid="narrative-confirm"]').trigger('click')
-            await flushPromises()
-            expect(mutate.mock.calls[0][0].variables).toEqual({ release: { uuid: 'r1', org: 'o1', fdaAssessmentNarrative: '' } })
-            expect(mutations()).toEqual(['updateReleaseNarrative'])
-            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
-            expect(w.findComponent(Panel).emitted('narrative-saved')).toEqual([['']])
-            w.unmount()
-        })
-
-        it('the organization default with no override sends no write', async () => {
-            const w = await openCreate({ narrativeOverride: null, orgNarrative: 'Org text' })
-            await w.find('[data-testid="narrative-confirm"]').trigger('click')
-            await flushPromises()
-            expect(mutations()).toEqual([])
-            expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
-            w.unmount()
-        })
-
         it('a failed narrative write shows the error in the prompt, which stays open, and submits nothing', async () => {
             const w = await openCreate({ narrativeOverride: 'Release text', orgNarrative: 'Org text' })
             mutate.mockRejectedValueOnce(new Error('fdaAssessmentNarrative must not exceed 8000 characters'))
@@ -470,13 +444,12 @@ describe('ReleaseSubmissionsPanel', () => {
             await flushPromises()
             expect(w.find('[data-testid="narrative-form"]').exists()).toBe(true)
             expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(false)
-            expect(chosen(w)).toBe('RELEASE')
-            await radio(w, 'ORGANIZATION').setValue(true)
+            await w.find('[data-testid="narrative-text"] textarea').setValue('New release text')
             await flushPromises()
             await w.find('[data-testid="narrative-confirm"]').trigger('click')
             await flushPromises()
             expect(mutations()).toEqual(['updateReleaseNarrative'])
-            expect(mutate.mock.calls[0][0].variables.release.fdaAssessmentNarrative).toBe('')
+            expect(mutate.mock.calls[0][0].variables.release.fdaAssessmentNarrative).toBe('New release text')
             expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(true)
             const category = w.findAllComponents(NSelect).find((c: any) => c.attributes('data-testid') === 'draft-reason-category')!
             expect(category.props('value')).toBeNull()
@@ -489,9 +462,6 @@ describe('ReleaseSubmissionsPanel', () => {
             const w = await mountPanel({ kinds: ['FDA_PREMARKET'], narrativeOverride: null, orgNarrative: 'Org text' })
             await w.find('[data-testid="draft-start"]').trigger('click')
             await flushPromises()
-            expect(chosen(w)).toBe('ORGANIZATION')
-            await radio(w, 'RELEASE').setValue(true)
-            await flushPromises()
             await w.find('[data-testid="narrative-text"] textarea').setValue('Own text')
             await w.find('[data-testid="narrative-confirm"]').trigger('click')
             await flushPromises()
@@ -499,7 +469,6 @@ describe('ReleaseSubmissionsPanel', () => {
             await flushPromises()
             await w.find('[data-testid="draft-start"]').trigger('click')
             await flushPromises()
-            expect(chosen(w)).toBe('RELEASE')
             expect((w.find('[data-testid="narrative-text"] textarea').element as HTMLTextAreaElement).value).toBe('Own text')
             w.unmount()
         })

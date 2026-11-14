@@ -58,7 +58,7 @@ releases; in any release, the root of an SBOM attached to the release itself, wh
 folds into the release's node.
 The export with support metadata marks each of them `reliza:support:selfComponent` = `true`, and
 the report says how many it left out under `selfComponentsSkipped` on each of the two checks; the
-**Score** dialog shows the same number under the check. The coverage gauge and bulk attestation
+report **Check this export** opens shows the same number under the check. The coverage gauge and bulk attestation
 leave the same entries out, so you attest third-party components only. An export or score without
 support metadata carries no marker, and the two checks fail every component as before.
 
@@ -67,15 +67,15 @@ support metadata carries no marker, and the two checks fail every component as b
 ### The release BOM export
 
 Open a release, click the export icon, choose **SBOM** and the **CycloneDX 1.6 (JSON)** format, set
-the options as you would for the export, and click **Score** (beside **Export**). The report opens
+the options as you would for the export, and click **Check this export** (beside **Export**). The report opens
 in the same dialog.
 
 The score is of exactly the document **Export** would give you with the same options: SBOM
 configuration, structure, top-level dependencies only, ignore optional dependencies, the coverage
 type filter, the support and internal metadata options and **Leave out file components** all change
-the scored document. Scoring applies to JSON SBOM exports only; for CSV and Excel the button is
-disabled. If you change an option after scoring, the dialog says "Options changed; score again"
-until you score again.
+the scored document. The check applies to JSON SBOM exports only; for CSV and Excel the button is
+disabled. If you change an option after a check, the dialog says "Options changed; check again"
+until you check again.
 
 With **Leave out file components** on, the score is of the document the dialog would export,
 without the file components; the report's `componentsSkipped` is the CLI flag's count (see
