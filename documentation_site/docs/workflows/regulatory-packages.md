@@ -1,6 +1,6 @@
 # Regulatory Packages and Submissions (ReARM Pro)
 
-A regulatory package is what ReARM assembles for one regulator from one release. A package kind names the regime (`FDA_PREMARKET` today), lists the parts the package holds and says which of them are required. Package settings at a scope say which SBOM profile feeds the SBOM part and how each part is produced. A submission is the immutable record of one assembly of a package for one release: version 1 when it is first created, and one more version on every resubmission, each with its manifest and its generated documents, kept for as long as the release is.
+A regulatory package is what ReARM assembles for one regulator from one release. A package kind names the regime (`FDA_PREMARKET` today), lists the parts the package holds and says which of them are required. Package settings at a scope say which SBOM profile feeds the SBOM part and how each part is produced. A submission is the immutable record of one assembly of a package for one release: version 1 when its first draft is finalized, and one more version each time a later draft is finalized, each with its manifest and its generated documents, kept for as long as the release is.
 
 **Submissions are never public.** They are never served on the [Transparency Exchange API](../tea/), no external key can read them, and nothing of a submission appears on TEA, whatever the release's TEA publishing settings say.
 
@@ -71,7 +71,7 @@ The fields:
 
 The built-in default per kind names `default` with the kind's default selections, so a first submission needs no setup. A save is refused when a required part is excluded, when an included `RAW_ARTIFACTS` has no artifact type, when an option does not apply to its part, or when the named SBOM profile does not resolve at the scope. Package settings carry no visibility: nothing they shape is ever public. What the API enforces: reading package settings needs read access on the scope's object, and `savePackageSettings` and `deletePackageSettings` need ADMIN on it (an ADMIN grant on the component or product, on the perspective, or organization-wide; an organization admin holds it at every scope). In the UI, the package settings editor is editable by organization admins, and a perspective, component or product admin can also save through the user GraphQL API.
 
-The package settings editor is per scope and kind, generic over the kinds the server lists, with the profile picker for the SBOM part and the per-part options. The organization's package settings are on the Profiles tab of Organization Settings (the tab beside Transparency Exchange that also holds the organization's SBOM profiles; not on the Transparency Exchange tab), a component's or product's on its TEA tab, and a perspective's in its TEA dialog on the Perspectives tab of Organization Settings (ReARM Pro). Screenshots and the exact labels follow once the UI task that builds them lands.
+The package settings editor is per scope and kind, generic over the kinds the server lists, with the profile picker for the SBOM part and the per-part options. The organization's package settings are on the Regulatory tab of Organization Settings (not on the Transparency Exchange tab), a component's or product's on its TEA tab, and a perspective's in its TEA dialog on the Perspectives tab of Organization Settings (ReARM Pro). Screenshots and the exact labels follow once the UI task that builds them lands.
 
 The user GraphQL API serves `packageKinds`, `packageSettings(org, scope, object, kind)`, `packageSettingsOfScope(org, scope, object)`, `packageSettingsOfOrg(org)`, `packageSettingsEffective(org, scope, object, kind)`, `packageSettingsEditorView(org, scope, object, kind)`, `savePackageSettings(org, scope, object, kind, settings)` and `deletePackageSettings(org, scope, object, kind)`; there is no programmatic operation for package settings. Deleting an SBOM profile that package settings name is refused while they would stop resolving it.
 
@@ -79,19 +79,17 @@ The user GraphQL API serves `packageKinds`, `packageSettings(org, scope, object,
 
 ### What a submission is
 
-There is one submission per release and kind, with versions numbered from 1. A version is immutable: it is never updated or deleted, by the application or by SQL (a database trigger refuses it). A resubmission is a new version, and the earlier versions stay readable. A withdrawal is a tombstone that keeps every version and document. A submission is `ACTIVE` or `WITHDRAWN`.
+There is one submission per release and kind, with versions numbered from 1. A version is immutable: it is never updated or deleted, by the application or by SQL (a database trigger refuses it). A later version is written when a later draft of the release is finalized; it turns the Final version before it `SUPERSEDED`, and the earlier versions stay readable. A cancellation turns a Final version `CANCELLED` and keeps every version and document.
 
-### Creating, resubmitting, withdrawing
+### Drafting, finalizing, cancelling
 
-- **Create** (a reason is optional) writes version 1 after every part is generated and uploaded. It is refused with `ALREADY_SUBMITTED` when a submission of that kind exists for the release, withdrawn or not: use resubmit.
-- **Resubmit** (a reason is required) writes the next version and re-activates a withdrawn submission. The UI passes the latest version it showed, so that a stale page is refused with `STALE_HEAD` instead of writing a version nobody meant: reload and decide again.
-- **Withdraw** (a reason is required) sets the state to `WITHDRAWN` with the date, the actor and the reason, writes no version and deletes nothing. Withdrawing twice changes nothing (`UNCHANGED`).
+A version is written only by finalizing a draft: Start draft, Rebuild, Confirm and Finalize, with Return to draft and Discard on the way (see [Drafting a package in the UI](#drafting-a-package-in-the-ui)). Finalize writes the version from the build it verified and generates nothing again. **Cancel** (a reason is required) turns a Final version `CANCELLED`, writes no version and deletes nothing; a version that is not Final cannot be cancelled.
 
-An act answers `CREATED`, `RESUBMITTED`, `WITHDRAWN` or `UNCHANGED`, or a refusal. Create and resubmit need the release at ASSEMBLED or beyond, and neither the release nor its component archived. An act waits up to 30 seconds for any other publish, hide or submission act on the same release, then is refused with `SUBMISSION_IN_PROGRESS` and can be repeated. A failed act leaves no version (what it uploaded is archived).
+An act answers the act it recorded, the submission, the version and the draft as it left them, or a refusal. Start draft and Finalize need the release at ASSEMBLED or beyond, and neither the release nor its component archived. An act waits up to 30 seconds for any other publish, hide or submission act on the same release, then is refused with `SUBMISSION_IN_PROGRESS` and can be repeated. A failed act leaves no version (what it uploaded is archived).
 
 ### The reason
 
-The reason is optional on create and required on resubmit and withdraw. It is stripped, at most 2048 characters, and holds no control character other than TAB, LF and CR (`REASON_INVALID`). It is stored on the version, in the manifest, on the withdrawn submission and in the release History, and the UI shows it on the version and on the History row. It is **never part of a notification** (see [Notifications and audit](#notifications-and-audit)).
+Start draft takes a reason category and a reason text, the text required for every category but "First version"; Discard, Return to draft and Cancel require a reason. A reason is stripped, at most 2048 characters, and holds no control character other than TAB, LF and CR (`REASON_INVALID`). A draft's reason is stored on the version it becomes, in the manifest and in the release History; a cancellation's reason is stored on its CANCEL act and in the History row, and the UI shows it on the version and on the History row. It is **never part of a notification** (see [Notifications and audit](#notifications-and-audit)).
 
 ### Where they appear
 
@@ -108,7 +106,7 @@ The release page's Regulatory tab (ReARM Pro; not shown on a document round's re
 - **Confirm** and **Finalize** each ask to tick the statement "I reviewed the contents and the accepted items and confirm this package is ready for submission." Finalize writes the Final version from the build the card shows; nothing is generated again. **Discard**, **Return to draft** and **Cancel** ask for a reason. A refused act shows the server's sentence and the page reads again.
 - **The second confirmer** is a switch on the Regulatory tab of Organization Settings, "Require a second confirmer for regulatory packages", off by default; an organization administrator changes it. When it is on, one person confirms a built draft and a different person finalizes it. A change applies to drafts already open at their next act: a draft confirmed while it was on and finalized after it was switched off records the finalizer alone, and a draft being edited when it is switched on needs a Confirm by one person and a Finalize by another. An open release page reads the setting again within 30 seconds.
 
-The release History tab records each act as a row of scope SUBMISSION: ADDED for the first version, CHANGED for a later version or a re-activation, REMOVED for a withdrawal, with the reason shown with the row when one was given.
+The release History tab records each act as a row of scope SUBMISSION: ADDED when a draft is started and for the first version, CHANGED for a later version (also one finalized over a cancelled version), REMOVED when a draft is discarded or a version is cancelled, with the reason shown with the row when one was given.
 
 There is no organization-level list of submissions (see [Not implemented](#not-implemented)). Screenshots and the exact labels follow once the UI task that builds these screens lands.
 
@@ -252,18 +250,18 @@ GET <your ReARM URL>/api/manual/v1/artifact/<artifact uuid>/rawdownload?version=
 GET <your ReARM URL>/api/programmatic/v1/artifact/<artifact uuid>/rawdownload?version=1
 ```
 
-The first is for a user, the second for a FREEFORM or USER key. The answer carries the part's media type as `Content-Type` and a `Content-Disposition` attachment with the file name. Downloading needs the Artifact Download function on the release's component, so a member who may create a submission may still be unable to download its parts. A generated document is not an artifact of the release's inventory and never becomes one.
+The first is for a user, the second for a FREEFORM or USER key. The answer carries the part's media type as `Content-Type` and a `Content-Disposition` attachment with the file name. Downloading needs the Artifact Download function on the release's component, so a member who may finalize a draft may still be unable to download its parts. A generated document is not an artifact of the release's inventory and never becomes one.
 
 ### Permissions
 
 | Act | Needs |
 |---|---|
-| Create, resubmit, withdraw | Read & Write (or higher) covering the release's component: a grant on the component itself, on a perspective that contains it (ReARM Pro; a perspective grant covers every component of the perspective for every act), or the organization-wide type. A release-scoped grant does not suffice, and a Read & Write grant on a product covers the acts on the product's own releases only, not on its components' releases (reach those through a perspective grant). Organization admins have it |
+| Start draft, Rebuild, Confirm, Return to draft, Discard, Finalize, Cancel | Read & Write (or higher) covering the release's component: a grant on the component itself, on a perspective that contains it (ReARM Pro; a perspective grant covers every component of the perspective for every act), or the organization-wide type. A release-scoped grant does not suffice, and a Read & Write grant on a product covers the acts on the product's own releases only, not on its components' releases (reach those through a perspective grant). Organization admins have it |
 | List a release's submissions, read a submission or a version | Read access covering the release: a grant on the release, on its component, on a perspective that contains the component, on a product that pulls the component in, or the organization-wide type |
 | List a product's or component's submissions, preview | Read access covering the component the same way; a release-scoped grant does not suffice |
 | Download a part or the manifest | The Artifact Download function in a grant that covers the release's component: on the component, on a perspective that contains it, on a product that pulls it in, or organization-wide |
 
-FREEFORM and USER API keys read through the four programmatic operations below with the same read access, and cannot create, resubmit or withdraw. EXTERNAL keys (TEA consumer keys) are refused everywhere outside TEA (`401`) and never see a submission. A release, submission, component or artifact of another organization is "not found".
+FREEFORM and USER API keys read through the four programmatic operations below with the same read access, and cannot act on a draft or a submission. EXTERNAL keys (TEA consumer keys) are refused everywhere outside TEA (`401`) and never see a submission. A release, submission, component or artifact of another organization is "not found".
 
 ### Refusals
 
@@ -272,13 +270,13 @@ An act or a preview that cannot go ahead answers one of these `SubmissionRefusal
 | Value | Meaning |
 |---|---|
 | `RELEASE_NOT_FOUND` | The release, or its component, does not exist |
-| `RELEASE_ARCHIVED` | The release is archived (create and resubmit) |
-| `COMPONENT_ARCHIVED` | The release's component is archived (create and resubmit) |
-| `LIFECYCLE_TOO_LOW` | The release is below ASSEMBLED (create and resubmit) |
-| `ALREADY_SUBMITTED` | A submission of that kind exists for the release, withdrawn or not; use resubmit |
-| `NOT_SUBMITTED` | A resubmit or withdraw names no existing submission |
-| `STALE_HEAD` | The latest version the caller showed is no longer the latest |
-| `REASON_REQUIRED` | Resubmit or withdraw without a reason |
+| `RELEASE_ARCHIVED` | The release is archived (Start draft and Finalize) |
+| `COMPONENT_ARCHIVED` | The release's component is archived (Start draft and Finalize) |
+| `LIFECYCLE_TOO_LOW` | The release is below ASSEMBLED (Start draft and Finalize) |
+| `ALREADY_SUBMITTED` | No act answers it any more; the value stays in the enum |
+| `NOT_SUBMITTED` | Cancel names no existing submission |
+| `STALE_HEAD` | The draft changed since it was opened (Confirm and Finalize), or the draft was planned for a version the package already has (Finalize) |
+| `REASON_REQUIRED` | Discard, Return to draft or Cancel without a reason; Start draft without a reason category, without a reason text for any category but "First version", or with "First version" for a kind that has a submission |
 | `SUBMISSION_IN_PROGRESS` | Another publish, hide or submission act on the same release held it for 30 seconds; repeat the act |
 | `SETTINGS_CONFLICT` | The package settings resolve to a conflict between perspectives |
 | `SETTINGS_INVALID` | A stored settings row fails a rule, for example `RAW_ARTIFACTS` included with no artifact type |
@@ -295,7 +293,7 @@ The preview, `submissionPreview(release, kind)`, reports the plan and the first 
 
 ### Notifications and audit
 
-Notification subscriptions can listen for `RELEASE_SUBMISSION_CREATED` (a first version or a resubmission; the payload's `act` says `FINALIZE`; the version tells a first version from a later one) and `RELEASE_SUBMISSION_WITHDRAWN` (the act is `CANCEL`). The payload carries the release, the submission id, the kind, the state, the version and the act, and no free text: the reason is never rendered in Slack, Teams, e-mail, the inbox or Sentinel, and the e-mail subject is the headline alone, so a webhook consumer that needs the reason reads the version through the API. Every act is a History row and an audit record. See [Notifications](../configure/notifications).
+Notification subscriptions can listen for `RELEASE_SUBMISSION_CREATED` (a first version or a later one; the payload's `act` says `FINALIZE`; the version tells a first version from a later one) and `RELEASE_SUBMISSION_WITHDRAWN` (the act is `CANCEL`). The payload carries the release, the submission id, the kind, the state, the version and the act, and no free text: the reason is never rendered in Slack, Teams, e-mail, the inbox or Sentinel, and the e-mail subject is the headline alone, so a webhook consumer that needs the reason reads the version through the API. Every act is a History row and an audit record. See [Notifications](../configure/notifications).
 
 Package notifications now name the act as `FINALIZE` or `CANCEL`. The values `CREATED`, `RESUBMITTED`, `WITHDRAWN` and `CANCELLED` are no longer sent: not in `event.submissionAct` of a subscription filter, not in `act` of a webhook body's payload, not in the Sentinel column `SubmissionAct`. A filter that waits for one of the old values no longer fires. A filter that excludes one of the old values (`!=`, or `!(... in [...])`) now matches every package notification, cancellations included, so a channel that was set up to leave them out starts to receive them: rewrite every filter that names `submissionAct`, and every rule of your own in a webhook receiver or a Sentinel workspace that reads the act; the upgrade's database migration log lists the subscriptions by id. The same two directions apply to `event.submissionState`, whose values became `FINAL` and `CANCELLED` (were `ACTIVE` and `WITHDRAWN`).
 
@@ -312,11 +310,13 @@ Submissions are never public. A submission's documents carry no TEA id and no TE
 
 ### Submissions in the API
 
-The user GraphQL API serves `submissionsOfRelease(release)`, `submissionsOfComponent(component, kind, state)`, `submission(uuid)`, `submissionVersion(submission, version)`, `submissionPreview(release, kind)` and `Release.submissions`, and the acts `createSubmission(release, kind, reason)`, `resubmitSubmission(submission, reason, expectedLatestVersion)` and `withdrawSubmission(submission, reason)`.
+The user GraphQL API serves `submissionsOfRelease(release)`, `submissionsOfComponent(component, kind, state)`, `submission(uuid)`, `submissionVersion(submission, version)`, `submissionPreview(release, kind)` and `Release.submissions`, and the acts `startDraft(release, kind, reasonCategory, reasonText, replacesSubmission, replacesVersion)`, `discardDraft(draft, reason)`, `confirmDraft(draft, expectedRevision)`, `finalizeDraft(draft, expectedRevision)`, `rebuildDraft(draft)`, `returnDraftToEditing(draft, reason)` and `cancelSubmission(submission, reason)`.
+
+`createSubmission`, `resubmitSubmission` and `withdrawSubmission` are no longer served (Start draft, Rebuild, Finalize and Cancel replace them), and `Submission.lastActKind` and `SubmissionActResult.outcome` are gone (`Submission.lastAct` and the kind of the answer's `act` replace them). A request that names one of them, an API key's read that selects `lastActKind` included, is refused with a GraphQL validation error and writes nothing.
 
 ## Programmatic access
 
-FREEFORM and USER API keys with read access read submissions with `submissionsOfReleaseProgrammatic`, `submissionsOfComponentProgrammatic`, `submissionProgrammatic` and `submissionVersionProgrammatic`, the SBOM profiles behind them with `sbomProfilesProgrammatic` and `sbomProfileEffectiveProgrammatic`, and download the documents at `<your ReARM URL>/api/programmatic/v1/artifact/<artifact uuid>/rawdownload?version=1`. Package settings have no programmatic API, and no key type can create, resubmit or withdraw a submission. See [Programmatic Access](../configure/programmatic-access).
+FREEFORM and USER API keys with read access read submissions with `submissionsOfReleaseProgrammatic`, `submissionsOfComponentProgrammatic`, `submissionProgrammatic` and `submissionVersionProgrammatic`, the SBOM profiles behind them with `sbomProfilesProgrammatic` and `sbomProfileEffectiveProgrammatic`, and download the documents at `<your ReARM URL>/api/programmatic/v1/artifact/<artifact uuid>/rawdownload?version=1`. Package settings have no programmatic API, and no key type can act on a draft or a submission. See [Programmatic Access](../configure/programmatic-access).
 
 ## Edition differences
 
@@ -328,5 +328,5 @@ Regulatory packages and submissions are ReARM Pro only; the [edition differences
 - **Signing.** Every version has a reserved signature slot that is empty today; the digests in the manifest are the only integrity evidence. Signing waits on a server change.
 - **An organization-level submission view.** The product page and the release page are the entries, and the API lists by release and by component only; a view across the organization is a server change.
 - **PDF rendering of the addendum and the statement.** Not planned, by operator decision.
-- **Programmatic create, resubmit and withdraw.** A server change.
+- **Programmatic acts.** The programmatic API has no act on a draft or a submission; a server change.
 - **CLE in a package.** It waits on the CLE 1.0.0 alignment listed under [Not implemented yet](../tea/#not-implemented-yet) on the TEA page.
