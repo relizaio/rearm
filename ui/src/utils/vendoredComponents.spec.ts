@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { DESCRIBE_VENDORED_COMPONENT, RELEASE_UNIDENTIFIED_COMPONENTS, REMOVE_VENDORED_DESCRIPTION,
-    VENDORED_DESCRIPTIONS_BY_NAME, VENDORED_IDENTIFIER, VENDORED_ORG_WRITE_SENTENCE, copyVendoredDescription,
+    VENDORED_DESCRIPTIONS_BY_NAME, VENDORED_EMPTY_TEXT, VENDORED_IDENTIFIER, VENDORED_ORG_WRITE_SENTENCE,
+    copyVendoredDescription, vendoredNoSbomNote,
     describeVendored, describeVendoredVariables, loadUnidentifiedComponents, loadVendoredSupportDetail, vendoredSendsAnything,
     openVendoredEditor, removeVendored, validateVendoredDescribe, vendoredDescribeFormOf, vendoredPanelTitle,
     vendoredRemoveSentence, vendoredRowActions, vendoredStateTag } from './vendoredComponents'
@@ -50,8 +51,25 @@ describe('the panel list', () => {
 
     it('counts every listed node in its title, a describable false one too (F-6)', () => {
         const rows = [row(), row({ name: 'x'.repeat(513), describable: false, refusal: 'name is longer than 512 characters' })]
-        expect(vendoredPanelTitle(rows)).toBe('Components without an identifier \u00b7 2')
-        expect(vendoredPanelTitle([])).toBe('Components without an identifier \u00b7 0')
+        expect(vendoredPanelTitle(rows)).toBe('Software components without an identifier \u00b7 2')
+        expect(vendoredPanelTitle([])).toBe('Software components without an identifier \u00b7 0')
+    })
+
+    it('says what an empty list means and what is not listed (FDAW-98 row 12)', () => {
+        expect(VENDORED_EMPTY_TEXT).toBe('No software component of the merged SBOM lacks an identifier. Files, data,'
+            + ' cryptographic assets, models and devices are not listed here.')
+    })
+
+    it('shows the no-SBOM note under a product\'s rows and nowhere else (FDAW-98 row 12)', () => {
+        const note = 'A component release that has no SBOM and no purl is listed here by its name and version. A'
+            + ' description of it is written to the JSON SBOM export of this release. An FDA package leaves such a'
+            + ' release out of its SBOM, so the description is not in the package.'
+        const cases: Array<[VendoredRow[] | null | undefined, string | null | undefined]> = [
+            [[row()], 'PRODUCT'], [[row(), row({ name: 'zot' })], 'PRODUCT'], [[row()], 'COMPONENT'],
+            [[], 'PRODUCT'], [null, 'PRODUCT'], [undefined, 'PRODUCT'], [[row()], undefined], [[row()], null],
+            [[row()], 'product']]
+        expect(cases.map(([rows, type]) => vendoredNoSbomNote(rows, type)))
+            .toEqual([note, note, null, null, null, null, null, null, null])
     })
 })
 
@@ -222,10 +240,14 @@ describe('Remove description', () => {
             .toMatch(/^Removing the description makes libdosecalc unidentified again/)
     })
 
-    it('shows the consequence sentence', () => {
+    it('shows the consequence sentence (FDAW-98 row 14)', () => {
         expect(vendoredRemoveSentence(row())).toBe('Removing the description makes libdosecalc 2.3 unidentified again in'
-            + ' the next export, and an open draft must be rebuilt before Finalize. Its support attestation, if any,'
-            + ' is kept and reunited if the component is described again.')
+            + ' the next export, and an open draft built with the description must be rebuilt before Finalize. Its'
+            + ' support attestation, if any, is kept and reunited if the component is described again.')
+        expect(vendoredRemoveSentence(row({ name: 'zot', version: null }))).toBe('Removing the description makes zot'
+            + ' unidentified again in the next export, and an open draft built with the description must be rebuilt'
+            + ' before Finalize. Its support attestation, if any, is kept and reunited if the component is described'
+            + ' again.')
     })
 
     it('sends removeVendoredDescription with the node\'s name, version and the reason', async () => {

@@ -2079,7 +2079,7 @@
                         <div v-else>
                             <p>Open this tab to load SBOM components.</p>
                         </div>
-                        <!-- Components without an identifier (FDAW-15 3.6): the keyless nodes of the
+                        <!-- Software components without an identifier (FDAW-15 3.6, FDAW-98): the keyless nodes of the
                              release's merged SBOM. For a reader it lists and offers no action; the
                              actions are disabled with the sentence without organization write.
                              Text bindings only: every value comes from the SBOM and the server. -->
@@ -2093,8 +2093,8 @@
                                     data-testid="unidentified-org-write">
                                     {{ VENDORED_ORG_WRITE_SENTENCE }}
                                 </n-alert>
-                                <p v-if="!vendoredError && !vendoredRows.length" style="font-size: 12px;">
-                                    Every component of the merged SBOM carries an identifier.</p>
+                                <p v-if="!vendoredError && !vendoredRows.length" style="font-size: 12px;"
+                                    data-testid="unidentified-empty">{{ VENDORED_EMPTY_TEXT }}</p>
                                 <table v-else-if="vendoredRows.length" style="width: 100%; font-size: 12px;">
                                     <tr v-for="{ v, actions } in vendoredRowsView" :key="(v.group || '') + '/' + v.name + '@' + (v.version ?? '')"
                                         data-testid="unidentified-row">
@@ -2123,6 +2123,9 @@
                                         </td>
                                     </tr>
                                 </table>
+                                <p v-if="vendoredNoSbomNote(vendoredRows, updatedRelease.componentDetails?.type)"
+                                    style="font-size: 12px; color: #999;" data-testid="unidentified-no-sbom-note">
+                                    {{ VENDORED_NO_SBOM_NOTE }}</p>
                             </n-collapse-item>
                         </n-collapse>
                     </div>
@@ -2851,10 +2854,12 @@ import { OVERLAY_LICENCE_MAX_LENGTH, OVERLAY_REASON_MAX_LENGTH, OVERLAY_SUPPLIER
     overlayEditorAccess, overlayFormOf, overlaySendsAnything, overlayVariables, saveComponentOverlay,
     validateOverlay } from '@/utils/overlayInput'
 import type { OverlayForm, StoredOverlay } from '@/utils/overlayInput'
-import { VENDORED_COPY_FROM_HINT, VENDORED_COPY_FROM_LABEL, VENDORED_IDENTIFIER_NOTE, VENDORED_ORG_WRITE_SENTENCE,
+import { VENDORED_COPY_FROM_HINT, VENDORED_COPY_FROM_LABEL, VENDORED_EMPTY_TEXT, VENDORED_IDENTIFIER_NOTE,
+    VENDORED_NO_SBOM_NOTE, VENDORED_ORG_WRITE_SENTENCE,
     copyVendoredDescription, describeVendored, describeVendoredVariables, loadUnidentifiedComponents,
     loadVendoredSupportDetail, openVendoredEditor as loadVendoredEditorSeed, removeVendored, validateVendoredDescribe,
-    vendoredDescribeFormOf, vendoredLabel, vendoredPanelTitle, vendoredRemoveSentence, vendoredRowActions,
+    vendoredDescribeFormOf, vendoredLabel, vendoredNoSbomNote, vendoredPanelTitle, vendoredRemoveSentence,
+    vendoredRowActions,
     vendoredSendsAnything, vendoredStateTag, VENDORED_LINE_MAX_LENGTH, VENDORED_TEXT_MAX_LENGTH } from '@/utils/vendoredComponents'
 import type { VendoredDescribeForm, VendoredEditorSeed, VendoredRow } from '@/utils/vendoredComponents'
 import { END_OF_SUPPORT_CODES, justifiedUnknownLabel, justifiedUnknownOptions } from '@/utils/justifiedUnknownLabels'
@@ -5997,7 +6002,7 @@ async function saveOverlay () {
     }
 }
 
-// "Components without an identifier" (FDAW-15 3.6, FDAW-51 3.3): the keyless nodes of the
+// "Software components without an identifier" (FDAW-15 3.6, FDAW-51 3.3): the keyless nodes of the
 // release's merged SBOM. One releaseUnidentifiedComponents per SBOM tab open, refetched after
 // every save; the rules (state tag, actions, identifier, copy source) are vendoredComponents.ts.
 const vendoredRows: Ref<VendoredRow[]> = ref([])

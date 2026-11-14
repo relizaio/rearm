@@ -225,6 +225,22 @@ describe('the overlay UI is wired into ReleaseView', () => {
         expect(source.match(/v-html/g)?.length ?? 0).toBe(1)
     })
 
+    it('the panel\'s empty text and its no-SBOM note come from vendoredComponents (FDAW-98 row 13)', () => {
+        const panel = source.slice(source.indexOf('data-testid="unidentified-components"'),
+            source.indexOf('<n-tab-pane name="hbomSub"'))
+        expect(panel.match(/<p v-if="[^"]*"/g)).toEqual([
+            '<p v-if="!vendoredError && !vendoredRows.length"',
+            '<p v-if="vendoredNoSbomNote(vendoredRows, updatedRelease.componentDetails?.type)"'])
+        expect(panel.match(/\{\{ VENDORED_[A-Z_]+ \}\}/g))
+            .toEqual(['{{ VENDORED_ORG_WRITE_SENTENCE }}', '{{ VENDORED_EMPTY_TEXT }}', '{{ VENDORED_NO_SBOM_NOTE }}'])
+        expect(panel.indexOf('{{ VENDORED_NO_SBOM_NOTE }}')).toBeGreaterThan(panel.indexOf('</table>'))
+        expect(source).not.toContain('carries an identifier')
+        for (const symbol of ['VENDORED_EMPTY_TEXT', 'VENDORED_NO_SBOM_NOTE', 'vendoredNoSbomNote']) {
+            expect(source).toMatch(new RegExp(
+                `import\\s+\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'@/utils/vendoredComponents'`))
+        }
+    })
+
     it.each(['describe', 'attest', 'remove'])('the panel\'s %s goes through vendoredRowActions with isWritable and canWriteOrg', (a) => {
         expect(code).toMatch(/actions: vendoredRowActions\(v, isWritable\.value, canWriteOrg\.value\)/)
         expect(source).toContain('<tr v-for="{ v, actions } in vendoredRowsView"')
