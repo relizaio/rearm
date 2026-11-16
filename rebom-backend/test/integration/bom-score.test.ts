@@ -30,7 +30,8 @@ function fixture(name: string): string {
     return fs.readFileSync(path.join(FIXTURES, name), 'utf8');
 }
 
-// I-0: the image carries the released rearm CLI with `bomutils score` on every
+// I-0: the image carries the rearm CLI the Dockerfile pins (a release, or until promotion
+// a build from source at a fixed commit, FDAW-111) with `bomutils score` on every
 // architecture it is built for (SCORE-7), so nothing is skipped: a CLI without the
 // command fails this suite on any of them.
 describe('scoreBomProbe with the real rearm CLI', () => {
@@ -138,7 +139,7 @@ describe('scoreBomProbe with the real rearm CLI', () => {
     // engine before SCORE-10/SCORE-20 and the pinned one, so an old pin fails here.
     it('T-3 fda support checks skip the non-package component types', async () => {
         const report = JSON.parse(await scored(fixture('full.types.cdx.json'), ['fda']));
-        expect(report.engine.version).toMatch(/^\d+\.\d+\.\d+$/);
+        expect(report.engine.version).toMatch(/^\d+\.\d+\.\d+(-\d+-g[0-9a-f]{8})?$/);
         expect(report.input.components).toBe(6);
         expect(report.input.componentsSkipped).toBe(0);
         expect(report.profiles[0].key).toBe('fda');

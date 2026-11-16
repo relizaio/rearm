@@ -1,3 +1,31 @@
+# rebom runs rearm-cli (bomutils merge-boms, bomutils score) built from source at REARM_CLI_COMMIT,
+# not a release zip: a source pin by operator decision of 2026-11-16 (FDAW-111), until a release
+# pin with its sha256 lines returns at promotion. To move it: change both ARGs (REARM_CLI_VERSION
+# is `git describe --tags --abbrev=8` of the commit, injected as the CLI's version) and keep
+# test/fixtures/score/full.justified.cdx.json equal to the commit's
+# internal/bomscore/testdata/full.justified.cdx.json. The commit must be 40 hex and is checked
+# after the fetch; modules are checked against the commit's go.sum. The engine checks in the
+# builder's tools RUN fail the build on an older engine: the fda report on
+# test/fixtures/score/full.self.cdx.json must carry both "skippedTypes" (SCORE-20) and
+# "selfComponentsSkipped" (SCORE-59; pinned by SCORE-60 ADR-2), the fda report on
+# full.justified.cdx.json must carry a "justified" count of 1 or more (FDAW-13, FDAW-111), and
+# the merge of the two engine-check fixtures (test/fixtures/merge/engine-check-a.cdx.json and
+# engine-check-b.cdx.json) must print `folds into root` on stderr (SCORE-67; pinned by SCORE-68 ADR-2).
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine3.24@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS rearm-cli
+ARG TARGETOS
+ARG TARGETARCH
+ARG REARM_CLI_COMMIT=c267f5a19a702b6db21e027f495df91fb2b86910
+ARG REARM_CLI_VERSION=26.10.17-11-gc267f5a1
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local GOFLAGS=-mod=readonly
+RUN apk add --no-cache git && \
+    echo "$REARM_CLI_COMMIT" | grep -Eqx '[0-9a-f]{40}' && \
+    git init -q /src && cd /src && \
+    git fetch -q --depth 1 https://github.com/relizaio/rearm-cli.git "$REARM_CLI_COMMIT" && \
+    git checkout -q --detach FETCH_HEAD && \
+    test "$(git rev-parse HEAD)" = "$REARM_CLI_COMMIT" && \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+      -ldflags "-X github.com/relizaio/rearm/cmd.Version=$REARM_CLI_VERSION" -o /out/rearm .
+
 # Node 26.12.1, the release the UI, landing and documentation images build on. Its binary needs
 # libatomic.so.1, so the plain alpine deliverable below installs libatomic (the TPF-80 risk 1
 # follow-up: node stayed on 26.7.0 until then).
@@ -5,15 +33,6 @@ FROM node:26.12.1-alpine3.24@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d2
 
 ARG TARGETARCH
 ARG TARGETOS
-# The rearm CLI release rebom runs (bomutils merge-boms, bomutils score). To move to a newer
-# release: change this value and the rearm zip line of tools.amd64.sha256 and tools.arm64.sha256
-# (hashes from <cdn>/rearm-download/<version>/sha256sums.txt, SCORE-7 design 3.5). The engine
-# checks in the tools RUN fail the build on a zip without `bomutils score` or with an older engine:
-# the fda report on test/fixtures/score/full.self.cdx.json must carry both "skippedTypes" (SCORE-20)
-# and "selfComponentsSkipped" (SCORE-59; pinned by SCORE-60 ADR-2). The merge of the two
-# engine-check fixtures (test/fixtures/merge/engine-check-a.cdx.json and engine-check-b.cdx.json)
-# must print `folds into root` on stderr (SCORE-67; pinned by SCORE-68 ADR-2).
-ARG REARM_CLI_VERSION=26.10.15
 
 # October 2026 eMudhra CA compromise: the fixed Alpine bundle, and Node on it (--use-openssl-ca)
 # until FIXED_NODE is set in ci/trust-gate/trust-gate.mjs.
@@ -38,14 +57,14 @@ RUN mkdir /run/postgresql && \
 RUN mkdir /app
 WORKDIR /app
 
-# Download rearm-cli and cyclonedx-cli before tests (needed for merge/diff operations)
+# rearm-cli from the source stage; download cyclonedx-cli before tests (needed for merge/diff operations)
+COPY --from=rearm-cli /out/rearm /usr/local/bin/rearm
 COPY tools.${TARGETARCH}.sha256 /tmp/tools.sha256
 COPY test/fixtures/score/full.self.cdx.json /tmp/engine-check.cdx.json
 COPY test/fixtures/merge/engine-check-a.cdx.json /tmp/engine-check-a.cdx.json
 COPY test/fixtures/merge/engine-check-b.cdx.json /tmp/engine-check-b.cdx.json
-RUN wget https://d7ge14utcyki8.cloudfront.net/rearm-download/${REARM_CLI_VERSION}/rearm-${REARM_CLI_VERSION}-linux-${TARGETARCH}.zip && \
-    unzip rearm-${REARM_CLI_VERSION}-linux-${TARGETARCH}.zip && \
-    if [ "$TARGETARCH" = "amd64" ]; then \
+COPY test/fixtures/score/full.justified.cdx.json /tmp/engine-check-justified.cdx.json
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.32.0/cyclonedx-linux-musl-x64 ;\
         mv cyclonedx-linux-musl-x64 /usr/local/bin/cyclonedx-cli ;\
     elif [ "$TARGETARCH" = "arm64" ]; then \
@@ -53,17 +72,19 @@ RUN wget https://d7ge14utcyki8.cloudfront.net/rearm-download/${REARM_CLI_VERSION
         mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
     fi && \
     sha256sum -c /tmp/tools.sha256 && \
-    mv rearm /usr/local/bin/rearm && \
     chmod +x /usr/local/bin/rearm && \
     chmod +x /usr/local/bin/cyclonedx-cli && \
+    rearm version && \
     rearm bomutils score --help | grep -q -- '--profile' && \
     rearm bomutils score --format json --profile fda --infile /tmp/engine-check.cdx.json > /tmp/engine-check.json && \
     grep -q '"skippedTypes"' /tmp/engine-check.json && \
     grep -q '"selfComponentsSkipped"' /tmp/engine-check.json && \
+    rearm bomutils score --format json --profile fda --infile /tmp/engine-check-justified.cdx.json > /tmp/engine-check-justified.json && \
+    grep -Eq '"justified": ?[1-9]' /tmp/engine-check-justified.json && \
     rearm bomutils merge-boms --name engine-check --version 1.0.0 --input-files /tmp/engine-check-a.cdx.json --input-files /tmp/engine-check-b.cdx.json --outfile /tmp/engine-check-merged.json 2> /tmp/engine-check-merge.err && \
     test -s /tmp/engine-check-merged.json && \
     grep -q 'folds into root' /tmp/engine-check-merge.err && \
-    rm -f /tmp/engine-check.cdx.json /tmp/engine-check.json /tmp/engine-check-a.cdx.json /tmp/engine-check-b.cdx.json /tmp/engine-check-merged.json /tmp/engine-check-merge.err
+    rm -f /tmp/engine-check.cdx.json /tmp/engine-check.json /tmp/engine-check-a.cdx.json /tmp/engine-check-b.cdx.json /tmp/engine-check-merged.json /tmp/engine-check-merge.err /tmp/engine-check-justified.cdx.json /tmp/engine-check-justified.json
 
 # cyclonedx-cli has no musl build for arm64 (v0.32.0 publishes cyclonedx-linux-musl-x64 and
 # cyclonedx-linux-musl-arm only); the arm64 pin is the glibc build and needs gcompat on alpine
