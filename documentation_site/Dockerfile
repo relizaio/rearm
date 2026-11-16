@@ -9,6 +9,7 @@ RUN npm ci --ignore-scripts
 COPY ./ .
 # Trust-store probe: the node that ran npm ci refuses the compromised chains.
 RUN node ci/trust-gate/trust-gate.mjs
+RUN echo "b26010fef1b7f29b43e0918a028ee974841316cf1c71e302943d4b95dc9d53c8  docs/workflows/readiness-rules.md" > /tmp/readiness-rules.sha256 && sha256sum -c /tmp/readiness-rules.sha256
 RUN npm run docs:build
 
 FROM nginx:1.31.8-alpine3.24-slim@sha256:f45171d36c76a8b2f5ef97108a3a8a2294248a6578a0a180edc2d78f7d2edc26 AS artifact-stage
