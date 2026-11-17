@@ -303,6 +303,8 @@ describe('useSubmissionActs: the acts on a Final or Sent head (FDAW-10 row 19)',
             inputAttributes: { maxlength: '32' }, showCancelButton: true })
         expect(dialog.inputValidator('')).toBe('An FDA number is required')
         expect(dialog.inputValidator('x'.repeat(33))).toBe('At most 32 characters')
+        // the boundary itself (32) is allowed; only 33 and over is 'At most 32 characters'
+        expect(dialog.inputValidator('x'.repeat(32))).toBeNull()
         expect(dialog.inputValidator('P200003/S004')).toBeNull()
         expect(mutate.mock.calls).toEqual([[{ mutation: Q.AddFdaNumberGql, variables: { submission: 's1', fdaNumber: 'K263456', reason: null } }]])
         expect(fire.mock.calls[1][0]).toEqual({ titleText: 'Submission', text: 'FDA number added.', icon: 'success' })
