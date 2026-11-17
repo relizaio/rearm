@@ -7,6 +7,7 @@ import { documentInstantText } from './fdaLabels'
 import { packageKindLabel, packagePartLabel } from './packageSettings'
 import { teaOneLine, teaShortSha } from './teaPublication'
 import { ARTIFACT_UUID, downloadFileName } from './artifactDownload'
+import { orgWriteSentence } from './orgWrite'
 import {
     CREATE_LIFECYCLE_REASON, FIRST_VERSION_REASON, NEW_VERSION_REASON_LABELS, SUBMISSION_STATE_LABELS, SubmissionConfirm, canCreateSubmission, labelOf,
     submissionActorText, submissionReasonError, submissionReleaseLabel,
@@ -123,6 +124,77 @@ export function draftPlanProblem (draft: any, head: any): string | null {
         + head.latestVersion + '; discard this draft and start a new one' : null
 }
 
+// The readiness rows on the draft card and the two button terms that mirror the server's gate (FDAW-16 3.8, 3.9
+// texts 8, 9, 13, 15 and 16). The rows are the server's; the page offers, and the server decides.
+export const READINESS_FIX_TITLE = 'Fix the must-fix items, then rebuild the draft'
+export const READINESS_FIX_AWAITING_TITLE = 'Return the draft to editing, fix the must-fix items and rebuild'
+export const READINESS_UNCHECKED = 'Readiness was not checked for this build; rebuild the draft'
+export const READINESS_UNCHECKED_AWAITING = 'Readiness was not checked for this build; return the draft to editing and rebuild it'
+export const READINESS_FIX_TEXT = 'These items are read from this build. Fix them, then rebuild the draft. An item without a button, '
+    + 'or an entry a button does not list, is corrected in the SBOM uploaded to the release, or to the component release that carries the entry.'
+
+/** The button label of each verb a readiness row may carry (FDAW-16 3.8); a verb not listed here gets no button. */
+export const READINESS_VERB_LABELS: Record<string, string> = {
+    ADD_SUPPLIERS: 'Add suppliers',
+    ASSESS_SUPPORT: 'Assess support',
+    DESCRIBE_VENDORED: 'Describe vendored code',
+    JUSTIFY_HASHES: 'Justify missing hashes',
+    EDIT_COVER_SUMMARY: 'Edit cover summary',
+}
+/** The verbs that write organization-wide data: their button needs organization write (F-30). */
+export const ORG_WIDE_VERBS = ['ADD_SUPPLIERS', 'ASSESS_SUPPORT', 'DESCRIBE_VENDORED']
+export const READINESS_TAGS: Record<string, string> = { MUST_FIX: 'Must fix', REVIEW: 'Review' }
+
+export interface ReadinessFacts { writable?: boolean, canWriteOrg?: boolean }
+export interface ReadinessRowView {
+    rule: string, text: string, tag: string | null, count: number,
+    verb: string | null, verbLabel: string | null, verbDisabled: boolean, sentence: string | null,
+}
+
+function readinessRowList (draft: any): any[] {
+    return Array.isArray(draft?.readiness?.rows) ? draft.readiness.rows : []
+}
+
+/** A build the job finished whose readiness the server did not answer: made before the check, so the gate refuses it. */
+export function readinessUnchecked (draft: any): boolean {
+    return Boolean(draft?.build) && draft?.job?.state === 'BUILT' && draft?.readiness == null
+}
+
+/** The number of MUST_FIX rows whose outcome is not PASS. */
+export function mustFixOpen (draft: any): number {
+    return readinessRowList(draft).filter(r => r?.severity === 'MUST_FIX' && r?.outcome !== 'PASS').length
+}
+
+/**
+ * The card's rows: the text, a tag when the outcome is not PASS, and the verb's button for a writer. An
+ * organization-wide verb is disabled with the sentence for a writer without organization write.
+ */
+export function readinessRows (draft: any, facts: ReadinessFacts): ReadinessRowView[] {
+    return readinessRowList(draft).map(r => {
+        const open = r?.outcome !== 'PASS'
+        const label = open && facts?.writable && typeof r?.verb === 'string' ? (READINESS_VERB_LABELS[r.verb] ?? null) : null
+        const orgWide = label !== null && ORG_WIDE_VERBS.includes(r.verb)
+        const disabled = orgWide && !facts?.canWriteOrg
+        return {
+            rule: String(r?.rule ?? ''),
+            text: String(r?.text ?? ''),
+            tag: open ? (READINESS_TAGS[r?.severity] ?? null) : null,
+            count: Number.isInteger(r?.count) ? r.count : 0,
+            verb: label !== null ? r.verb : null,
+            verbLabel: label,
+            verbDisabled: disabled,
+            sentence: disabled ? orgWriteSentence(label as string) : null,
+        }
+    })
+}
+
+/** The readiness reason of Finalize and Confirm, in the server's order: unchecked first, then an open must-fix row. */
+function readinessReason (draft: any, awaiting: boolean): string | null {
+    if (readinessUnchecked(draft)) return awaiting ? READINESS_UNCHECKED_AWAITING : READINESS_UNCHECKED
+    if (mustFixOpen(draft) > 0) return awaiting ? READINESS_FIX_AWAITING_TITLE : READINESS_FIX_TITLE
+    return null
+}
+
 export function draftButtons (draft: any, o: DraftButtonFacts): DraftButtons {
     const hidden: DraftButton = { shown: false, disabled: true, title: '' }
     const all = { rebuild: hidden, discard: hidden, confirm: hidden, returnToEditing: hidden, finalize: hidden }
@@ -142,9 +214,10 @@ export function draftButtons (draft: any, o: DraftButtonFacts): DraftButtons {
         ?? (canCreateSubmission(o.lifecycle) ? null : CREATE_LIFECYCLE_REASON)
         ?? draftPlanProblem(draft, o.head)
         ?? (changed ? (awaiting ? RETURN_AND_REBUILD_TITLE : REBUILD_FIRST_TITLE) : null)
+        ?? readinessReason(draft, awaiting)
     if (draft.state === 'EDITING') {
         return { ...all, rebuild: button(null), discard: button(job === 'REQUESTED' ? REBUILD_IN_PROGRESS_TITLE : null),
-            confirm: on ? button(buildReason ?? (changed ? REBUILD_FIRST_TITLE : null)) : hidden,
+            confirm: on ? button(buildReason ?? (changed ? REBUILD_FIRST_TITLE : null) ?? readinessReason(draft, false)) : hidden,
             finalize: on ? hidden : button(finalizeReason) }
     }
     if (awaiting) return { ...all, returnToEditing: button(null), finalize: button(finalizeReason) }

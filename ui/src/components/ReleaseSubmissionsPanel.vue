@@ -50,10 +50,10 @@
             </div>
             <!-- The draft of this kind's next version (FDAW-32 3.6): one card per kind, under its head. -->
             <SubmissionDraftCard v-if="draftOf(k)" :draft="draftOf(k)" :second-confirmer="secondConfirmer" :is-writable="isWritable"
-                :busy="acts.busy.value" :still-running="stillRunning(draftOf(k))" :names="actNames" :current-user="currentUser"
+                :can-write-org="canWriteOrg" :busy="acts.busy.value" :still-running="stillRunning(draftOf(k))" :names="actNames" :current-user="currentUser"
                 :lifecycle="lifecycle" :head="headOf(k)" @rebuild="acts.rebuild(draftOf(k))" @discard="acts.discard(draftOf(k), actNames)"
                 @confirm="acts.confirm(draftOf(k), actNames)" @return="acts.returnToEditing(draftOf(k), actNames)"
-                @finalize="acts.finalize(draftOf(k), actNames, secondConfirmer)" @refresh="read" />
+                @finalize="acts.finalize(draftOf(k), actNames, secondConfirmer)" @refresh="read" @fix="(verb: string) => fix(k, verb)" />
             <!-- The regulatory story of the head (FDAW-10 3.7): its sent, number, timeline, amend, supersede,
                  withdraw and cancel acts by their day, from the acts' snapshots only. -->
             <div v-if="timelineOf(k).length" class="submission-timeline" :data-testid="'submission-timeline-' + k">
@@ -263,6 +263,7 @@ const props = withDefaults(defineProps<{
     componentName?: string | null
     kinds?: string[] | null
     isWritable?: boolean
+    canWriteOrg?: boolean
     installationType?: string
     componentType?: string | null
     names?: Record<string, string>
@@ -280,6 +281,7 @@ const props = withDefaults(defineProps<{
     componentName: null,
     kinds: null,
     isWritable: false,
+    canWriteOrg: false,
     installationType: 'OSS',
     componentType: null,
     names: () => ({}),
@@ -290,7 +292,9 @@ const props = withDefaults(defineProps<{
     currentUser: null,
 })
 
-const emit = defineEmits<{ (e: 'narrative-saved', narrative: string): void, (e: 'share', share: TeaShare): void }>()
+const emit = defineEmits<{
+    (e: 'narrative-saved', narrative: string): void, (e: 'share', share: TeaShare): void, (e: 'fix', verb: string): void
+}>()
 
 const NOT_DOWNLOADABLE = 'not downloadable: no artifact version recorded'
 
@@ -324,9 +328,10 @@ const actNames = computed(() => ({ componentName: props.componentName, releaseVe
 const versionKey = (r: any) => r.version
 
 // The assessment-narrative prompt (any release): open for a kind whose catalog entry has a REQUIRED
-// NARRATIVE part; the release's stored override is held here too, so a second act right after a
-// write starts from it before the host's refresh lands.
-const pending = ref<{ act: 'start', kind: string, head: any } | null>(null)
+// NARRATIVE part (act `start`), or from the draft card's Edit cover summary (act `edit`, FDAW-16 3.8 item 3);
+// the release's stored override is held here too, so a second act right after a write starts from it
+// before the host's refresh lands.
+const pending = ref<{ act: 'start' | 'edit', kind: string, head: any } | null>(null)
 const narrativeText = ref('')
 const narrativeSaving = ref(false)
 const narrativeSaveError = ref<string | null>(null)
@@ -340,7 +345,7 @@ function needsNarrative (kind: string): boolean {
     return kindNeedsNarrative(catalogKinds.value.find((k: any) => k?.kind === kind))
 }
 
-function openPrompt (act: 'start', kind: string, head: any) {
+function openPrompt (act: 'start' | 'edit', kind: string, head: any) {
     narrativeText.value = narrativeInitialText(storedOverride.value, props.orgNarrative)
     narrativeSaveError.value = null
     pending.value = { act, kind, head }
@@ -349,6 +354,15 @@ function openPrompt (act: 'start', kind: string, head: any) {
 function closePrompt () {
     if (narrativeSaving.value) return
     pending.value = null
+}
+
+/**
+ * A readiness row's verb on the draft card (FDAW-16 3.8): Edit cover summary opens this panel's prompt for the
+ * act `edit`; every other verb goes to the release page, which opens the dialog that fixes it.
+ */
+function fix (kind: string, verb: string) {
+    if (verb === 'EDIT_COVER_SUMMARY') openPrompt('edit', kind, headOf(kind))
+    else emit('fix', verb)
 }
 
 /** Start draft: the narrative prompt first for a kind that needs it, then the Start form. */
@@ -484,7 +498,9 @@ async function confirmPrompt () {
     if (!p || narrativeProblem.value || narrativeSaving.value) return
     if (!await saveNarrativeChoice()) return
     pending.value = null
-    openStartForm(p.kind)
+    // `edit` saves and closes; the draft read again shows the moved narrative line and the row
+    if (p.act === 'start') openStartForm(p.kind)
+    else read()
 }
 
 function headOf (kind: string): any {
