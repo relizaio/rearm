@@ -88,7 +88,8 @@ const DRAFT_GQL = `uuid org release component kind submission state revision pla
     startedBy { actor actorName } reasonCategory reasonText replaces { submission version } job { ${DRAFT_JOB_GQL} }
     build { builtAt requestedBy { actor actorName } releaseSbom { version } parts { part artifact sha256 sizeBytes documentVersion }
         diff { ${DRAFT_DIFF_GQL} } }
-    confirmation { actor actorName capacity confirmedAt } changesSinceBuild { count fingerprintEqual movedLines }`
+    confirmation { actor actorName capacity confirmedAt } changesSinceBuild { count fingerprintEqual movedLines }
+    readiness { rows { rule severity outcome count justified text verb } }`
 
 const RELEASE_DRAFTS = gql`
 query ReleaseDrafts($releaseID: ID!, $orgID: ID) {

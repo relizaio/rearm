@@ -27,6 +27,22 @@
                 <li v-for="l in stale.labels" :key="l">{{ l }}</li>
             </ul>
         </n-alert>
+        <!-- Readiness (FDAW-16 3.8): the server's rows over this build's stored check, read before any button and
+             before the confirmation statement. A verb's button writes nothing here: the card emits fix. -->
+        <div v-if="draft.build" data-testid="draft-readiness" class="draft-line">
+            <div v-if="!draft.readiness" data-testid="draft-readiness-unchecked">{{ uncheckedText }}</div>
+            <template v-else>
+                <div v-for="r in readiness" :key="r.rule" data-testid="draft-readiness-row" class="draft-readiness-row">
+                    <span data-testid="draft-readiness-text">{{ r.text }}</span>
+                    <n-tag v-if="r.tag" size="small" :type="r.tag === READINESS_TAGS.MUST_FIX ? 'error' : 'warning'"
+                        data-testid="draft-readiness-tag" style="margin-left: 8px;">{{ r.tag }}</n-tag>
+                    <n-button v-if="r.verb" size="tiny" style="margin-left: 8px;" data-testid="draft-readiness-verb"
+                        :disabled="r.verbDisabled" @click="emit('fix', r.verb)">{{ r.verbLabel }}</n-button>
+                    <div v-if="r.sentence" data-testid="draft-readiness-org-write" class="text-muted draft-readiness-sentence">{{ r.sentence }}</div>
+                </div>
+                <div v-if="mustFixOpen(draft) > 0" data-testid="draft-readiness-fix" class="draft-line text-muted">{{ READINESS_FIX_TEXT }}</div>
+            </template>
+        </div>
         <div v-if="draft.build" data-testid="draft-diff" class="draft-line">
             <div data-testid="draft-diff-summary">{{ draftDiffSummary(draft.build.diff) }}</div>
             <template v-for="s in diffSections" :key="s.key">
@@ -76,15 +92,16 @@
 
 <script setup lang="ts">
 // One draft of a submission's next version on the release's Regulatory tab (task FDAW-32 3.6): its state,
-// reason, job, held confirmation, stale banner, diff, contents and the five draft buttons. It emits the
-// acts and never calls the client itself except for a part's download. Every value is a text binding;
+// reason, job, held confirmation, stale banner, readiness rows with their verbs (FDAW-16 3.8), diff, contents and
+// the five draft buttons. It emits the acts and never calls the client itself except for a part's download. Every value is a text binding;
 // a moved fingerprint line is shown by its label only.
 import { computed, ref, watch } from 'vue'
 import { NAlert, NButton, NSpace, NTag, useNotification } from 'naive-ui'
 import { DRAFT_JOB_STATE_LABELS, DRAFT_STATE_LABELS, NEW_VERSION_REASON_LABELS, labelOf, submissionActorText, submissionDateText } from '@/utils/submissions'
 import {
-    DRAFT_FILES_HINT, SETTING_UNREAD, STALE_NOT_BUILT, STILL_RUNNING, contentDispositionFileName, draftButtons, draftConfirmationLine, draftDiffSections,
-    draftDiffSummary, draftPartRows, draftStaleBanner, draftZipOffered, type DraftPartDownload,
+    DRAFT_FILES_HINT, READINESS_FIX_TEXT, READINESS_TAGS, READINESS_UNCHECKED, READINESS_UNCHECKED_AWAITING, SETTING_UNREAD, STALE_NOT_BUILT,
+    STILL_RUNNING, contentDispositionFileName, draftButtons, draftConfirmationLine, draftDiffSections, draftDiffSummary, draftPartRows,
+    draftStaleBanner, draftZipOffered, mustFixOpen, readinessRows, type DraftPartDownload,
 } from '@/utils/submissionDrafts'
 import { DOWNLOAD_NOT_ASKED, draftZipUrl, fetchPackageFile, packageFallbackName, saveFile } from '@/utils/packageDownloads'
 import { artifactDownloadUrl, downloadArtifactFile, saveBlob } from '@/utils/artifactDownload'
@@ -93,6 +110,7 @@ const props = withDefaults(defineProps<{
     draft: any
     secondConfirmer?: boolean | null
     isWritable?: boolean
+    canWriteOrg?: boolean
     busy?: boolean
     stillRunning?: boolean
     names?: Record<string, any>
@@ -102,6 +120,7 @@ const props = withDefaults(defineProps<{
 }>(), {
     secondConfirmer: null,
     isWritable: false,
+    canWriteOrg: false,
     busy: false,
     stillRunning: false,
     names: () => ({}),
@@ -111,7 +130,8 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-    (e: 'rebuild'): void, (e: 'discard'): void, (e: 'confirm'): void, (e: 'return'): void, (e: 'finalize'): void, (e: 'refresh'): void
+    (e: 'rebuild'): void, (e: 'discard'): void, (e: 'confirm'): void, (e: 'return'): void, (e: 'finalize'): void, (e: 'refresh'): void,
+    (e: 'fix', verb: string): void
 }>()
 
 const notification = useNotification()
@@ -141,6 +161,8 @@ const confirmationLine = computed(() => draftConfirmationLine(props.draft, props
 const buttons = computed(() => draftButtons(props.draft, { secondConfirmer: props.secondConfirmer, writable: props.isWritable,
     busy: props.busy, currentUser: props.currentUser, lifecycle: props.lifecycle, head: props.head }))
 const anyButton = computed(() => Object.values(buttons.value).some(b => b.shown))
+const readiness = computed(() => readinessRows(props.draft, { writable: props.isWritable, canWriteOrg: props.canWriteOrg }))
+const uncheckedText = computed(() => props.draft?.state === 'AWAITING_CONFIRMATION' ? READINESS_UNCHECKED_AWAITING : READINESS_UNCHECKED)
 
 // The draft zip (FDAW-122): offered at job BUILT, to everyone who sees the card; the server decides who gets it.
 const zipOffered = computed(() => draftZipOffered(props.draft))
@@ -205,6 +227,13 @@ async function download (part: DraftPartDownload) {
 }
 .draft-stale-lines {
     margin: 4px 0 0 1rem;
+}
+.draft-readiness-row {
+    margin-top: 2px;
+}
+.draft-readiness-sentence {
+    margin-left: 1rem;
+    font-size: 12px;
 }
 .draft-diff-line {
     margin-left: 1rem;

@@ -1978,7 +1978,7 @@
                                 size="small" type="primary" ghost
                                 :disabled="!canWriteOrg"
                                 :title="canWriteOrg ? '' : ATTEST_ALL_ORG_WRITE_SENTENCE"
-                                @click="openBulkAttest">
+                                @click="openBulkAttest()">
                                 Attest all shown
                             </n-button>
                             <!-- Under isWritable, not canWriteOrg: its Missing hashes half is
@@ -1986,7 +1986,7 @@
                             <n-button
                                 v-if="sbomViewMode === 'list' && isWritable"
                                 size="small" ghost data-testid="bulk-assessment"
-                                @click="openBulkAttest">
+                                @click="openBulkAttest()">
                                 Bulk assessment
                             </n-button>
                             <div v-if="sbomViewMode === 'list' && isWritable && sbomAppliedFilter === 'UNATTESTED'
@@ -2088,7 +2088,7 @@
                              actions are disabled with the sentence without organization write.
                              Text bindings only: every value comes from the SBOM and the server. -->
                         <n-collapse v-if="vendoredLoaded || vendoredError" style="margin-top: 12px;"
-                            data-testid="unidentified-components">
+                            v-model:expanded-names="vendoredExpanded" data-testid="unidentified-components">
                             <n-collapse-item :title="vendoredPanelTitle(vendoredRows)" name="unidentified">
                                 <n-alert v-if="vendoredError" type="error" :show-icon="false" style="font-size: 12px;">
                                     {{ vendoredError }}</n-alert>
@@ -2346,6 +2346,7 @@
                             :component-name="updatedRelease?.componentDetails?.name"
                             :kinds="regulatoryPackageKinds"
                             :is-writable="isWritable"
+                            :can-write-org="canWriteOrg"
                             :installation-type="myUser?.installationType"
                             :current-user="myUser?.uuid"
                             :names="teaPerspectiveNames()"
@@ -2355,7 +2356,8 @@
                             :tea-view="teaView"
                             :tea-acting="teaActing !== null"
                             @narrative-saved="onSubmissionNarrativeSaved"
-                            @share="shareWithCustomers" />
+                            @share="shareWithCustomers"
+                            @fix="onReadinessFix" />
                     </div>
                 </n-tab-pane>
                 <n-tab-pane name="meta" tab="Meta">
@@ -5604,7 +5606,8 @@ const bulkErrors: ComputedRef<string[]> = computed(
 
 function bulkBackToCompose () { bulkStage.value = 'compose' }
 
-function openBulkAttest () {
+/** The bulk dialog, on the half a caller names (FDAW-16 3.8: a readiness verb opens it on its own half). */
+function openBulkAttest (half: 'support' | 'hashes' | 'supplier' = 'support') {
     // Invalidates any walk still running from a previous open.
     bulkGen += 1
     // A refusal from the previous open ("7412 components, more than the 5000 a browser
@@ -5627,8 +5630,22 @@ function openBulkAttest () {
     Object.assign(bulkSupplierForm, emptySupplierForm())
     bulkSupplierCounting.value = false
     bulkSelectorCount.value = null
-    bulkTab.value = 'support'
+    bulkTab.value = half
     bulkModalOpen.value = true
+}
+
+/**
+ * A readiness row's verb from the draft card on the Regulatory tab (FDAW-16 3.8). Each opens the place that
+ * fixes it; the write is that place's own, under its own right. The cover summary is the panel's prompt.
+ */
+async function onReadinessFix (verb: string) {
+    if (verb === 'ADD_SUPPLIERS') openBulkAttest('supplier')
+    else if (verb === 'ASSESS_SUPPORT') openBulkAttest('support')
+    else if (verb === 'JUSTIFY_HASHES') openBulkAttest('hashes')
+    else if (verb === 'DESCRIBE_VENDORED') {
+        vendoredExpanded.value = ['unidentified']
+        await goToSbomComponents()
+    }
 }
 
 /**
@@ -6013,6 +6030,8 @@ const vendoredRows: Ref<VendoredRow[]> = ref([])
 const vendoredLoaded: Ref<boolean> = ref(false)
 const vendoredLoading: Ref<boolean> = ref(false)
 const vendoredError: Ref<string | null> = ref(null)
+// The vendored table's collapse: opened by the draft card's Describe vendored code (FDAW-16 3.8).
+const vendoredExpanded: Ref<string[]> = ref([])
 let vendoredGen = 0
 /** Each listed node with its actions, computed once per render rather than per button. */
 const vendoredRowsView = computed(() => vendoredRows.value
