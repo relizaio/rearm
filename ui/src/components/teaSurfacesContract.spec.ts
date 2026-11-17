@@ -486,7 +486,7 @@ describe('TEA surfaces contract', () => {
         '../utils/packageSettings.ts', '../utils/submissions.ts', '../utils/submissionActs.ts', '../utils/artifactDownload.ts',
         '../utils/sbomProfileDelete.ts', 'SbomProfileEditor.vue', 'SbomProfilesPanel.vue', 'SbomProfileOverrides.vue',
         'SbomProfilePicker.vue', 'PackageSettingsEditor.vue', 'ProductSubmissionsPanel.vue', 'ReleaseSubmissionsPanel.vue',
-        'TeaProfileEditor.vue']
+        'TeaProfileEditor.vue', 'SubmissionDraftCard.vue', '../utils/packageDownloads.ts', '../utils/documentPrint.ts']
     it.each(DIALOG_FILES)('%s: every Swal.fire is the object form, and no html sink', (file) => {
         const f = src(file)
         const calls = (f.match(/Swal\.fire\(/g) ?? []).length

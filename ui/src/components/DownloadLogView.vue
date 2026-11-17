@@ -64,6 +64,7 @@ import type { DataTableColumns } from 'naive-ui'
 import gql from 'graphql-tag'
 import { useStore } from 'vuex'
 import graphqlClient from '@/utils/graphql'
+import { downloadTypeLabel } from '@/utils/downloadLog'
 
 const store = useStore()
 const notification = useNotification()
@@ -94,14 +95,7 @@ const pagination = {
 }
 
 function formatDownloadType(type: string): string {
-    switch (type) {
-    case 'ARTIFACT_DOWNLOAD': return 'Artifact Download'
-    case 'RAW_ARTIFACT_DOWNLOAD': return 'Raw Artifact Download'
-    case 'VDR_EXPORT': return 'VDR Export'
-    case 'SBOM_EXPORT': return 'SBOM Export'
-    case 'TEA_DOWNLOAD': return 'TEA Download'
-    default: return type
-    }
+    return downloadTypeLabel(type)
 }
 
 function formatSubjectType(type: string): string {

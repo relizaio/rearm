@@ -638,9 +638,9 @@ Violations and Weaknesses are not included in the BOV — the spec covers only v
 
 ## Download Log
 
-The **Download Log** (accessible under **Organization Settings → Download Log**, visible to org admins only) records SBOM, VDR, and VEX download events in your organization. Each entry shows:
+The **Download Log** (accessible under **Organization Settings → Download Log**, visible to org admins only) records downloads and exports in your organization: artifact downloads, SBOM, VDR, VEX and CLE exports, reads through TEA, and, of a regulatory package, zip downloads of a version, draft zip downloads and record-of-review exports. Each entry shows:
 
-- **Download type** (`SBOM_EXPORT`, `VDR_EXPORT`, `VEX_EXPORT`)
+- **Download type**, shown by its label: Artifact Download, Raw Artifact Download, SBOM Export, VDR Export, VEX Export, CLE Export, TEA Download, and in ReARM Pro Package Zip Download, Draft Zip Download and Record of Review Export
 - **Metadata options** -- the two per-export flags exactly as the caller sent them. An omitted
   argument is recorded as absent rather than as `false`, so an auditor reconstructing what a
   submitted document contained can tell "the default applied" from "the caller asked for less"
@@ -649,6 +649,6 @@ The **Download Log** (accessible under **Organization Settings → Download Log*
 - **Downloaded by** — the user who triggered the export
 - **IP address** and **timestamp**
 
-> **Scope:** The Download Log only records server-side exports from the Release view (SBOM, VDR, VEX). Client-side exports such as BOV and PDF are not logged, nor are OBOM exports.
+> **Scope:** The Download Log records server-side downloads and exports. A package zip, a draft zip and a record-of-review export are each recorded before the first byte is sent. Printing a package's statement from the package page is recorded as the raw artifact download it starts with; what the browser then prints or saves is not. Client-side exports such as BOV and PDF are not logged, nor are OBOM exports.
 
 The log is useful for compliance audits to demonstrate when and how vulnerability or SBOM data was accessed.

@@ -143,6 +143,10 @@ import {
     draftPollDelay, draftReasonOptions, draftReplacesOptions, draftStartProblem, draftStillRunning, secondConfirmerOf,
 } from '@/utils/submissionDrafts'
 import { ArtifactDownloadRef, artifactDownloadUrl, downloadArtifactBytes, saveBlob } from '@/utils/artifactDownload'
+import {
+    DOWNLOAD_NOT_ASKED, fetchPackageFile, fetchPartBytes, packageFallbackName, packageZipUrl, recordOfReviewUrl, saveFile, type PackageDownloadKind,
+} from '@/utils/packageDownloads'
+import { NOT_PRINTABLE, PRINTABLE_PARTS, PRINT_BUTTON, PRINT_FAILED, printHtml, printableHtml, removePrintFrame } from '@/utils/documentPrint'
 import { useSubmissionActs } from '@/utils/submissionActs'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { TEA_SHARE_BUTTON, teaShareButtonState, type TeaShare } from '@/utils/teaPublication'
@@ -199,6 +203,9 @@ const loaded = ref(false)
 const loadError = ref<string | null>(null)
 const expanded = reactive<Record<string, any[]>>({})
 const shownManifests = reactive<Record<string, boolean>>({})
+// The package downloads of one version (FDAW-122), by `kind:version`: the request in flight and the last message.
+const packageBusy = reactive<Record<string, string>>({})
+const packageMessage = reactive<Record<string, string>>({})
 
 const acts = useSubmissionActs({ client: graphqlClient, reload: () => read() })
 
@@ -382,6 +389,53 @@ async function download (ref: ArtifactDownloadRef, mediaType?: string | null) {
     }
 }
 
+/** The Final zip or the record of review of one version: one request, the file saved, or the message under the buttons. */
+async function packageDownload (what: PackageDownloadKind, kind: string, v: any) {
+    const key = kind + ':' + v?.version
+    if (packageBusy[key]) return
+    packageBusy[key] = what
+    delete packageMessage[key]
+    try {
+        const head = headOf(kind)
+        const url = what === 'zip' ? packageZipUrl(head?.uuid, v?.version)
+            : recordOfReviewUrl(head?.uuid, v?.version, what === 'record-json' ? 'json' : 'html')
+        const result = await fetchPackageFile(what, url, packageFallbackName(what, v?.version))
+        if (result.ok) saveFile(result.blob, result.fileName)
+        else packageMessage[key] = result.message
+    } catch (err: any) {
+        // no request was made, or the browser refused the save: a constant sentence, never the thrown text
+        console.error(err)
+        packageMessage[key] = DOWNLOAD_NOT_ASKED
+    } finally {
+        delete packageBusy[key]
+    }
+}
+
+/**
+ * Print or save as PDF of a generated HTML part (FDAW-122): its stored bytes, in the sandboxed print frame only.
+ * A refused or failed fetch is the page's sentence for that answer, under the buttons, as for a package download.
+ */
+async function printPart (key: string, ref: ArtifactDownloadRef) {
+    if (packageBusy[key]) return
+    packageBusy[key] = 'print'
+    delete packageMessage[key]
+    try {
+        const fetched = await fetchPartBytes(artifactDownloadUrl(ref.uuid, true, ref.version))
+        if (!fetched.ok) {
+            packageMessage[key] = fetched.message
+            return
+        }
+        const html = printableHtml(fetched.bytes)
+        if (html === null) packageMessage[key] = NOT_PRINTABLE
+        else printHtml(html, () => { packageMessage[key] = PRINT_FAILED })
+    } catch (err: any) {
+        console.error(err)
+        packageMessage[key] = DOWNLOAD_NOT_ASKED
+    } finally {
+        delete packageBusy[key]
+    }
+}
+
 function shaCell (full: string, short: string) {
     return full
         ? h('span', { title: full, 'data-testid': 'submission-sha256' }, [short, ' ', h(NButton, { size: 'tiny', quaternary: true, 'aria-label': 'Copy sha256',
@@ -389,7 +443,7 @@ function shaCell (full: string, short: string) {
         : ''
 }
 
-const partColumns = [
+const partColumnsOf = (key: string) => [
     { key: 'label', title: 'Part' },
     { key: 'requirement', title: 'Requirement', render: (r: any) => labelOrHumanized(REQUIREMENT_LABELS, r.requirement) },
     { key: 'outcome', title: 'Outcome', render: (r: any) => r.outcome === 'SKIPPED'
@@ -402,8 +456,13 @@ const partColumns = [
         key: 'download',
         title: 'Download',
         render: (r: any) => r.download
-            ? h(NButton, { size: 'tiny', 'data-testid': 'submission-download', title: 'Download ' + r.download.fileName,
-                'aria-label': 'Download ' + r.download.fileName, onClick: () => download(r.download, r.mediaType) }, () => 'Download')
+            ? [h(NButton, { size: 'tiny', 'data-testid': 'submission-download', title: 'Download ' + r.download.fileName,
+                'aria-label': 'Download ' + r.download.fileName, onClick: () => download(r.download, r.mediaType) }, () => 'Download'),
+            PRINTABLE_PARTS.includes(r.part)
+                ? h(NButton, { size: 'tiny', style: 'margin-left: 6px;', 'data-testid': 'submission-print',
+                    'aria-label': PRINT_BUTTON + ': ' + r.download.fileName, loading: packageBusy[key] === 'print',
+                    disabled: Boolean(packageBusy[key]), onClick: () => printPart(key, r.download) }, () => PRINT_BUTTON)
+                : null]
             : (r.outcome === 'SKIPPED' ? '' : h('span', { class: 'text-muted', title: NOT_DOWNLOADABLE,
                 'data-testid': 'submission-not-downloadable' }, NOT_DOWNLOADABLE)),
     },
@@ -413,8 +472,19 @@ const partColumns = [
 function versionDetail (kind: string, v: any) {
     const key = kind + ':' + v?.version
     const manifest = manifestDownloadRef(v)
+    const busy = packageBusy[key]
+    const packageButton = (what: PackageDownloadKind, testid: string, label: string, first = false) => h(NButton, { size: 'tiny',
+        style: first ? '' : 'margin-left: 6px;', 'data-testid': testid, loading: busy === what, disabled: Boolean(busy),
+        onClick: () => packageDownload(what, kind, v) }, () => label)
     return h('div', { class: 'submission-version-detail' }, [
-        h(NDataTable, { 'data-testid': 'submission-parts-' + kind + '-' + v?.version, columns: partColumns,
+        h('div', { class: 'submission-package-block', 'data-testid': 'submission-package-' + kind + '-' + v?.version }, [
+            packageButton('zip', 'submission-zip-download', 'Download zip', true),
+            packageButton('record-html', 'submission-record-html', 'Record of review (HTML)'),
+            packageButton('record-json', 'submission-record-json', 'Record of review (JSON)'),
+            packageMessage[key] ? h(NAlert, { type: 'warning', showIcon: false, class: 'submission-package-message',
+                'data-testid': 'submission-package-message' }, () => packageMessage[key]) : null,
+        ]),
+        h(NDataTable, { 'data-testid': 'submission-parts-' + kind + '-' + v?.version, columns: partColumnsOf(key),
             data: submissionPartRows(v), rowKey: (r: any) => r.key, size: 'small', pagination: false, bordered: false }),
         ...(v?.confirmations ?? []).map((c: any) => h('div', { 'data-testid': 'submission-confirmation', class: 'submission-confirmation' },
             confirmationRecordLine(c))),
@@ -613,6 +683,7 @@ watch(() => props.releaseUuid, () => { clearPoll(); read() })
 onBeforeUnmount(() => {
     unmounted = true
     clearPoll()
+    removePrintFrame()
 })
 
 defineExpose({ read })
@@ -636,6 +707,12 @@ defineExpose({ read })
     margin-bottom: 4px;
 }
 .submission-manifest-block {
+    margin-top: 6px;
+}
+.submission-package-block {
+    margin-bottom: 6px;
+}
+.submission-package-message {
     margin-top: 6px;
 }
 .narrative-heading {
