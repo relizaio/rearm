@@ -39,6 +39,9 @@ services:
      - "8092:80"
     environment:
      - MAX_BODY_SIZE=50M
+     # Seconds the UI nginx waits for the backend on /api/programmatic (CLI and API keys);
+     # other /api routes keep 90. Raise it together with MAX_BODY_SIZE for large batches.
+     - PROGRAMMATIC_API_TIMEOUT=600
      - HUB_HOST=rearm-core
      - HUB_PORT=8086
      - PROJECT_ORIGIN=${REARM_PROTOCOL:-http}://${REARM_HOST:-localhost:8092}
