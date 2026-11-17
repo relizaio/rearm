@@ -16,7 +16,8 @@ const draft = (c: any = {}) => ({ uuid: 'd1', org: 'o1', release: 'r1', componen
     build: { builtAt: '2026-11-13T06:07:08.123Z', releaseSbom: { version: 3 }, parts: [
         { part: 'AGGREGATE_SBOM', artifact: U1, sha256: A64, sizeBytes: 10, documentVersion: 3 },
         { part: 'VDR', artifact: 'not-a-uuid', sha256: null, sizeBytes: null, documentVersion: null }], diff: null },
-    confirmation: null, changesSinceBuild: { count: 0, fingerprintEqual: true, movedLines: [] }, ...c })
+    confirmation: null, changesSinceBuild: { count: 0, fingerprintEqual: true, movedLines: [] },
+    readiness: { ruleSetVersion: '1', rows: [] }, ...c })
 const CHANGED = { count: 3, fingerprintEqual: false, movedLines: ['narrative:' + U1] }
 const AWAIT = { state: 'AWAITING_CONFIRMATION', confirmation: { actor: 'u1', actorName: 'Ann', capacity: 'AUTHOR', confirmedAt: '2026-11-13T06:09:10Z' } }
 const b = (d: any, o: any) => {
@@ -206,5 +207,79 @@ describe('row 2 others', () => {
         expect(D.draftReturnConfirm(draft({ confirmation: { actor: 'u1', actorName: null } }), N).text).toContain('The confirmation by removed user is dropped.')
         const long = D.draftDiscardConfirm(draft(), { componentName: 'x'.repeat(150), releaseVersion: '1.2.0' }).text
         expect(long).toContain('of ' + 'x'.repeat(99) + '\u2026 1.2.0.')
+    })
+})
+
+// FDAW-16 architecture round 3, section 4 row 13: the readiness rows of the card and the two button terms
+// that mirror the gate (3.8, 3.9 texts 8, 9, 15 and 16; F-30). Every title and sentence is compared whole.
+describe('FDAW-16 row 13: readinessRows and the readiness terms of draftButtons', () => {
+    const T8 = 'Fix the must-fix items, then rebuild the draft'
+    const T9 = 'Readiness was not checked for this build; rebuild the draft'
+    const T15 = 'Return the draft to editing, fix the must-fix items and rebuild'
+    const T16R = 'Readiness was not checked for this build; return the draft to editing and rebuild it'
+    const ORG_SENTENCE = 'Add suppliers changes organization-wide data and needs organization write access, which an'
+        + ' organization administrator grants in Organization Settings > Users'
+    const row = (rule: string, severity: string, outcome: string, count: number, text: string, verb: string | null) =>
+        ({ rule, severity, outcome, count, justified: null, text, verb })
+    const SUPPLIER = row('SBOM_SUPPLIER', 'MUST_FIX', 'FAIL', 5, 'Supplier name: 5 of 10 not met', 'ADD_SUPPLIERS')
+    const HASH = row('SBOM_HASH', 'MUST_FIX', 'FAIL', 2, 'Component hash: 2 of 3 not met', 'JUSTIFY_HASHES')
+    const PASSED = row('SBOM_AUTHOR', 'MUST_FIX', 'PASS', 0, 'SBOM author: Pass', null)
+    const VENDORED_M = row('VENDORED_UNDESCRIBED', 'MUST_FIX', 'FAIL', 1, '1 component without an identifier cannot be described in ReARM', null)
+    const DEVICE = row('DEVICE_DATES', 'REVIEW', 'FAIL', 1, 'Device end-of-support and end-of-life dates are not both declared', null)
+    const withRows = (...rows: any[]) => draft({ readiness: { ruleSetVersion: '1', rows } })
+    const one = (r: any, facts: any) => D.readinessRows(withRows(r), facts)[0]
+
+    it('readinessRows: an organization-wide verb by the two facts', () => {
+        expect(one(SUPPLIER, { writable: true, canWriteOrg: false })).toEqual({ rule: 'SBOM_SUPPLIER', text: 'Supplier name: 5 of 10 not met',
+            tag: 'Must fix', count: 5, verb: 'ADD_SUPPLIERS', verbLabel: 'Add suppliers', verbDisabled: true, sentence: ORG_SENTENCE })
+        const writer = one(SUPPLIER, { writable: true, canWriteOrg: true })
+        expect([writer.verb, writer.verbDisabled, writer.sentence]).toEqual(['ADD_SUPPLIERS', false, null])
+        const reader = one(SUPPLIER, { writable: false, canWriteOrg: false })
+        expect([reader.verb, reader.verbLabel, reader.verbDisabled, reader.sentence, reader.count]).toEqual([null, null, false, null, 5])
+    })
+    it('readinessRows: a component verb, a PASS row and a row without a verb', () => {
+        const hash = one(HASH, { writable: true, canWriteOrg: false })
+        expect([hash.verb, hash.verbLabel, hash.verbDisabled, hash.sentence]).toEqual(['JUSTIFY_HASHES', 'Justify missing hashes', false, null])
+        const passed = one({ ...PASSED, verb: 'ADD_SUPPLIERS' }, { writable: true, canWriteOrg: true })
+        expect([passed.verb, passed.tag]).toEqual([null, null])
+        const m = one(VENDORED_M, { writable: true, canWriteOrg: true })
+        expect([m.verb, m.verbLabel, m.tag]).toEqual([null, null, 'Must fix'])
+        expect(one(DEVICE, { writable: true, canWriteOrg: true }).tag).toBe('Review')
+        // the verbs and their labels of 3.8, and the three organization-wide ones
+        expect(D.READINESS_VERB_LABELS).toEqual({ ADD_SUPPLIERS: 'Add suppliers', ASSESS_SUPPORT: 'Assess support',
+            DESCRIBE_VENDORED: 'Describe vendored code', JUSTIFY_HASHES: 'Justify missing hashes', EDIT_COVER_SUMMARY: 'Edit cover summary' })
+        expect(D.ORG_WIDE_VERBS).toEqual(['ADD_SUPPLIERS', 'ASSESS_SUPPORT', 'DESCRIBE_VENDORED'])
+        expect(D.readinessRows(draft({ readiness: null }), { writable: true, canWriteOrg: true })).toEqual([])
+    })
+    it('mustFixOpen and readinessUnchecked', () => {
+        expect(D.mustFixOpen(withRows(SUPPLIER, HASH, PASSED, DEVICE))).toBe(2)
+        expect(D.mustFixOpen(withRows({ ...PASSED, outcome: 'ERROR' }))).toBe(1)
+        expect(D.mustFixOpen(withRows(DEVICE, PASSED))).toBe(0)
+        expect(D.readinessUnchecked(draft({ readiness: null }))).toBe(true)
+        expect(D.readinessUnchecked(withRows())).toBe(false)
+        expect(D.readinessUnchecked(draft({ readiness: null, job: { state: 'RUNNING' } }))).toBe(false)
+        expect(D.readinessUnchecked(draft({ readiness: null, build: null }))).toBe(false)
+    })
+    it('draftButtons: an open must-fix row disables Finalize and Confirm with text 8, text 15 awaiting', () => {
+        expect(b(withRows(SUPPLIER, PASSED), { secondConfirmer: false })).toBe('on on - - off(' + T8 + ')')
+        expect(b(withRows(SUPPLIER, PASSED), { secondConfirmer: true })).toBe('on on off(' + T8 + ') - -')
+        expect(b(draft({ ...AWAIT, readiness: { ruleSetVersion: '1', rows: [SUPPLIER] } }), { secondConfirmer: true, currentUser: 'u2' }))
+            .toBe('- - - on off(' + T15 + ')')
+    })
+    it('draftButtons: only a REVIEW row failing leaves both enabled', () => {
+        expect(b(withRows(DEVICE, PASSED), { secondConfirmer: false })).toBe('on on - - on')
+        expect(b(withRows(DEVICE, PASSED), { secondConfirmer: true })).toBe('on on on - -')
+    })
+    it('draftButtons: a build without readiness gives text 9, text 16 awaiting', () => {
+        expect(b(draft({ readiness: null }), { secondConfirmer: false })).toBe('on on - - off(' + T9 + ')')
+        expect(b(draft({ readiness: null }), { secondConfirmer: true })).toBe('on on off(' + T9 + ') - -')
+        expect(b(draft({ ...AWAIT, readiness: null }), { secondConfirmer: true, currentUser: 'u2' })).toBe('- - - on off(' + T16R + ')')
+        // unchecked is the first of the two terms (the server's order)
+        expect(b(draft({ readiness: null }), { secondConfirmer: false })).not.toContain(T8)
+    })
+    it('draftButtons: the earlier terms win over the readiness terms', () => {
+        expect(b({ ...withRows(SUPPLIER), changesSinceBuild: CHANGED }, { secondConfirmer: false })).toBe('on on - - off(' + T16 + ')')
+        expect(b({ ...withRows(SUPPLIER), changesSinceBuild: CHANGED }, { secondConfirmer: true })).toBe('on on off(' + T16 + ') - -')
+        expect(b(draft({ readiness: null, job: { state: 'NONE' }, build: null }), { secondConfirmer: false })).toBe('on on - - off(' + T16 + ')')
     })
 })
