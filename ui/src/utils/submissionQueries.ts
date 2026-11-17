@@ -28,6 +28,7 @@ const SUBMISSION_VERSION_GQL = `
     manifestSha256
     manifest
     signature
+    checkSummary { checkerVersion ranAt }
 `
 
 const SUBMISSION_HEAD_GQL = `
@@ -71,6 +72,12 @@ query SubmissionsOfComponent($component: ID!, $kind: PackageKind, $state: Submis
 const SUBMISSIONS_OF_RELEASE = gql`
 query SubmissionsOfRelease($release: ID!) {
     submissionsOfRelease(release: $release) { ${SUBMISSION_HEAD_GQL} ${SUBMISSION_HEAD_NAMES_GQL} versions { ${SUBMISSION_VERSION_GQL} confirmations { actor actorName capacity confirmedAt } } }
+}`
+
+// The re-run of a Final version's check (FDAW-16 3.9a): both engine reports, behind the download right.
+const SUBMISSION_VERSION_CHECK_RERUN = gql`
+query SubmissionVersionCheckRerun($submission: ID!, $version: Int!) {
+    submissionVersionCheckRerun(submission: $submission, version: $version) { storedChecker stored freshChecker fresh }
 }`
 
 // The draft of a submission's next version (FDAW-32, the package page): read by the release page only.
@@ -216,6 +223,7 @@ export default {
     SubmissionReleasesOfBranchGql: SUBMISSION_RELEASES_OF_BRANCH,
     ReleaseRegulatoryPackageKindsGql: RELEASE_REGULATORY_PACKAGE_KINDS,
     ComponentRegulatoryPackageKindsGql: COMPONENT_REGULATORY_PACKAGE_KINDS,
+    SubmissionVersionCheckRerunGql: SUBMISSION_VERSION_CHECK_RERUN,
     RecordSubmissionSentGql: RECORD_SUBMISSION_SENT,
     AddFdaNumberGql: ADD_FDA_NUMBER,
     AddTimelineEntryGql: ADD_TIMELINE_ENTRY,

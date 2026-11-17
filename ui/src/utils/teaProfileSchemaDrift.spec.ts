@@ -275,10 +275,12 @@ const ceHasComponentKinds = () => ceFieldOf('Component', 'regulatoryPackageKinds
 const ceMutation = (name: string) => Boolean(ceSchema.getMutationType()?.getFields()[name])
 // The CE canary of each submission document (FDAW-32 3.2): the CE catch-up turns them true with no UI edit.
 const ceHeadsCanary = () => ceServesSubmissions() && ceFieldOf('Submission', 'lastAct') && ceFieldOf('SubmissionVersion', 'confirmations')
+    && ceFieldOf('SubmissionVersion', 'checkSummary')
 const ceDraftCanary = () => ceFieldOf('DraftBuild', 'diff') && ceFieldOf('SubmissionDraft', 'changesSinceBuild')
 const SUBMISSION_CANARIES: Record<string, () => boolean> = {
     SubmissionsOfComponentGql: ceHeadsCanary,
     SubmissionsOfReleaseGql: ceHeadsCanary,
+    SubmissionVersionCheckRerunGql: () => ceFieldOf('Query', 'submissionVersionCheckRerun'),
     ReleaseDraftsGql: ceDraftCanary,
     DraftGql: ceDraftCanary,
     DraftJobGql: () => ceFieldOf('SubmissionDraft', 'job'),
@@ -427,8 +429,8 @@ const RECIPE_DOCS = {
 const SUBMISSION_KEYS = ['SubmissionsOfComponentGql', 'SubmissionsOfReleaseGql', 'ReleaseDraftsGql', 'DraftGql', 'DraftJobGql',
     'StartDraftGql', 'RebuildDraftGql', 'DiscardDraftGql', 'ConfirmDraftGql', 'ReturnDraftToEditingGql', 'FinalizeDraftGql',
     'CancelSubmissionGql', 'OrgSecondConfirmerGql', 'UpdateSecondConfirmerGql', 'SubmissionReleasesOfBranchGql',
-    'ReleaseRegulatoryPackageKindsGql', 'ComponentRegulatoryPackageKindsGql',
-    // FDAW-10 3.7: the four acts on a Final or Sent head, appended so the first fourteen keep their places
+    'ReleaseRegulatoryPackageKindsGql', 'ComponentRegulatoryPackageKindsGql', 'SubmissionVersionCheckRerunGql',
+    // FDAW-10 3.7: the four acts on a Final or Sent head, appended so the first eighteen keep their places
     'RecordSubmissionSentGql', 'AddFdaNumberGql', 'AddTimelineEntryGql', 'WithdrawSubmissionGql']
 const ACT_MUTATIONS = ['StartDraftGql', 'RebuildDraftGql', 'DiscardDraftGql', 'ConfirmDraftGql', 'ReturnDraftToEditingGql',
     'FinalizeDraftGql', 'CancelSubmissionGql', 'RecordSubmissionSentGql', 'AddFdaNumberGql', 'AddTimelineEntryGql',
@@ -446,11 +448,11 @@ const resultFields = (doc: any): string[] => doc.definitions
 describe('the draft flow submission documents (FDAW-32 row 1)', () => {
     const docs = submissionQueries as Record<string, any>
 
-    it('(b) the default export holds the twenty-one documents in order', () => {
+    it('(b) the default export holds the twenty-two documents in order', () => {
         expect(Object.keys(submissionQueries)).toEqual(SUBMISSION_KEYS)
     })
 
-    it.runIf(proSchema)('(c) each of the twenty-one validates against the Pro schema', () => {
+    it.runIf(proSchema)('(c) each of the twenty-two validates against the Pro schema', () => {
         for (const k of SUBMISSION_KEYS) expect([k, validate(proSchema!, docs[k]).map(e => e.message)]).toEqual([k, []])
     })
 
@@ -458,6 +460,11 @@ describe('the draft flow submission documents (FDAW-32 row 1)', () => {
         for (const k of SUBMISSION_KEYS.slice(0, 14)) {
             expect([k, validate(ceSchema, docs[k]).length === 0]).toEqual([k, SUBMISSION_CANARIES[k]()])
         }
+    })
+
+    it('(d2) on CE the check re-run of a version (FDAW-16 3.9a) validates exactly when its canary says so', () => {
+        const k = 'SubmissionVersionCheckRerunGql'
+        expect([k, validate(ceSchema, docs[k]).length === 0]).toEqual([k, SUBMISSION_CANARIES[k]()])
     })
 
     it.runIf(proSchema)('(e) the act results select no outcome, the one-click words are gone, the parts keep theirs, the switch patches one field', () => {
