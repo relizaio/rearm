@@ -56,7 +56,7 @@ A subscription's `eventTypes` list controls what it can match:
 | `RELEASE_TEA_PUBLISHED` | A release is published or re-published on the [Transparency Exchange API](../tea/) (ReARM Pro) |
 | `RELEASE_TEA_HIDDEN` | A release is hidden from TEA (ReARM Pro) |
 | `RELEASE_SUBMISSION_CREATED` | A [regulatory submission](../workflows/regulatory-packages) version is written: a first version or a resubmission, the payload's `act` says which. The payload carries the release, the submission id, the kind, the state, the version and the act, and never the reason (ReARM Pro) |
-| `RELEASE_SUBMISSION_WITHDRAWN` | A [regulatory submission](../workflows/regulatory-packages) is withdrawn. The same payload, never the reason (ReARM Pro) |
+| `RELEASE_SUBMISSION_WITHDRAWN` | A [regulatory submission](../workflows/regulatory-packages) version is cancelled (act `CANCEL`) or a Sent version is withdrawn at FDA (act `WITHDRAW`). The same payload, never the reason (ReARM Pro) |
 
 ## Filters, severity, and routes
 

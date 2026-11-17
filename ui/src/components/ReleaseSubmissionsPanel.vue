@@ -18,9 +18,12 @@
                         by <span data-testid="submission-actor" :title="headOf(k).lastActBy ?? ''">{{
                             submissionActorText(headOf(k).lastActByName, headOf(k).lastActBy) }}</span>
                     </span>
-                    <div v-if="submissionCancelNote(headOf(k))" class="submission-withdrawn">
-                        {{ submissionCancelNote(headOf(k))?.lead }}
-                        <span data-testid="submission-withdraw-reason" style="white-space: pre-wrap;">{{ submissionCancelNote(headOf(k))?.reason }}</span>
+                    <div v-if="submissionSentLine(headOf(k))" data-testid="submission-sent-line" class="submission-sent-line">
+                        {{ submissionSentLine(headOf(k)) }}
+                    </div>
+                    <div v-if="submissionStateNote(headOf(k))" class="submission-withdrawn">
+                        {{ submissionStateNote(headOf(k))?.lead }}
+                        <span data-testid="submission-withdraw-reason" style="white-space: pre-wrap;">{{ submissionStateNote(headOf(k))?.reason }}</span>
                     </div>
                 </template>
                 <span v-else class="text-muted" style="margin-left: 8px;">No submission</span>
@@ -28,8 +31,19 @@
                     <n-button v-if="!draftOf(k)" size="tiny" data-testid="draft-start" :loading="acts.busy.value"
                         :disabled="acts.busy.value || !canCreate" :title="canCreate ? '' : CREATE_LIFECYCLE_REASON"
                         @click="startDraft(k)">Start draft</n-button>
+                    <n-button v-if="submissionSentActs(headOf(k)).recordSent" size="tiny" type="primary" data-testid="submission-record-sent"
+                        :disabled="acts.busy.value" @click="openRecordSentForm(k)">Record as sent</n-button>
                     <n-button v-if="headOf(k)?.state === 'FINAL'" size="tiny" type="error" data-testid="submission-cancel"
                         :disabled="acts.busy.value" @click="acts.cancel(headOf(k), actNames)">Cancel</n-button>
+                    <template v-if="submissionSentActs(headOf(k)).sentActs">
+                        <n-button size="tiny" data-testid="submission-add-fda-number" :disabled="acts.busy.value"
+                            @click="acts.addFdaNumber(headOf(k))">Add FDA number</n-button>
+                        <n-button size="tiny" data-testid="submission-add-timeline" :disabled="acts.busy.value"
+                            @click="openTimelineForm(k)">Add timeline entry</n-button>
+                        <n-dropdown trigger="click" :options="MORE_OPTIONS" :disabled="acts.busy.value" @select="(key: string) => moreSelected(k, key)">
+                            <n-button size="tiny" data-testid="submission-more" :disabled="acts.busy.value">More</n-button>
+                        </n-dropdown>
+                    </template>
                     <n-button v-if="shareState(k).shown" size="tiny" data-testid="submission-share"
                         :disabled="shareState(k).disabled" :title="shareState(k).title" @click="share(k)">{{ TEA_SHARE_BUTTON }}</n-button>
                 </n-space>
@@ -40,6 +54,16 @@
                 :lifecycle="lifecycle" :head="headOf(k)" @rebuild="acts.rebuild(draftOf(k))" @discard="acts.discard(draftOf(k), actNames)"
                 @confirm="acts.confirm(draftOf(k), actNames)" @return="acts.returnToEditing(draftOf(k), actNames)"
                 @finalize="acts.finalize(draftOf(k), actNames, secondConfirmer)" @refresh="read" @fix="(verb: string) => fix(k, verb)" />
+            <!-- The regulatory story of the head (FDAW-10 3.7): its sent, number, timeline, amend, supersede,
+                 withdraw and cancel acts by their day, from the acts' snapshots only. -->
+            <div v-if="timelineOf(k).length" class="submission-timeline" :data-testid="'submission-timeline-' + k">
+                <div class="submission-latest-heading">Timeline</div>
+                <div v-for="line in timelineOf(k)" :key="line.key" data-testid="submission-timeline-line" class="submission-timeline-line">
+                    {{ line.when }} &middot; {{ line.label }}<template v-if="line.details">: <span style="white-space: pre-wrap;">{{
+                        line.details }}</span></template><template v-if="line.by"> by <span data-testid="submission-actor"
+                        :title="line.actor ?? ''">{{ line.by }}</span></template>
+                </div>
+            </div>
             <!-- The newest version's parts, downloads and manifest in the open, without the chevron
                  (task FDAW-4, B13): after Finalize the re-read moves it to the new version. -->
             <div v-if="latestOf(k)" class="submission-latest" :data-testid="'submission-latest-' + k">
@@ -115,6 +139,77 @@
                 </n-space>
             </template>
         </n-modal>
+
+        <!-- Record as sent (FDAW-10 3.7): the version shown, the sent date, the submission type and an optional FDA number. -->
+        <n-modal :show="recordSentForm !== null" preset="card" title="Record as sent" style="max-width: 560px" data-testid="submission-record-sent-modal"
+            :mask-closable="!acts.busy.value" @update:show="(v: boolean) => { if (!v) closeSentForms() }">
+            <div v-if="recordSentForm" data-testid="submission-record-sent-form">
+                <p class="text-muted">Records v{{ recordSentForm.head?.latestVersion }} as sent to FDA.</p>
+                <n-space vertical>
+                    <n-date-picker data-testid="record-sent-date" v-model:formatted-value="recordSentForm.form.sentDate" type="date"
+                        value-format="yyyy-MM-dd" placeholder="Sent date" />
+                    <n-select data-testid="record-sent-type" v-model:value="recordSentForm.form.submissionType" :options="FDA_TYPE_OPTIONS"
+                        placeholder="Submission type" />
+                    <n-input data-testid="record-sent-number" v-model:value="recordSentForm.form.fdaNumber" :maxlength="SUBMISSION_FDA_NUMBER_MAX"
+                        placeholder="FDA number (optional)" />
+                    <div v-if="recordSentError" data-testid="record-sent-problem" class="text-muted">{{ recordSentError }}</div>
+                </n-space>
+            </div>
+            <template #footer>
+                <n-space justify="end">
+                    <n-button data-testid="record-sent-cancel" :disabled="acts.busy.value" @click="closeSentForms">Cancel</n-button>
+                    <n-button data-testid="record-sent-confirm" type="primary" :loading="acts.busy.value"
+                        :disabled="Boolean(recordSentError) || acts.busy.value" @click="confirmRecordSent">Record as sent</n-button>
+                </n-space>
+            </template>
+        </n-modal>
+
+        <!-- Add timeline entry (FDAW-10 3.7): the kind, the date, FDA's decision for a decision entry only, an optional note. -->
+        <n-modal :show="timelineForm !== null" preset="card" title="Add timeline entry" style="max-width: 560px" data-testid="submission-timeline-modal"
+            :mask-closable="!acts.busy.value" @update:show="(v: boolean) => { if (!v) closeSentForms() }">
+            <div v-if="timelineForm" data-testid="submission-timeline-form">
+                <n-space vertical>
+                    <n-select data-testid="timeline-kind" v-model:value="timelineForm.form.entryKind" :options="TIMELINE_KIND_OPTIONS"
+                        placeholder="Entry" />
+                    <n-date-picker data-testid="timeline-date" v-model:formatted-value="timelineForm.form.entryDate" type="date"
+                        value-format="yyyy-MM-dd" placeholder="Entry date" />
+                    <n-select v-if="timelineForm.form.entryKind === 'DECISION'" data-testid="timeline-decision"
+                        v-model:value="timelineForm.form.decision" :options="DECISION_OPTIONS" placeholder="Decision" />
+                    <n-input data-testid="timeline-note" v-model:value="timelineForm.form.note" type="textarea" :rows="3"
+                        :maxlength="SUBMISSION_REASON_MAX" show-count placeholder="Note (optional)" />
+                    <div v-if="timelineError" data-testid="timeline-problem" class="text-muted">{{ timelineError }}</div>
+                </n-space>
+            </div>
+            <template #footer>
+                <n-space justify="end">
+                    <n-button data-testid="timeline-cancel" :disabled="acts.busy.value" @click="closeSentForms">Cancel</n-button>
+                    <n-button data-testid="timeline-confirm" type="primary" :loading="acts.busy.value"
+                        :disabled="Boolean(timelineError) || acts.busy.value" @click="confirmTimeline">Add entry</n-button>
+                </n-space>
+            </template>
+        </n-modal>
+
+        <!-- Withdraw (FDAW-10 3.7): the Sent version, the withdrawal date and a required reason. -->
+        <n-modal :show="withdrawForm !== null" preset="card" title="Withdraw at FDA" style="max-width: 560px" data-testid="submission-withdraw-modal"
+            :mask-closable="!acts.busy.value" @update:show="(v: boolean) => { if (!v) closeSentForms() }">
+            <div v-if="withdrawForm" data-testid="submission-withdraw-form">
+                <p class="text-muted">Withdraws the Sent version v{{ withdrawForm.head?.currentSentVersion }} at FDA.</p>
+                <n-space vertical>
+                    <n-date-picker data-testid="withdraw-date" v-model:formatted-value="withdrawForm.form.withdrawnDate" type="date"
+                        value-format="yyyy-MM-dd" placeholder="Withdrawal date" />
+                    <n-input data-testid="withdraw-reason" v-model:value="withdrawForm.form.reason" type="textarea" :rows="3"
+                        :maxlength="SUBMISSION_REASON_MAX" show-count placeholder="Reason (required)" />
+                    <div v-if="withdrawError" data-testid="withdraw-problem" class="text-muted">{{ withdrawError }}</div>
+                </n-space>
+            </div>
+            <template #footer>
+                <n-space justify="end">
+                    <n-button data-testid="withdraw-cancel" :disabled="acts.busy.value" @click="closeSentForms">Cancel</n-button>
+                    <n-button data-testid="withdraw-confirm" type="error" :loading="acts.busy.value"
+                        :disabled="Boolean(withdrawError) || acts.busy.value" @click="confirmWithdraw">Withdraw</n-button>
+                </n-space>
+            </template>
+        </n-modal>
     </div>
 </template>
 
@@ -130,7 +225,7 @@
 // file names and the manifest are text bindings; downloads go through the one URL builder with the
 // record's uuid and integer version (design 3.5.2).
 import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { NAlert, NButton, NDataTable, NInput, NModal, NSelect, NSpace, NTag, useNotification } from 'naive-ui'
+import { NAlert, NButton, NDataTable, NDatePicker, NDropdown, NInput, NModal, NSelect, NSpace, NTag, useNotification } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
 import submissionQueries from '@/utils/submissionQueries'
@@ -138,9 +233,12 @@ import { graphqlErrorEntries, graphqlRefusalText } from '@/utils/graphqlErrorTex
 import { packageKindLabel } from '@/utils/packageSettings'
 import { labelOrHumanized, REQUIREMENT_LABELS } from '@/utils/fdaLabels'
 import {
-    CREATE_LIFECYCLE_REASON, FIRST_VERSION_REASON, SUBMISSION_REASON_MAX, canCreateSubmission,
-    manifestDownloadRef, submissionActorText, submissionCancelNote, submissionLastActWord, submissionPartRows, submissionStateTagType,
-    submissionStateText, submissionVersionRows, componentTypeWord,
+    CREATE_LIFECYCLE_REASON, FDA_DECISION_LABELS, FDA_SUBMISSION_TYPE_LABELS, FIRST_VERSION_REASON, SUBMISSION_FDA_NUMBER_MAX,
+    SUBMISSION_REASON_MAX, TIMELINE_ENTRY_KIND_LABELS, canCreateSubmission, localDayOf, manifestDownloadRef, recordSentProblem,
+    recordSentVariables, submissionActorText, submissionLastActWord, submissionPartRows, submissionSentActs, submissionSentLine,
+    submissionStateNote, submissionStateTagType, submissionStateText, submissionTimelineLines, submissionVersionRows,
+    submissionVersionStateText, timelineEntryProblem, timelineEntryVariables, withdrawSentProblem, withdrawSentVariables,
+    componentTypeWord, type RecordSentForm, type TimelineEntryForm, type WithdrawSentForm,
 } from '@/utils/submissions'
 import {
     DRAFT_NOT_FOUND, DRAFT_POLL_FAST_MAX, DRAFT_POLL_SLOW_MS, REPLACES_UNREAD, confirmationRecordLine, draftJobInFlight,
@@ -319,6 +417,65 @@ async function confirmStartForm () {
     const started = await acts.start(props.releaseUuid as string, form.kind, { reasonCategory: form.reasonCategory as string,
         reasonText: form.reasonText, replaces: form.replaces })
     if (started && startForm.value === form) startForm.value = null
+}
+
+// The forms of the acts on a Final or Sent head (FDAW-10 3.7): each holds the head as read when it opened, and
+// sends through useSubmissionActs; a refused act keeps the form open with the server's sentence in its dialog.
+const optionsOf = (table: Record<string, string>) => Object.entries(table).map(([value, label]) => ({ label, value }))
+const FDA_TYPE_OPTIONS = optionsOf(FDA_SUBMISSION_TYPE_LABELS)
+const TIMELINE_KIND_OPTIONS = optionsOf(TIMELINE_ENTRY_KIND_LABELS)
+const DECISION_OPTIONS = optionsOf(FDA_DECISION_LABELS)
+const MORE_OPTIONS = [{ label: 'Withdraw', key: 'withdraw' }]
+const recordSentForm = ref<{ head: any, form: RecordSentForm } | null>(null)
+const timelineForm = ref<{ head: any, form: TimelineEntryForm } | null>(null)
+const withdrawForm = ref<{ head: any, form: WithdrawSentForm } | null>(null)
+const recordSentError = computed(() => recordSentForm.value ? recordSentProblem(recordSentForm.value.form) : null)
+const timelineError = computed(() => timelineForm.value ? timelineEntryProblem(timelineForm.value.form) : null)
+const withdrawError = computed(() => withdrawForm.value ? withdrawSentProblem(withdrawForm.value.form) : null)
+
+function openRecordSentForm (kind: string) {
+    recordSentForm.value = reactive({ head: headOf(kind), form: { sentDate: localDayOf(Date.now()), submissionType: null, fdaNumber: '' } })
+}
+
+function openTimelineForm (kind: string) {
+    timelineForm.value = reactive({ head: headOf(kind), form: { entryKind: null, entryDate: localDayOf(Date.now()), decision: null, note: '' } })
+}
+
+function openWithdrawForm (kind: string) {
+    withdrawForm.value = reactive({ head: headOf(kind), form: { withdrawnDate: localDayOf(Date.now()), reason: '' } })
+}
+
+function moreSelected (kind: string, key: string) {
+    if (key === 'withdraw') openWithdrawForm(kind)
+}
+
+function closeSentForms () {
+    if (acts.busy.value) return
+    recordSentForm.value = null
+    timelineForm.value = null
+    withdrawForm.value = null
+}
+
+async function confirmRecordSent () {
+    const f = recordSentForm.value
+    if (!f || recordSentError.value || acts.busy.value) return
+    if (await acts.recordSent(recordSentVariables(f.head, f.form)) && recordSentForm.value === f) recordSentForm.value = null
+}
+
+async function confirmTimeline () {
+    const f = timelineForm.value
+    if (!f || timelineError.value || acts.busy.value) return
+    if (await acts.addTimelineEntry(timelineEntryVariables(f.head, f.form)) && timelineForm.value === f) timelineForm.value = null
+}
+
+async function confirmWithdraw () {
+    const f = withdrawForm.value
+    if (!f || withdrawError.value || acts.busy.value) return
+    if (await acts.withdrawSent(withdrawSentVariables(f.head, f.form)) && withdrawForm.value === f) withdrawForm.value = null
+}
+
+function timelineOf (kind: string) {
+    return submissionTimelineLines(headOf(kind))
 }
 
 /** Writes the release's narrative when the text changes it; false (the error shown) when the write fails. */
@@ -547,6 +704,8 @@ function versionColumns (kind: string) {
     return [
         { type: 'expand' as const, renderExpand: (row: any) => versionDetail(kind, row.versionObject) },
         { key: 'version', title: 'Version', render: (r: any) => 'v' + r.version },
+        { key: 'state', title: 'State', render: (r: any) => h('span', { 'data-testid': 'submission-version-state' },
+            submissionVersionStateText(headOf(kind), r.versionObject)) },
         { key: 'createdDate', title: 'Created', render: (r: any) => dateText(r.createdDate) },
         { key: 'createdBy', title: 'By', render: (r: any) => r.createdBy
             ? h('span', { 'data-testid': 'submission-actor', title: r.createdBy }, submissionActorText(r.createdByName, r.createdBy))
@@ -689,7 +848,8 @@ function pollDraft (uuid: string): Promise<boolean> {
 async function tick () {
     pollTimer = null
     if (unmounted) return
-    if (document.hidden || acts.busy.value || startForm.value !== null || pending.value !== null) {
+    if (document.hidden || acts.busy.value || startForm.value !== null || pending.value !== null || recordSentForm.value !== null
+        || timelineForm.value !== null || withdrawForm.value !== null) {
         schedulePoll()
         return
     }
@@ -750,6 +910,12 @@ defineExpose({ read })
 }
 .submission-package-message {
     margin-top: 6px;
+}
+.submission-sent-line {
+    margin-top: 2px;
+}
+.submission-timeline {
+    margin-bottom: 0.5rem;
 }
 .narrative-heading {
     font-weight: 600;

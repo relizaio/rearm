@@ -346,6 +346,39 @@ describe('ProductSubmissionsPanel: state filter (FDAW-63)', () => {
     })
 })
 
+// FDAW-10 row 18a (F-14): the product page prints the head's tag by the one state text, from the fields the
+// shared head fragment selects: the declared day, the FDA number and the replacing release.
+describe('ProductSubmissionsPanel: the state texts after Record as sent (FDAW-10 row 18a)', () => {
+    const SENT_HEADS = [
+        { uuid: 's1', release: 'r1', releaseVersion: '1.0.0', kind: 'FDA_PREMARKET', state: 'SENT', latestVersion: 1, currentSentVersion: 1,
+            fdaNumber: 'K263456', versionStates: [{ version: 1, state: 'SENT', sentDate: '2026-11-15' }] },
+        { uuid: 's3', release: 'r3', releaseVersion: '0.8.0', kind: 'FDA_PREMARKET', state: 'WITHDRAWN', latestVersion: 1,
+            withdrawnDate: '2026-01-01T00:00:00Z', versionStates: [{ version: 1, state: 'WITHDRAWN', sentDate: '2026-11-15', withdrawnDate: '2026-11-20' }] },
+        { uuid: 's2', release: 'r2', releaseVersion: '1.1.0', kind: 'FDA_PREMARKET', state: 'SUPERSEDED', latestVersion: 1,
+            versionStates: [{ version: 1, state: 'SUPERSEDED', replacedBy: { releaseVersion: '2.4.1', version: 1 } }] },
+    ]
+
+    beforeEach(() => {
+        query.mockReset()
+        failing = false
+        enabledKinds = ['FDA_PREMARKET']
+        kindsFailing = false
+        answers()
+        const base = query.getMockImplementation()!
+        query.mockImplementation(async (opts: any) => operation(opts) === 'SubmissionsOfComponent'
+            ? { data: { submissionsOfComponent: SENT_HEADS } } : base(opts))
+    })
+
+    it('SENT with its day and number, WITHDRAWN with the entry\'s day, SUPERSEDED by the replacing release', async () => {
+        const { w } = await mountPanel()
+        const tag = (version: string) => rowOf(w, version).find('[data-testid="submission-state"]').text()
+        expect(tag('1.0.0')).toBe('Sent to FDA 2026-11-15 (K263456)')
+        expect(tag('0.8.0')).toBe('Withdrawn at FDA 2026-11-20')
+        expect(tag('1.1.0')).toBe('Superseded by 2.4.1 v1')
+        w.unmount()
+    })
+})
+
 // Task FDAW-4 (B18, T6, T7): the draft link (FDAW-32; Create before it) only for a kind switched on for the product; otherwise what to set
 // up, with a link to the settings modal's pane. FDAW-18 (row 20): the link opens the Medical device pane.
 describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {

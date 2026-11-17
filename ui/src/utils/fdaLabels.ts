@@ -232,6 +232,12 @@ export function submissionHistoryShape (row: any): { action: string, text: strin
     if (rua === 'CHANGED' && o?.state === 'CANCELLED' && o.version == null && n?.state && n.version != null) {
         return { action: 'Created', text: 'Regulatory submission: version ' + n.version + ' created after a cancellation' }
     }
+    // FDAW-10 3.7: a version recorded as sent (FINAL v1 -> SENT v1) or superseded by a replacement (SENT v1 ->
+    // SUPERSEDED v1): the same version in a new state.
+    if (rua === 'CHANGED' && o?.state && o.version != null && n?.state && n.version === o.version) {
+        const word = stateLower(n.state)
+        return { action: capitalized(word), text: 'Regulatory submission: version ' + n.version + ' ' + word }
+    }
     if (rua === 'REMOVED' && o?.state && o.version != null && n?.state && n.version == null) {
         const word = stateLower(n.state)
         return { action: capitalized(word), text: 'Regulatory submission: version ' + o.version + ' ' + word }

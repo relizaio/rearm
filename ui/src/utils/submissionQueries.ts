@@ -51,8 +51,11 @@ const SUBMISSION_HEAD_GQL = `
     withdrawReason
     legacyState
     currentSentVersion
-    versionStates { version state byVersion }
-    acts { uuid kind cause version actedAt actor actorName reasonText }
+    fdaNumber
+    fdaSubmissionType
+    versionStates { version state byVersion sentDate withdrawnDate replacedBy { releaseVersion version } }
+    acts { uuid kind cause version actedAt actor actorName reasonText causedBy declaredDate submissionType fdaNumber previousFdaNumber
+        entryKind decision byVersion replacedBy { releaseVersion version } }
     settings { ${SUBMISSION_REF_GQL} }
 `
 
@@ -146,6 +149,29 @@ mutation CancelSubmission($submission: ID!, $reason: String!) {
     cancelSubmission(submission: $submission, reason: $reason) { ${DRAFT_ACT_RESULT_GQL} }
 }`
 
+// The four acts on a Final or Sent head (FDAW-10 3.7): people-only, user schema; never `outcome`.
+const RECORD_SUBMISSION_SENT = gql`
+mutation RecordSubmissionSent($submission: ID!, $version: Int!, $sentDate: String!, $submissionType: FdaSubmissionType!, $fdaNumber: String) {
+    recordSubmissionSent(submission: $submission, version: $version, sentDate: $sentDate, submissionType: $submissionType,
+        fdaNumber: $fdaNumber) { ${DRAFT_ACT_RESULT_GQL} }
+}`
+
+const ADD_FDA_NUMBER = gql`
+mutation AddFdaNumber($submission: ID!, $fdaNumber: String!, $reason: String) {
+    addFdaNumber(submission: $submission, fdaNumber: $fdaNumber, reason: $reason) { ${DRAFT_ACT_RESULT_GQL} }
+}`
+
+const ADD_TIMELINE_ENTRY = gql`
+mutation AddTimelineEntry($submission: ID!, $entryKind: TimelineEntryKind!, $entryDate: String!, $decision: FdaDecision, $note: String) {
+    addTimelineEntry(submission: $submission, entryKind: $entryKind, entryDate: $entryDate, decision: $decision,
+        note: $note) { ${DRAFT_ACT_RESULT_GQL} }
+}`
+
+const WITHDRAW_SUBMISSION = gql`
+mutation WithdrawSubmission($submission: ID!, $withdrawnDate: String!, $reason: String!) {
+    withdrawSubmission(submission: $submission, withdrawnDate: $withdrawnDate, reason: $reason) { ${DRAFT_ACT_RESULT_GQL} }
+}`
+
 // The organization's second-confirmer setting (FDAW-32 3.9): its own read, filtered by uuid in the client, and
 // a one-field patch. Sent with no-cache: Settings has no key field, so a partial selection in the cache would
 // replace the cached organization's settings.
@@ -198,4 +224,8 @@ export default {
     ReleaseRegulatoryPackageKindsGql: RELEASE_REGULATORY_PACKAGE_KINDS,
     ComponentRegulatoryPackageKindsGql: COMPONENT_REGULATORY_PACKAGE_KINDS,
     SubmissionVersionCheckRerunGql: SUBMISSION_VERSION_CHECK_RERUN,
+    RecordSubmissionSentGql: RECORD_SUBMISSION_SENT,
+    AddFdaNumberGql: ADD_FDA_NUMBER,
+    AddTimelineEntryGql: ADD_TIMELINE_ENTRY,
+    WithdrawSubmissionGql: WITHDRAW_SUBMISSION,
 }

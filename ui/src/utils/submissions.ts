@@ -94,23 +94,134 @@ function newestVersionOf (head: any): any {
     return (head?.versions ?? []).find((v: any) => v?.version === head?.latestVersion) ?? null
 }
 
+/** The FDA submission type a version was recorded as sent under (FdaSubmissionType), in the Pro enum's order (FDAW-10 3.7). */
+export const FDA_SUBMISSION_TYPE_LABELS: Record<string, string> = {
+    K510_TRADITIONAL: '510(k) Traditional',
+    K510_SPECIAL: '510(k) Special',
+    K510_ABBREVIATED: '510(k) Abbreviated',
+    DE_NOVO: 'De Novo',
+    PMA: 'PMA',
+    PMA_SUPPLEMENT: 'PMA supplement',
+    PDP: 'PDP',
+    HDE: 'HDE',
+    PRE_SUBMISSION: 'Pre-Submission',
+}
+
+/** What a timeline entry on a Sent version records (TimelineEntryKind). */
+export const TIMELINE_ENTRY_KIND_LABELS: Record<string, string> = {
+    AI_REQUEST_RECEIVED: 'AI request received',
+    RESPONSE_SENT: 'Response sent',
+    DECISION: 'Decision',
+}
+
+/** FDA's decision on a DECISION timeline entry (FdaDecision). */
+export const FDA_DECISION_LABELS: Record<string, string> = {
+    CLEARED: 'Cleared',
+    NOT_CLEARED: 'Not cleared',
+}
+
+/**
+ * A declared date (a calendar day the person entered, `yyyy-MM-dd` on the wire) as the card prints it: the
+ * day itself, never through `Date`, which reads a date-only string as UTC midnight and prints the day before
+ * west of UTC (FDAW-10 3.7, functional F-1). Anything else is the empty string.
+ */
+export function submissionDayText (d: string | null | undefined): string {
+    return typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ''
+}
+
+/** The browser's local day of an instant, `yyyy-MM-dd` (never the UTC day of toISOString). */
+export function localDayOf (instant: number | string | Date): string {
+    const d = new Date(instant)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+}
+
+/** The head's versionStates entry of version n, or null. */
+export function submissionVersionStateOf (head: any, n: number | null | undefined): any {
+    if (n == null) return null
+    return (head?.versionStates ?? []).find((e: any) => e?.version === n) ?? null
+}
+
+/** " (K263456)" when the head holds an FDA number, else ''. */
+function fdaNumberSuffix (head: any): string {
+    return head?.fdaNumber ? ' (' + head.fdaNumber + ')' : ''
+}
+
+/** "Superseded by 2.4.1 v1" from replacedBy, else "Superseded by v<byVersion>"; the label alone without either. */
+function supersededText (entry: any): string {
+    const r = entry?.replacedBy
+    if (r && r.version != null) return 'Superseded by ' + (r.releaseVersion ? r.releaseVersion + ' ' : '') + 'v' + r.version
+    if (entry?.byVersion != null) return 'Superseded by v' + entry.byVersion
+    return labelOf(SUBMISSION_STATE_LABELS, 'SUPERSEDED')
+}
+
+/**
+ * The text of one version's state from its versionStates entry (FDAW-10 3.7): SENT "Sent to FDA <sentDate>"
+ * with the head's FDA number, WITHDRAWN "Withdrawn at FDA <withdrawnDate>", AMENDED "Amended by v<n>",
+ * SUPERSEDED as supersededText; null for any other state (the caller keeps its own text). Every date is a
+ * declared day through submissionDayText.
+ */
+function versionEntryText (head: any, entry: any, state: string | null | undefined): string | null {
+    if (state === 'SENT') {
+        const day = submissionDayText(entry?.sentDate)
+        return 'Sent to FDA' + (day ? ' ' + day : '') + fdaNumberSuffix(head)
+    }
+    if (state === 'WITHDRAWN') {
+        const day = submissionDayText(entry?.withdrawnDate)
+        return 'Withdrawn at FDA' + (day ? ' ' + day : '')
+    }
+    if (state === 'AMENDED') {
+        return entry?.byVersion != null ? 'Amended by v' + entry.byVersion : labelOf(SUBMISSION_STATE_LABELS, state)
+    }
+    if (state === 'SUPERSEDED') return supersededText(entry)
+    return null
+}
+
+/** The FINAL text from one version's confirmations (written by Finalize) and the head's legacy state. */
+function finalText (head: any, version: any): string {
+    const confirmations = version?.confirmations
+    if (Array.isArray(confirmations) && confirmations.length > 0) return 'Final - not sent'
+    return head?.legacyState === 'ACTIVE' ? 'Final (legacy, no confirmation record) - not sent'
+        : 'Final (no confirmation record) - not sent'
+}
+
 /**
  * The head's state as its tag reads (FDAW-8). A FINAL head whose newest version holds a confirmation
  * (written by Finalize) is `Final - not sent` (FDAW-32 3.3); one without is said to have no confirmation
- * record; a head the FINAL/CANCELLED migration moved says so.
+ * record; a head the FINAL/CANCELLED migration moved says so. SENT, WITHDRAWN, AMENDED and SUPERSEDED read
+ * their date, number and replacement from the versionStates entry of latestVersion (FDAW-10 3.7), never from
+ * the legacy head fields.
  */
 export function submissionStateText (head: any): string {
     const state = head?.state
-    if (state === 'FINAL') {
-        const confirmations = newestVersionOf(head)?.confirmations
-        if (Array.isArray(confirmations) && confirmations.length > 0) return 'Final - not sent'
-        return head?.legacyState === 'ACTIVE' ? 'Final (legacy, no confirmation record) - not sent'
-            : 'Final (no confirmation record) - not sent'
-    }
+    if (state === 'FINAL') return finalText(head, newestVersionOf(head))
     if (state === 'CANCELLED' && head?.legacyState === 'WITHDRAWN') {
         return 'Cancelled (legacy: withdrawn ' + submissionDateText(head?.withdrawnDate) + ')'
     }
-    return labelOf(SUBMISSION_STATE_LABELS, state)
+    const text = versionEntryText(head, submissionVersionStateOf(head, head?.latestVersion), state)
+    return text ?? labelOf(SUBMISSION_STATE_LABELS, state)
+}
+
+/**
+ * The State cell of one row of the version history (FDAW-10 3.7): the version's versionStates entry with the
+ * texts of the head's tag; FINAL from that version's own confirmations; nothing when the head lists no entry.
+ */
+export function submissionVersionStateText (head: any, version: any): string {
+    const entry = submissionVersionStateOf(head, version?.version)
+    if (!entry) return ''
+    if (entry.state === 'FINAL') return finalText(head, version)
+    return versionEntryText(head, entry, entry.state) ?? labelOf(SUBMISSION_STATE_LABELS, entry.state)
+}
+
+/**
+ * The line under a head whose current Sent version is an earlier one (FDAW-10 3.7, functional F-4):
+ * "v<m> sent to FDA <sentDate>" with the FDA number; null when no version is Sent or the latest is the Sent one.
+ */
+export function submissionSentLine (head: any): string | null {
+    const m = head?.currentSentVersion
+    if (m == null || m === head?.latestVersion) return null
+    const day = submissionDayText(submissionVersionStateOf(head, m)?.sentDate)
+    return 'v' + m + ' sent to FDA' + (day ? ' ' + day : '') + fdaNumberSuffix(head)
 }
 
 /** The tag type of a head's state: settled states green, cancelled or withdrawn ones amber. */
@@ -120,26 +231,180 @@ export function submissionStateTagType (state: string | null | undefined): 'succ
     return 'default'
 }
 
+/** The name of an act's actor by the one rule of the package screens (FDAW-4, B14, D8). */
+function actNameOf (head: any, act: any): string {
+    // The act's snapshot name; for a member with no stored name who is also the head's last actor, the
+    // head's server-resolved name (functional F-3); else 'removed user'. Never the uuid.
+    const name = act?.actorName || (act?.actor && act.actor === head?.lastActBy ? head?.lastActByName : null)
+    return submissionActorText(name, act?.actor)
+}
+
+/** The newest act of a kind whose version is the head's latestVersion (a strict comparison), or null. */
+function newestActOnLatest (head: any, kind: string): any {
+    const acts = (head?.acts ?? []).filter((a: any) => a?.kind === kind && a?.version === head?.latestVersion)
+    return acts.length ? acts[acts.length - 1] : null
+}
+
 /**
- * The note under a cancelled head: the newest CANCEL act's date, actor and reason, or, for a head
- * withdrawn before the migration (no CANCEL act), the read-only withdrawal triple. Null otherwise.
+ * The note under a head (FDAW-10 3.7, functional F-2): the act that made the head's current state, on the
+ * latest version. CANCELLED: the newest CANCEL act of latestVersion, or, for a head cancelled before the
+ * migration (no such act), the read-only withdrawal triple; WITHDRAWN: the newest WITHDRAW act of
+ * latestVersion with its declared day. Null otherwise. A WITHDRAWN head never reads the legacy triple: V107
+ * moved every legacy withdrawal to CANCELLED.
  */
-export function submissionCancelNote (head: any): { lead: string, reason: string } | null {
-    if (head?.state !== 'CANCELLED' && head?.state !== 'WITHDRAWN') return null
-    const cancels = (head?.acts ?? []).filter((a: any) => a?.kind === 'CANCEL')
-    const last = cancels.length ? cancels[cancels.length - 1] : null
-    if (last) {
-        // The canceller by the one rule of the package screens (FDAW-4, B14, D8): the act's snapshot
-        // name; for a member with no stored name who is also the head's last actor, the head's
-        // server-resolved name (functional F-3); else 'removed user'. Never the uuid.
-        const name = last.actorName || (last.actor && last.actor === head?.lastActBy ? head?.lastActByName : null)
-        return { lead: 'Cancelled on ' + submissionDateText(last.actedAt) + ' by ' + submissionActorText(name, last.actor) + ':',
+export function submissionStateNote (head: any): { lead: string, reason: string } | null {
+    if (head?.state === 'CANCELLED') {
+        const last = newestActOnLatest(head, 'CANCEL')
+        if (last) {
+            return { lead: 'Cancelled on ' + submissionDateText(last.actedAt) + ' by ' + actNameOf(head, last) + ':',
+                reason: last.reasonText ?? '' }
+        }
+        if (head?.withdrawnDate || head?.withdrawReason) {
+            return { lead: 'Withdrawn on ' + submissionDateText(head.withdrawnDate) + ':', reason: head.withdrawReason ?? '' }
+        }
+        return null
+    }
+    if (head?.state === 'WITHDRAWN') {
+        const last = newestActOnLatest(head, 'WITHDRAW')
+        if (!last) return null
+        return { lead: 'Withdrawn at FDA on ' + submissionDayText(last.declaredDate) + ' by ' + actNameOf(head, last) + ':',
             reason: last.reasonText ?? '' }
     }
-    if (head?.withdrawnDate || head?.withdrawReason) {
-        return { lead: 'Withdrawn on ' + submissionDateText(head.withdrawnDate) + ':', reason: head.withdrawReason ?? '' }
-    }
     return null
+}
+
+/** The acts the card's timeline shows (FDAW-10 3.7). */
+export const SUBMISSION_TIMELINE_KINDS = ['RECORD_SENT', 'FDA_NUMBER_ADDED', 'TIMELINE_ENTRY', 'AMENDED', 'SUPERSEDED', 'WITHDRAW', 'CANCEL']
+
+export interface SubmissionTimelineLine {
+    key: string
+    when: string
+    label: string
+    details: string
+    by: string
+    actor: string | null
+}
+
+/** The details of one timeline act: type and number, old and new number, entry kind, decision, note, replacement, reason. */
+function timelineDetails (a: any): string {
+    switch (a?.kind) {
+    case 'RECORD_SENT':
+        return ['v' + (a.version ?? ''), labelOf(FDA_SUBMISSION_TYPE_LABELS, a.submissionType), a.fdaNumber ?? ''].filter(Boolean).join(', ')
+    case 'FDA_NUMBER_ADDED':
+        return [(a.previousFdaNumber ? a.previousFdaNumber + ' -> ' : '') + (a.fdaNumber ?? ''), a.reasonText ?? ''].filter(Boolean).join(': ')
+    case 'TIMELINE_ENTRY':
+        return [labelOf(TIMELINE_ENTRY_KIND_LABELS, a.entryKind), labelOf(FDA_DECISION_LABELS, a.decision), a.reasonText ?? '']
+            .filter(Boolean).join(': ')
+    case 'AMENDED':
+        return 'v' + (a.version ?? '') + (a.byVersion != null ? ' by v' + a.byVersion : '')
+    case 'SUPERSEDED': {
+        const r = a.replacedBy
+        const by = r && r.version != null ? ' by ' + (r.releaseVersion ? r.releaseVersion + ' ' : '') + 'v' + r.version
+            : (a.byVersion != null ? ' by v' + a.byVersion : '')
+        return 'v' + (a.version ?? '') + by
+    }
+    case 'WITHDRAW':
+    case 'CANCEL':
+        return ['v' + (a.version ?? ''), a.reasonText ?? ''].filter(Boolean).join(': ')
+    default:
+        return ''
+    }
+}
+
+/**
+ * The card's timeline (FDAW-10 3.7, functional F-10): the head's acts of SUBMISSION_TIMELINE_KINDS, one line
+ * each, by the act's day, oldest first, ties in the served order (a stable sort). The day of an act is its
+ * declaredDate; for a SYSTEM act caused by an act in the list, that act's day; else the local day of actedAt.
+ * A dated act prints its declared day, an undated one its actedAt; a USER act names its actor from the
+ * act's snapshot, a SYSTEM act no one.
+ */
+export function submissionTimelineLines (head: any): SubmissionTimelineLine[] {
+    const acts: any[] = (head?.acts ?? []).filter((a: any) => SUBMISSION_TIMELINE_KINDS.includes(a?.kind))
+    const byUuid = new Map(acts.filter(a => a?.uuid).map(a => [a.uuid, a]))
+    const ownDay = (a: any): string => submissionDayText(a?.declaredDate)
+    const dayOf = (a: any): string => {
+        const own = ownDay(a)
+        if (own) return own
+        const cause = a?.causedBy ? byUuid.get(a.causedBy) : null
+        if (cause) return ownDay(cause) || (cause.actedAt ? localDayOf(cause.actedAt) : '')
+        return a?.actedAt ? localDayOf(a.actedAt) : ''
+    }
+    const days = new Map(acts.map(a => [a, dayOf(a)]))
+    return [...acts].sort((x, y) => (days.get(x)! < days.get(y)! ? -1 : days.get(x)! > days.get(y)! ? 1 : 0)).map((a, i) => ({
+        key: a?.uuid ?? String(i),
+        when: ownDay(a) || submissionDateText(a?.actedAt),
+        label: labelOf(SUBMISSION_ACT_KIND_LABELS, a?.kind),
+        details: timelineDetails(a),
+        by: a?.cause === 'USER' ? submissionActorText(a?.actorName, a?.actor) : '',
+        actor: a?.cause === 'USER' ? (a?.actor ?? null) : null,
+    }))
+}
+
+export const SUBMISSION_FDA_NUMBER_MAX = 32
+
+/** The Record as sent form (FDAW-10 3.7). */
+export interface RecordSentForm { sentDate: string | null, submissionType: string | null, fdaNumber: string }
+/** The Add timeline entry form. */
+export interface TimelineEntryForm { entryKind: string | null, entryDate: string | null, decision: string | null, note: string }
+/** The Withdraw form. */
+export interface WithdrawSentForm { withdrawnDate: string | null, reason: string }
+
+function trimmed (s: string | null | undefined): string {
+    return (s ?? '').trim()
+}
+
+/** The client's check of an FDA number: its length only; the server decides the characters. */
+export function fdaNumberError (n: string | null | undefined, required: boolean): string | null {
+    const v = trimmed(n)
+    if (required && !v) return 'An FDA number is required'
+    if (v.length > SUBMISSION_FDA_NUMBER_MAX) return 'At most 32 characters'
+    return null
+}
+
+/** What stops the Record as sent form from sending: presence and lengths only (the server decides the rest). */
+export function recordSentProblem (f: RecordSentForm | null | undefined): string | null {
+    if (!f) return null
+    if (!f.sentDate) return 'A sent date is required'
+    if (!f.submissionType) return 'A submission type is required'
+    return fdaNumberError(f.fdaNumber, false)
+}
+
+/** The Record as sent variables: the version shown (the head's latestVersion as read), a blank number as null. */
+export function recordSentVariables (head: any, f: RecordSentForm): Record<string, any> {
+    return { submission: head?.uuid, version: head?.latestVersion, sentDate: f.sentDate, submissionType: f.submissionType,
+        fdaNumber: trimmed(f.fdaNumber) || null }
+}
+
+/** What stops the Add timeline entry form: the kind, the date, a decision only for DECISION, the note's length. */
+export function timelineEntryProblem (f: TimelineEntryForm | null | undefined): string | null {
+    if (!f) return null
+    if (!f.entryKind) return 'An entry kind is required'
+    if (!f.entryDate) return 'An entry date is required'
+    if (f.entryKind === 'DECISION' && !f.decision) return 'A decision is required'
+    return submissionReasonError(f.note, false)
+}
+
+/** The Add timeline entry variables: a decision only for DECISION, a blank note as null. */
+export function timelineEntryVariables (head: any, f: TimelineEntryForm): Record<string, any> {
+    return { submission: head?.uuid, entryKind: f.entryKind, entryDate: f.entryDate,
+        decision: f.entryKind === 'DECISION' ? f.decision : null, note: trimmed(f.note) || null }
+}
+
+/** What stops the Withdraw form: the date and the required reason. */
+export function withdrawSentProblem (f: WithdrawSentForm | null | undefined): string | null {
+    if (!f) return null
+    if (!f.withdrawnDate) return 'A withdrawal date is required'
+    return submissionReasonError(f.reason, true)
+}
+
+/** The Withdraw variables. */
+export function withdrawSentVariables (head: any, f: WithdrawSentForm): Record<string, any> {
+    return { submission: head?.uuid, withdrawnDate: f.withdrawnDate, reason: trimmed(f.reason) }
+}
+
+/** What the head offers once Final (FDAW-10 3.7): Record as sent on a FINAL head; the Sent acts while a version is Sent. */
+export function submissionSentActs (head: any): { recordSent: boolean, sentActs: boolean } {
+    return { recordSent: head?.state === 'FINAL', sentActs: head?.currentSentVersion != null }
 }
 
 /** The lifecycles a submission may be created at: ASSEMBLED and above (the server decides again). */
