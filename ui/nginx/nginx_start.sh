@@ -30,6 +30,23 @@ case " $TEA_CUSTOM_DOMAINS " in
 esac
 export TEA_CUSTOM_DOMAINS
 
+# Programmatic API timeout (PFA-2): default.conf.template uses PROGRAMMATIC_API_TIMEOUT as the
+# proxy_read_timeout and proxy_send_timeout, in seconds, of location /api/programmatic. Unset or
+# empty means 600, the 10 minutes the rearm CLI waits for a call. Anything but a whole number of
+# seconds from 1 to 99999 (a unit such as 10m, a sign, a space, a leading zero, 0) stops the start
+# here with one line instead of an nginx configuration error. Exported, because the image
+# entrypoint's envsubst substitutes only defined variables.
+case "$PROGRAMMATIC_API_TIMEOUT" in
+    '') PROGRAMMATIC_API_TIMEOUT=600 ;;
+esac
+case "$PROGRAMMATIC_API_TIMEOUT" in
+    *[!0-9]*|0*|??????*)
+        echo "nginx_start.sh: PROGRAMMATIC_API_TIMEOUT must be a whole number of seconds from 1 to 99999, digits only; got: $PROGRAMMATIC_API_TIMEOUT" >&2
+        exit 1
+        ;;
+esac
+export PROGRAMMATIC_API_TIMEOUT
+
 # run regular entrypoint -- exec, so nginx becomes PID 1 and can be signalled at all.
 # Without it this script stays PID 1: the kernel gives PID 1 in a namespace
 # SIGNAL_UNKILLABLE and DISCARDS any signal left at SIG_DFL, which a plain sh has, so
