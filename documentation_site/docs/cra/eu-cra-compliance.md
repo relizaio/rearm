@@ -53,7 +53,9 @@ Coverage levels used below:
 | 7.1.5 Retention of at least 10 years | Supported | Artifacts are stored with releases for long-term retention. |
 | 7.2.1, 7.2.2, 7.2.4 SBOMs and advisories for authorities, customers and integrators | Supported | The [Transparency Exchange API](../tea/) serves published SBOMs and other artifacts to the parties you authorize. VEX and VDR exports cover exploitability statements. |
 
-## Outside ReARM's scope
+## Currently outside ReARM's scope
+
+ReARM keeps these documents with each release (risk assessment, declaration of conformity, security.txt and others) and provides the affected-release and VEX data Article 14 reports draw on; drafting and submitting them stays with your organization.
 
 - **Organizational items:** CRA policy, roles, training, the conformity-assessment route, EU Declaration of Conformity, CE marking and authorised representative (checklist sections 2 and 7.3–7.4).
 - **CRA Article 14 reporting** to the Single Reporting Platform, and the reporting RACI (4.4–4.5). ReARM provides the affected-release data and VEX/VDR content those reports draw on; the submissions themselves are made by your organization.
@@ -67,6 +69,7 @@ CRA coverage will be extended in future ReARM versions. Pending items:
 - a BSI TR-03183 SBOM scoring profile, alongside the CISA 2026 and FDA profiles;
 - SBOM quality history, to track scores over time (3.2.4);
 - triage SLAs with overdue tracking, and remediation-time KPIs (4.1.3, 4.1.8);
-- a CRA Technical File regulatory package, alongside the FDA premarket package.
+- a CRA Technical File regulatory package, alongside the FDA premarket package;
+- a drafted CRA document bundle: templates for the risk assessment, EU Declaration of Conformity, vulnerability disclosure policy and Article 14 reports, filled from the data ReARM already holds.
 
 This page will be updated as these capabilities are added.
