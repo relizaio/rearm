@@ -256,6 +256,8 @@ describe('FDAW-16 row 13: readinessRows and the readiness terms of draftButtons'
         expect(D.mustFixOpen(withRows({ ...PASSED, outcome: 'ERROR' }))).toBe(1)
         expect(D.mustFixOpen(withRows(DEVICE, PASSED))).toBe(0)
         expect(D.readinessUnchecked(draft({ readiness: null }))).toBe(true)
+        // readiness absent (not only set to null) also counts as unchecked: `== null` catches undefined too
+        expect(D.readinessUnchecked(draft({ readiness: undefined }))).toBe(true)
         expect(D.readinessUnchecked(withRows())).toBe(false)
         expect(D.readinessUnchecked(draft({ readiness: null, job: { state: 'RUNNING' } }))).toBe(false)
         expect(D.readinessUnchecked(draft({ readiness: null, build: null }))).toBe(false)
