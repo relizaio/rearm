@@ -241,9 +241,10 @@ export function classifySbomScoreError (err: any): SbomScoreErrorView {
 }
 
 /** What was scored: a release export or one artifact. */
-export type SbomScoreFileKind = 'release' | 'artifact'
+// stored and now: the two reports of a regulatory package version's check re-run (FDAW-16 3.9a).
+export type SbomScoreFileKind = 'release' | 'artifact' | 'stored' | 'now'
 
-/** sbom-score-<release|artifact>-<id first 8>-<YYYY-MM-DD>.json, the date the score was taken. */
+/** sbom-score-<release|artifact|stored|now>-<id first 8>-<YYYY-MM-DD>.json, the date the score was taken. */
 export function rawReportFileName (kind: SbomScoreFileKind, id: string, now: Date = new Date()): string {
     return `sbom-score-${kind}-${id.slice(0, 8)}-${now.toISOString().slice(0, 10)}.json`
 }

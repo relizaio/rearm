@@ -51,6 +51,10 @@
                 :pagination="false" :bordered="false" size="small" @update:expanded-row-keys="(keys: any) => expanded[k] = keys" />
         </div>
 
+        <!-- The re-run of a version's check (FDAW-16 3.9a): the stored and the fresh engine report side by side. -->
+        <SubmissionCheckRerunDialog v-if="rerunOf" :show="rerunOf !== null" :submission="rerunOf.submission"
+            :version="rerunOf.version" @update:show="(v: boolean) => { if (!v) rerunOf = null }" />
+
         <!-- The assessment narrative a package of a NARRATIVE kind carries, written before the Start form opens
              (FDAW-32 3.6); the form follows the write. The organization default is a starting point only, never
              a choice a package is finalized on (FDAW-16 3.8, F-2). -->
@@ -154,7 +158,9 @@ import {
     NO_ORG_NARRATIVE, UPDATE_RELEASE_NARRATIVE_GQL, kindNeedsNarrative, narrativeChoiceError, narrativeChoiceVariables,
     narrativeInitialText,
 } from '@/utils/submissionNarrative'
+import { RERUN_CHECK_BUTTON, RERUN_CHECK_TITLE, canRerunCheck } from '@/utils/submissionCheckRerun'
 import SubmissionDraftCard from './SubmissionDraftCard.vue'
+import SubmissionCheckRerunDialog from './SubmissionCheckRerunDialog.vue'
 
 const props = withDefaults(defineProps<{
     orgUuid?: string | null
@@ -505,6 +511,19 @@ function versionDetail (kind: string, v: any) {
     ])
 }
 
+// The version whose check is re-run (FDAW-16 3.9a), or null: the dialog asks the server when it opens.
+const rerunOf = ref<{ submission: string, version: number } | null>(null)
+
+/**
+ * Re-run check on a version row that keeps a check: offered where the version's Check report part can be
+ * downloaded, as the part's own Download is; the server refuses a caller without the download right.
+ */
+function rerunCell (kind: string, r: any) {
+    if (!canRerunCheck(r.versionObject)) return ''
+    return h(NButton, { size: 'tiny', 'data-testid': 'submission-check-rerun', title: RERUN_CHECK_TITLE,
+        onClick: () => { rerunOf.value = { submission: headOf(kind)?.uuid, version: r.version } } }, () => RERUN_CHECK_BUTTON)
+}
+
 // The template's handle on versionDetail; defined once, so the inline block is not remounted per render.
 const VersionDetail = (p: { kind: string, version: any }) => versionDetail(p.kind, p.version)
 
@@ -521,6 +540,7 @@ function versionColumns (kind: string) {
         { key: 'profileLabel', title: 'SBOM profile' },
         { key: 'parts', title: 'Parts', render: (r: any) => r.producedCount + ' generated, ' + r.skippedCount + ' skipped of ' + r.partCount },
         { key: 'manifestSha256', title: 'Manifest sha256', render: (r: any) => shaCell(r.manifestSha256, r.manifestSha256Short) },
+        { key: 'check', title: 'Check', render: (r: any) => rerunCell(kind, r) },
     ]
 }
 
