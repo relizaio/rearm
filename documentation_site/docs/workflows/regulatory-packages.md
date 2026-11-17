@@ -28,7 +28,7 @@ Every generated file is named `<stem>-<suffix>`, with the stem `<component name>
 
 ## The documents
 
-No part is a PDF: the addendum is CSV and the statement is HTML, by operator decision, and a PDF rendering is not planned.
+No part is a PDF: the addendum is CSV and the statement is HTML, by operator decision, and ReARM renders no PDF. The package page can hand a version's statement to the browser's print dialog (see [Printing the statement](#printing-the-statement)); a PDF saved there is made by the browser and is not a part.
 
 ### The support addendum
 
@@ -95,12 +95,12 @@ Start draft takes a reason category and a reason text, the text required for eve
 
 The product page's Submissions tab lists the releases of one feature set at a time with their submissions by kind, the latest version, the state and the last act, and names the submissions on releases of the product's other feature sets. It has no actions: a release without a version of a kind shows the link "Draft on the release page", or the lifecycle it still needs (Assembled or later).
 
-The release page's Regulatory tab (ReARM Pro; not shown on a document round's release page) is the package page of that release: per kind the submission's state and last act, Start draft while the kind has no draft, Cancel on a Final submission, the draft card, and the version history with each version's manifest, parts to download and the confirmations recorded for it.
+The release page's Regulatory tab (ReARM Pro; not shown on a document round's release page) is the package page of that release: per kind the submission's state and last act, Start draft while the kind has no draft, Cancel on a Final submission, the draft card, and the version history with each version's zip and record of review to download, its manifest, parts to download and the confirmations recorded for it.
 
 #### Drafting a package in the UI
 
 - **Start draft** asks for a reason: "First version" for a kind without a submission; otherwise a response to an FDA request, a correction or other, with a reason text. An earlier Final or Sent version of another release of the component can be named as the one this version replaces (optional). A kind whose package carries the assessment narrative asks for the release's own cover summary first: the organization default is shown read-only as a starting point, and the prompt does not continue while the text is the organization default unchanged. The first rebuild is requested at once.
-- **The draft card** shows the draft's state, who started it and why, the rebuild job (requested, running, built or failed, with the failure text), and, once built, the contents (each part with its size, SHA-256 and a download named by the server), the release SBOM version it pins, and what changed against the previous version (components added, removed or with a changed version, support changes, findings). The page reads a rebuild in progress every 5 seconds for up to 15 minutes, then every 30 seconds.
+- **The draft card** shows the draft's state, who started it and why, the rebuild job (requested, running, built or failed, with the failure text), and, once built, the contents (each part with its size, SHA-256 and a download named by the server), the release SBOM version it pins, and what changed against the previous version (components added, removed or with a changed version, support changes, findings). Once the job stands at built, **Download draft zip** gives the draft's files as one zip with a draft mark (see [Downloading a draft as a zip](#downloading-a-draft-as-a-zip)); a file downloaded from the contents table is the stored file, without a draft mark. The page reads a rebuild in progress every 5 seconds for up to 15 minutes, then every 30 seconds.
 - **Readiness** is checked at each rebuild: the release SBOM the draft pins is checked against the FDA expectations once, and the result is kept with the build as the **Check report** part. The draft card lists one row per check: the ten SBOM checks (SBOM author, SBOM timestamp, supplier name, component name, component version, component hash, unique identifier, dependency relationships, level of support, end-of-support date), vendored code described and the cover summary, which must be fixed, and the device support dates and the optional parts left out, which are for review. Confirm and Finalize are refused while a must-fix row is open ("must-fix items open", with each row's text) or while readiness could not be checked for the build (rebuild the draft; a build made before readiness was checked needs one rebuild). The rows are read from the build, so a fix shows only after a rebuild. A row with a button opens the screen that fixes it; what no button fixes is corrected in the SBOM uploaded to the release or, for a product, to the component release that carries the entry. The rows and when each passes are listed in [Readiness rules](./readiness-rules); a Final version's check summary names the rule set that judged it. For the rows that page is the authority: where this paragraph and the list differ, the list is right.
 - **The banner** says "Not built yet", "Inputs unchanged", or how many changes there are since the build, with what moved in words (for example "assessment narrative changed" or "files of a release changed"), never the identifiers behind them.
 - **Greyed buttons** say why on hover: Confirm and Finalize while a rebuild is in progress or the inputs changed since the build ("Rebuild first"), Discard while a rebuild is requested, Finalize for the person who confirmed when a second confirmer is required, below Assembled, or when the package already has the version the draft planned.
@@ -253,6 +253,76 @@ GET <your ReARM URL>/api/programmatic/v1/artifact/<artifact uuid>/rawdownload?ve
 
 The first is for a user, the second for a FREEFORM or USER key. The answer carries the part's media type as `Content-Type` and a `Content-Disposition` attachment with the file name. Downloading needs the Artifact Download function on the release's component, so a member who may finalize a draft may still be unable to download its parts. A generated document is not an artifact of the release's inventory and never becomes one.
 
+### Downloading a version as one zip
+
+On the release page's Regulatory tab every version of a package has **Download zip**. The zip holds the files of that version as they are pinned, each under a name that starts with the component name, the release version, the kind and the version number: the files for the submission under `fda/`, and under `internal/` the manifest (`manifest.json`), its check file (`manifest.sha256`), the files that are for your own records, the record of review as HTML and as JSON, an index of the zip (`zip-index.json`) and `README.txt`, which names every file and says how to check it. The zip of a version is made each time it is asked for; the pinned files in it are byte for byte the stored ones.
+
+```
+GET <your ReARM URL>/api/manual/v1/submission/<submission uuid>/version/<version number>/zip
+```
+
+The route is for a signed-in user; there is no route for an API key. It needs the Artifact Download function covering the release's component, as a part's download does. Each zip that is served is recorded in the [Download Log](./exporting-compliance-artifacts#download-log) before its first byte is sent.
+
+What the page says, under the buttons of that version, when the answer is not the zip. The sentence stays until the next click on a button of that version:
+
+| Answer | The page says | What to do |
+|---|---|---|
+| `401` | Your session is not valid any more. Sign in again, then try again. | Reload the page and sign in |
+| `403` | ReARM refused this download. It needs the Artifact Download permission on the component of this release. | Ask an organization admin for the function. An unknown submission and a submission of another organization get the same answer |
+| `404` | This version of the package was not found. Reload the page. | Reload |
+| `409` | This version cannot be delivered as recorded. Nothing was downloaded. Give this message to the administrator of this ReARM instance: (then the server's sentence, which names at most one file of the zip) | A stored file could not be read, no longer matches the sha256 recorded for it, or has none. Nothing is delivered; give the message to the administrator of the ReARM instance |
+| `429` | ReARM got too many requests from your account in a short time and refused this one. Try again in about 30 seconds. (the number is the server's) | Wait, then press the button again |
+| `503` with `Retry-After` | ReARM is making other package zips right now, or another zip of this organization. Nothing was downloaded. Try again in about 30 seconds. | Press the button again later. ReARM makes two package zips at a time and one per organization: a second zip of your organization is refused at once while one is being made or sent, and a request waits up to 10 seconds for one of the two places. The page does not try again by itself |
+| `503` without `Retry-After` | ReARM is not serving downloads at the moment. Try again later; if this stays, tell the administrator of this ReARM instance. | The instance is sealed or its license is not valid |
+| any other status | The download failed on the server (HTTP status 500). Try again; if this stays, tell the administrator of this ReARM instance the time of the attempt. (with the status that came) | Try again; the server log of that time holds the reason |
+
+When no answer comes at all the page says "The download did not complete. Check the connection and try again; if this stays, reload the page."
+
+### The record of review
+
+**Record of review (HTML)** and **Record of review (JSON)** download, for one version, the acts ReARM recorded on it (draft started, confirmed, returned to draft, finalized, and what came after, such as superseded or cancelled): who did each, in which capacity, when, and the reason or note as typed, with the manifest sha256 of the version. It names people, with their e-mail: it is an internal record of your organization, not one of the files for the submission. The zip carries the same record under `internal/`, as it stood when that zip was made. The HTML form is a document for a reader: open the saved file in a browser and print it from there. Each export is recorded in the Download Log. A refused export gets the sentences of the table above, except two: an export has no `409`, and it never waits for a turn, so every `503` of an export reads "ReARM is not serving downloads at the moment. Try again later; if this stays, tell the administrator of this ReARM instance."
+
+```
+GET <your ReARM URL>/api/manual/v1/submission/<submission uuid>/version/<version number>/record-of-review.html
+GET <your ReARM URL>/api/manual/v1/submission/<submission uuid>/version/<version number>/record-of-review.json
+```
+
+### Downloading a draft as a zip
+
+Once a draft's rebuild job stands at built, its card has **Download draft zip**. It is a copy for review, not a record: no package version exists yet, so the zip has no manifest, no check file and no record of review, and its `README_DRAFT.txt` says so. Every file name in it carries `_DRAFT`, the zip's own name ends with `_DRAFT.zip`, and each HTML document ReARM generated is delivered as a copy whose title starts with "DRAFT - " and whose page starts with a draft header. Look at every page of a print or PDF of such a copy before you pass it on: a browser may not repeat the mark on each printed page.
+
+A file downloaded from the contents table of the draft card is the stored file, without a draft mark; use the draft zip when a draft document is to be passed on.
+
+```
+GET <your ReARM URL>/api/manual/v1/submission-draft/<draft uuid>/zip
+```
+
+The same function is needed and the same Download Log applies. The server answers `409` with a sentence when the draft has no finished build, changed while the zip was being made, or holds a file that cannot be delivered; the page shows that sentence on the card, as the server wrote it, and reads the draft again. Where that sentence says to rebuild the draft, a member without write access also reads "A rebuild needs write access; ask a member who has it." For a draft that was finalized or discarded (`403`) the card says "ReARM refused this download. It needs the Artifact Download permission on the component of this release. A draft that was finalized or discarded can no longer be downloaded." The other answers read as for the zip of a version, except `404`, which a draft does not have.
+
+### Checking a downloaded zip
+
+`internal/README.txt` of every zip of a version holds one command line made for that zip. Unpack the zip, open a shell in the folder that holds `internal/`, and run it. It needs a POSIX shell with `find`, `grep` and `sha256sum`, as on Linux. Its general form, for a zip that has files under `fda/`, is:
+
+```
+( cd internal && LC_ALL=C sha256sum -c manifest.sha256 ) && find fda internal -type f ! -path internal/manifest.json ! -path internal/README.txt ! -path internal/manifest.sha256 ! -path internal/record-of-review.html ! -path internal/record-of-review.json ! -path internal/zip-index.json -exec sha256sum {} + | while read -r h f; do if grep -qiF "\"value\":\"$h\"" internal/manifest.json; then echo "OK      $f"; else echo "FAILED  $f"; fi; done
+```
+
+Prefer the line of the README of the zip you hold: it is written for the files of that zip. In a zip without a folder `fda/` the general form above also prints `find: 'fda': No such file or directory`, and the README's own line does not name `fda`.
+
+The check passes when all three are true:
+
+1. The first line printed is `manifest.json: OK`. If it is anything else, the check has failed, whatever is printed after it.
+2. The sha256 in `internal/manifest.sha256` equals the manifest sha256 ReARM shows for this package version: on the release page's Regulatory tab, beside **Download manifest** ("manifest sha256") and in the version table. Without this comparison the line shows only that the files in the folder agree with the manifest in the folder, not that they come from ReARM.
+3. Each file of `fda/`, and each file of `internal/` other than the six the line leaves out, has a line that starts with `OK`, and no line starts with `FAILED`.
+
+A pass shows that the content of each of those files is the content of a part of the record. It does not show that a file is under its own name: the line compares content, not names. The README, the check file, the index and the two record-of-review files are made when the zip is made and are not checked by this line. A draft zip has no manifest and no such line.
+
+### Printing the statement
+
+On a version, the device support statement has **Print or save as PDF** beside its download. The page fetches the stored statement as a download does (the fetch is recorded in the Download Log as a raw artifact download), and hands it to the browser's print dialog, where "Save as PDF" is the browser's own. The document is shown to the browser in a frame that runs no script. A PDF made this way is made by your browser, not by ReARM: it is not a part of the package, it has no sha256 in the manifest, and two browsers can lay it out differently. The stored HTML statement stays the record.
+
+The page prints only a document that starts as ReARM writes its generated HTML; for any other file it says "This file is not a document in the form ReARM generates, so this page does not print it. Download the file and open it instead." When the statement cannot be fetched, the page says why under the buttons of that version, in the sentences of a download: without the Artifact Download function, "ReARM refused this download. It needs the Artifact Download permission on the component of this release." The draft card has no print button: a draft document is passed on from the draft zip, where it is marked.
+
 ### Permissions
 
 | Act | Needs |
@@ -261,6 +331,7 @@ The first is for a user, the second for a FREEFORM or USER key. The answer carri
 | List a release's submissions, read a submission or a version | Read access covering the release: a grant on the release, on its component, on a perspective that contains the component, on a product that pulls the component in, or the organization-wide type |
 | List a product's or component's submissions, preview | Read access covering the component the same way; a release-scoped grant does not suffice |
 | Download a part or the manifest | The Artifact Download function in a grant that covers the release's component: on the component, on a perspective that contains it, on a product that pulls it in, or organization-wide |
+| Download the zip of a version, a draft zip or the record of review; print the statement | The Artifact Download function in a grant that covers the release's component. The buttons are shown to every member who sees the tab; the server decides |
 
 FREEFORM and USER API keys read through the four programmatic operations below with the same read access, and cannot act on a draft or a submission. EXTERNAL keys (TEA consumer keys) are refused everywhere outside TEA (`401`) and never see a submission. A release, submission, component or artifact of another organization is "not found".
 
@@ -328,6 +399,6 @@ Regulatory packages and submissions are ReARM Pro only; the [edition differences
 - **Data-driven package definitions.** The kinds and their part lists are code; adding a kind is a server change, and `FDA_PREMARKET` is the only kind.
 - **Signing.** Every version has a reserved signature slot that is empty today; the digests in the manifest are the only integrity evidence. Signing waits on a server change.
 - **An organization-level submission view.** The product page and the release page are the entries, and the API lists by release and by component only; a view across the organization is a server change.
-- **PDF rendering of the addendum and the statement.** Not planned, by operator decision.
+- **PDF rendering of the addendum and the statement by ReARM.** Not planned, by operator decision. The package page offers the browser's print dialog for the statement of a version; see [Printing the statement](#printing-the-statement).
 - **Programmatic acts.** The programmatic API has no act on a draft or a submission; a server change.
 - **CLE in a package.** It waits on the CLE 1.0.0 alignment listed under [Not implemented yet](../tea/#not-implemented-yet) on the TEA page.

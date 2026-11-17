@@ -47,6 +47,15 @@ export const DRAFT_POLL_FAST_MAX = 180
 /** The server's sentence for a draft that no longer exists: a poll that gets it reads the whole panel again. */
 export const DRAFT_NOT_FOUND = 'Draft not found'
 
+/** Under the draft's contents table (FDAW-122; FDAW-120 threat model R12): what a file from the table is, and what the zip marks. */
+export const DRAFT_FILES_HINT = 'A file downloaded from this table is the stored file, without a draft mark. The draft zip carries _DRAFT in '
+    + 'every file name, and marks each HTML document ReARM generated as a draft in its title and at the top of its page.'
+
+/** Whether the page offers the draft zip: the server makes one only of a draft whose job stands at BUILT (FDAW-120 3.8). */
+export function draftZipOffered (draft: any): boolean {
+    return draft?.job?.state === 'BUILT' && Boolean(draft?.build) && typeof draft?.uuid === 'string' && ARTIFACT_UUID.test(draft.uuid)
+}
+
 /** The job states of a rebuild in flight (DraftBuildState). */
 export const DRAFT_JOB_IN_FLIGHT = ['REQUESTED', 'RUNNING']
 

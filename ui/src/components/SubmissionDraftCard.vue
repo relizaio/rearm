@@ -53,6 +53,11 @@
                 </tr>
             </tbody>
         </table>
+        <div v-if="draft.build" data-testid="draft-files-hint" class="draft-line text-muted">{{ DRAFT_FILES_HINT }}</div>
+        <div v-if="zipOffered" data-testid="draft-zip" class="draft-line">
+            <n-button size="tiny" data-testid="draft-zip-download" :loading="zipBusy" :disabled="zipBusy" @click="downloadZip">Download draft zip</n-button>
+        </div>
+        <n-alert v-if="zipMessage" data-testid="draft-zip-message" type="warning" :show-icon="false" class="draft-line">{{ zipMessage }}</n-alert>
         <div v-if="draft.build?.releaseSbom" data-testid="draft-pin" class="draft-line">Release SBOM version {{ draft.build.releaseSbom.version }}</div>
         <n-space v-if="anyButton" class="draft-actions">
             <n-button v-if="buttons.rebuild.shown" size="tiny" data-testid="draft-rebuild" :disabled="buttons.rebuild.disabled"
@@ -74,13 +79,14 @@
 // reason, job, held confirmation, stale banner, diff, contents and the five draft buttons. It emits the
 // acts and never calls the client itself except for a part's download. Every value is a text binding;
 // a moved fingerprint line is shown by its label only.
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { NAlert, NButton, NSpace, NTag, useNotification } from 'naive-ui'
 import { DRAFT_JOB_STATE_LABELS, DRAFT_STATE_LABELS, NEW_VERSION_REASON_LABELS, labelOf, submissionActorText, submissionDateText } from '@/utils/submissions'
 import {
-    SETTING_UNREAD, STALE_NOT_BUILT, STILL_RUNNING, contentDispositionFileName, draftButtons, draftConfirmationLine, draftDiffSections,
-    draftDiffSummary, draftPartRows, draftStaleBanner, type DraftPartDownload,
+    DRAFT_FILES_HINT, SETTING_UNREAD, STALE_NOT_BUILT, STILL_RUNNING, contentDispositionFileName, draftButtons, draftConfirmationLine, draftDiffSections,
+    draftDiffSummary, draftPartRows, draftStaleBanner, draftZipOffered, type DraftPartDownload,
 } from '@/utils/submissionDrafts'
+import { DOWNLOAD_NOT_ASKED, draftZipUrl, fetchPackageFile, packageFallbackName, saveFile } from '@/utils/packageDownloads'
 import { artifactDownloadUrl, downloadArtifactFile, saveBlob } from '@/utils/artifactDownload'
 
 const props = withDefaults(defineProps<{
@@ -135,6 +141,38 @@ const confirmationLine = computed(() => draftConfirmationLine(props.draft, props
 const buttons = computed(() => draftButtons(props.draft, { secondConfirmer: props.secondConfirmer, writable: props.isWritable,
     busy: props.busy, currentUser: props.currentUser, lifecycle: props.lifecycle, head: props.head }))
 const anyButton = computed(() => Object.values(buttons.value).some(b => b.shown))
+
+// The draft zip (FDAW-122): offered at job BUILT, to everyone who sees the card; the server decides who gets it.
+const zipOffered = computed(() => draftZipOffered(props.draft))
+const zipBusy = ref(false)
+const zipMessage = ref('')
+// The message is about one draft. It stays when the panel reads that draft again (a 409 asks for that read at
+// once), and goes when the card is given another draft.
+watch(() => props.draft?.uuid, () => { zipMessage.value = '' })
+
+/** One request; a refusal stays on the card as text, and a 409 has the panel read the draft again. */
+async function downloadZip () {
+    if (zipBusy.value || !zipOffered.value) return
+    zipBusy.value = true
+    zipMessage.value = ''
+    const asked = props.draft.uuid
+    try {
+        const result = await fetchPackageFile('draft-zip', draftZipUrl(asked),
+            packageFallbackName('draft-zip', props.draft.plannedVersion), { writable: props.isWritable })
+        if (result.ok) saveFile(result.blob, result.fileName)
+        else if (props.draft?.uuid === asked) {
+            // said only on the card of the draft that was asked for
+            zipMessage.value = result.message
+            if (result.status === 409) emit('refresh')
+        }
+    } catch (err: any) {
+        // the browser refused the save: a constant sentence, never the thrown text
+        console.error(err)
+        if (props.draft?.uuid === asked) zipMessage.value = DOWNLOAD_NOT_ASKED
+    } finally {
+        zipBusy.value = false
+    }
+}
 
 /** A part's raw download, named by the server's Content-Disposition (cleaned), else the fallback name. */
 async function download (part: DraftPartDownload) {
