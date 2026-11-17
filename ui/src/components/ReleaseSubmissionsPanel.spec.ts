@@ -532,7 +532,7 @@ describe('ReleaseSubmissionsPanel: the newest version and the actors (FDAW-4)', 
             revision: 7, plannedVersion: 1, startedAt: '2026-11-13T05:00:00Z', startedBy: { actor: 'u1', actorName: 'Ann' },
             reasonCategory: 'FIRST_VERSION', reasonText: null, replaces: null, job: { state: 'BUILT', attempt: 1 },
             build: { builtAt: '2026-11-13T06:07:08.123Z', releaseSbom: { version: 3 }, parts: [], diff: null }, confirmation: null,
-            changesSinceBuild: { count: 0, fingerprintEqual: true, movedLines: [] } }
+            changesSinceBuild: { count: 0, fingerprintEqual: true, movedLines: [] }, readiness: { ruleSetVersion: '1', rows: [] } }
         let drafts: any[] = [built]
         heads = []
         query.mockImplementation(async (opts: any) => {
@@ -765,7 +765,7 @@ const D: any = { uuid: 'd1', org: 'o1', release: 'r1', component: 'c1', kind: 'F
     build: { builtAt: '2026-11-13T06:07:08.123Z', releaseSbom: { version: 3 }, parts: [
         { part: 'AGGREGATE_SBOM', artifact: U1, sha256: 'a'.repeat(64), sizeBytes: 10, documentVersion: 3 },
         { part: 'VDR', artifact: 'not-a-uuid', sha256: null, sizeBytes: null, documentVersion: null }], diff: null },
-    confirmation: null, changesSinceBuild: { count: 0, fingerprintEqual: true, movedLines: [] } }
+    confirmation: null, changesSinceBuild: { count: 0, fingerprintEqual: true, movedLines: [] }, readiness: { ruleSetVersion: '1', rows: [] } }
 const DH = { ...D, submission: 's1', plannedVersion: 3 }
 const AWAIT = { state: 'AWAITING_CONFIRMATION', confirmation: { actor: 'u1', actorName: 'Ann', capacity: 'AUTHOR',
     confirmedAt: '2026-11-13T06:09:10Z' } }
@@ -1131,6 +1131,64 @@ describe('ReleaseSubmissionsPanel: the draft (FDAW-32 row 6)', () => {
             expect(mutate.mock.calls).toEqual([])
             w.unmount()
         }
+    })
+})
+
+// FDAW-16 architecture round 3, section 4 row 21 (the edit cell, part 5) and 3.8: the card's verbs through the
+// panel. Edit cover summary opens the panel's prompt for the act `edit`, which saves and closes without the Start
+// form; every other verb goes up to the release page as fix. The control for the act `start` is the cell
+// `Write one with a changed text saves it, emits narrative-saved, then previews and creates` above.
+describe('ReleaseSubmissionsPanel: the readiness verbs (FDAW-16 row 21, 3.8)', () => {
+    const COVER = { rule: 'COVER_SUMMARY', severity: 'MUST_FIX', outcome: 'FAIL', count: 1, justified: null,
+        text: 'Cover summary is the organization default, unchanged; write one for this release', verb: 'EDIT_COVER_SUMMARY' }
+    const SUPPLIER = { rule: 'SBOM_SUPPLIER', severity: 'MUST_FIX', outcome: 'FAIL', count: 5, justified: null,
+        text: 'Supplier name: 5 of 10 not met', verb: 'ADD_SUPPLIERS' }
+    const withRows = (...rows: any[]) => ({ ...D, readiness: { ruleSetVersion: '1', rows } })
+
+    beforeEach(() => {
+        resetMocks()
+        install({ PackageKinds: { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [{ part: 'NARRATIVE', requirement: 'REQUIRED' }] }] } },
+            ReleaseDrafts: DRAFTS(withRows(COVER, SUPPLIER)) })
+        mutate.mockImplementation(async (opts: any) => ({ data: { updateRelease: { uuid: 'r1',
+            fdaAssessmentNarrative: opts.variables.release.fdaAssessmentNarrative } } }))
+    })
+
+    it('Edit cover summary opens the prompt for edit; a save closes it, the Start form does not open, and the drafts are read again', async () => {
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'], orgNarrative: 'Org text', canWriteOrg: false })
+        const cover = w.findAll('[data-testid="draft-readiness-verb"]').find((b: any) => b.text() === 'Edit cover summary')
+        expect((cover!.element as HTMLButtonElement).disabled).toBe(false)
+        await cover!.trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="narrative-form"]').exists()).toBe(true)
+        expect((w.find('[data-testid="narrative-text"] textarea').element as HTMLTextAreaElement).value).toBe('Org text')
+        expect(isDisabled(w, 'narrative-confirm')).toBe(true)
+        await w.find('[data-testid="narrative-text"] textarea').setValue('Our own summary')
+        const readsBefore = callsOf('ReleaseDrafts').length
+        await button(w, 'narrative-confirm').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls.map(c => c[0].variables)).toEqual([{ release: { uuid: 'r1', org: 'o1', fdaAssessmentNarrative: 'Our own summary' } }])
+        expect(w.find('[data-testid="narrative-form"]').exists()).toBe(false)
+        expect(w.find('[data-testid="draft-start-form"]').exists()).toBe(false)
+        expect(opsOf(query.mock.calls)).not.toContain('SubmissionsOfComponent')
+        expect(callsOf('ReleaseDrafts').length).toBe(readsBefore + 1)
+        expect(w.findComponent(Panel).emitted('narrative-saved')).toEqual([['Our own summary']])
+        expect(w.findComponent(Panel).emitted('fix')).toBeUndefined()
+        w.unmount()
+    })
+
+    it('another verb goes up as fix; the panel hands the card the organization-write fact', async () => {
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'], orgNarrative: 'Org text', canWriteOrg: true })
+        const supplier = w.findAll('[data-testid="draft-readiness-verb"]').find((b: any) => b.text() === 'Add suppliers')
+        expect((supplier!.element as HTMLButtonElement).disabled).toBe(false)
+        await supplier!.trigger('click')
+        await flushPromises()
+        expect(w.findComponent(Panel).emitted('fix')).toEqual([['ADD_SUPPLIERS']])
+        expect(w.find('[data-testid="narrative-form"]').exists()).toBe(false)
+        w.unmount()
+        const product = await mountPanel({ kinds: ['FDA_PREMARKET'], orgNarrative: 'Org text' })
+        const off = product.findAll('[data-testid="draft-readiness-verb"]').find((b: any) => b.text() === 'Add suppliers')
+        expect((off!.element as HTMLButtonElement).disabled).toBe(true)
+        product.unmount()
     })
 })
 

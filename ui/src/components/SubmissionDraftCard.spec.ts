@@ -37,6 +37,7 @@ const D: any = {
         { part: 'AGGREGATE_SBOM', artifact: U1, sha256: 'a'.repeat(64), sizeBytes: 10, documentVersion: 3 },
         { part: 'VDR', artifact: 'not-a-uuid', sha256: null, sizeBytes: null, documentVersion: null }], diff: null },
     confirmation: null, changesSinceBuild: { count: 0, fingerprintEqual: true, movedLines: [] },
+    readiness: { ruleSetVersion: '1', rows: [] },
 }
 const AWAIT = { state: 'AWAITING_CONFIRMATION', confirmation: { actor: 'u1', actorName: 'Ann', capacity: 'AUTHOR',
     confirmedAt: '2026-11-13T06:09:10Z' } }
@@ -291,6 +292,86 @@ describe('SubmissionDraftCard (FDAW-32 row 7)', () => {
         }
         ({ w } = await mountCard({ secondConfirmer: null, isWritable: false }))
         expect(testid(w, 'draft-setting-unread').exists()).toBe(false)
+        w.unmount()
+    })
+})
+
+// FDAW-16 architecture round 3, section 4 row 14: the readiness block of the card (3.8), its verbs by the two
+// facts of F-30, text 13 under the rows, and texts 9 and 16 for a build without readiness.
+describe('SubmissionDraftCard: readiness (FDAW-16 row 14)', () => {
+    const TEXT_13 = 'These items are read from this build. Fix them, then rebuild the draft. An item without a button, or an entry a '
+        + 'button does not list, is corrected in the SBOM uploaded to the release, or to the component release that carries the entry.'
+    const TEXT_9 = 'Readiness was not checked for this build; rebuild the draft'
+    const TEXT_16 = 'Readiness was not checked for this build; return the draft to editing and rebuild it'
+    const ORG_SENTENCE = 'Add suppliers changes organization-wide data and needs organization write access, which an'
+        + ' organization administrator grants in Organization Settings > Users'
+    const SUPPLIER = { rule: 'SBOM_SUPPLIER', severity: 'MUST_FIX', outcome: 'FAIL', count: 5, justified: null,
+        text: 'Supplier name: 5 of 10 not met', verb: 'ADD_SUPPLIERS' }
+    const DEVICE = { rule: 'DEVICE_DATES', severity: 'REVIEW', outcome: 'FAIL', count: 1, justified: null,
+        text: 'Device end-of-support and end-of-life dates are not both declared', verb: null }
+    const PASSED = { rule: 'SBOM_AUTHOR', severity: 'MUST_FIX', outcome: 'PASS', count: 0, justified: null, text: 'SBOM author: Pass', verb: null }
+    const THREE = with_({ readiness: { ruleSetVersion: '1', rows: [SUPPLIER, DEVICE, PASSED] } })
+    const block = (w: any) => testid(w, 'draft-readiness')
+    const rowTexts = (w: any) => block(w).findAll('[data-testid="draft-readiness-text"]').map((e: any) => e.text())
+    const verbs = (w: any) => block(w).findAll('button')
+
+    it('a product-scoped writer: three rows, one button, disabled, with the sentence, and text 13', async () => {
+        const { w } = await mountCard({ draft: THREE, isWritable: true, canWriteOrg: false })
+        expect(rowTexts(w)).toEqual([SUPPLIER.text, DEVICE.text, PASSED.text])
+        expect(block(w).findAll('[data-testid="draft-readiness-tag"]').map((e: any) => e.text())).toEqual(['Must fix', 'Review'])
+        // the tag's type prop, not only its text: MUST_FIX is 'error' (#d03050), REVIEW is 'warning' (#f0a020)
+        const tagStyles = block(w).findAll('[data-testid="draft-readiness-tag"]').map((e: any) => e.attributes('style'))
+        expect(tagStyles[0]).toContain('--n-text-color: #d03050')
+        expect(tagStyles[1]).toContain('--n-text-color: #f0a020')
+        expect(verbs(w).length).toBe(1)
+        expect(verbs(w)[0].text()).toBe('Add suppliers')
+        expect((verbs(w)[0].element as HTMLButtonElement).disabled).toBe(true)
+        expect(verbs(w).filter((b: any) => !(b.element as HTMLButtonElement).disabled).length).toBe(0)
+        expect(block(w).find('[data-testid="draft-readiness-org-write"]').text()).toBe(ORG_SENTENCE)
+        expect(testid(w, 'draft-readiness-fix').text()).toBe(TEXT_13)
+        await verbs(w)[0].trigger('click')
+        expect(w.findComponent(Card).emitted('fix')).toBeUndefined()
+        w.unmount()
+    })
+    it('an organization writer: the button is enabled, no sentence, and a click emits fix with the verb', async () => {
+        const { w, card } = await mountCard({ draft: THREE, isWritable: true, canWriteOrg: true })
+        expect(verbs(w).length).toBe(1)
+        expect((verbs(w)[0].element as HTMLButtonElement).disabled).toBe(false)
+        expect(block(w).find('[data-testid="draft-readiness-org-write"]').exists()).toBe(false)
+        await verbs(w)[0].trigger('click')
+        expect(card().emitted('fix')).toEqual([['ADD_SUPPLIERS']])
+        w.unmount()
+    })
+    it('a reader: three rows and no button', async () => {
+        const { w } = await mountCard({ draft: THREE, isWritable: false, canWriteOrg: false })
+        expect(rowTexts(w)).toEqual([SUPPLIER.text, DEVICE.text, PASSED.text])
+        expect(verbs(w).length).toBe(0)
+        w.unmount()
+    })
+    it('only a REVIEW row failing: no text 13', async () => {
+        const { w } = await mountCard({ draft: with_({ readiness: { ruleSetVersion: '1', rows: [DEVICE, PASSED] } }), canWriteOrg: true })
+        expect(rowTexts(w)).toEqual([DEVICE.text, PASSED.text])
+        expect(testid(w, 'draft-readiness-fix').exists()).toBe(false)
+        w.unmount()
+    })
+    it('a build without readiness: text 9 and no row; awaiting confirmation: text 16', async () => {
+        let { w } = await mountCard({ draft: with_({ readiness: null }) })
+        expect(testid(w, 'draft-readiness-unchecked').text()).toBe(TEXT_9)
+        expect(block(w).findAll('[data-testid="draft-readiness-row"]').length).toBe(0)
+        w.unmount();
+        ({ w } = await mountCard({ draft: with_(AWAIT, { readiness: null }) }))
+        expect(testid(w, 'draft-readiness-unchecked').text()).toBe(TEXT_16)
+        expect(block(w).findAll('[data-testid="draft-readiness-row"]').length).toBe(0)
+        w.unmount()
+    })
+    it('the block sits after the stale banner and before the diff; no build, no block', async () => {
+        let { w } = await mountCard({ draft: THREE })
+        const order = w.findAll('[data-testid]').map((e: any) => e.attributes('data-testid'))
+            .filter((id: string) => ['draft-stale', 'draft-readiness', 'draft-diff', 'draft-confirm', 'draft-finalize'].includes(id))
+        expect(order).toEqual(['draft-stale', 'draft-readiness', 'draft-diff', 'draft-finalize'])
+        w.unmount();
+        ({ w } = await mountCard({ draft: with_({ job: { state: 'NONE' }, build: null, readiness: null }) }))
+        expect(testid(w, 'draft-readiness').exists()).toBe(false)
         w.unmount()
     })
 })
