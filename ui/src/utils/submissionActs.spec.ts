@@ -4,7 +4,7 @@
 // statement); a dismissed dialog sends nothing; a refused act shows the server's sentence, no success and no
 // further mutation, and the page reads again; one act at a time. Every dialog reaches Swal as exactly one
 // object argument with a constant title in titleText and no title, html or footer key.
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fire = vi.fn()
 // Every call of the file, kept across the resets of the cells, for (j).
@@ -244,5 +244,115 @@ describe('useSubmissionActs (FDAW-32 row 4)', () => {
             await acts().finalize(HELD(), NAMES, s)
             expect(fire.mock.calls[0][0].text.endsWith(end), String(s)).toBe(true)
         }
+    })
+})
+
+// FDAW-10 row 19 (REQ-200): the four acts on a Final or Sent head. Record as sent, Add timeline entry and
+// Withdraw send the panel form's variables; Add FDA number asks for the number in one text input. Each is one
+// act at a time, shows the server's sentence on a refusal with no success dialog, and reloads after.
+describe('useSubmissionActs: the acts on a Final or Sent head (FDAW-10 row 19)', () => {
+    const SENT_HEAD = { uuid: 's1', kind: 'FDA_PREMARKET', latestVersion: 2, currentSentVersion: 1 }
+    const RECORD = { submission: 's1', version: 2, sentDate: '2026-11-15', submissionType: 'K510_TRADITIONAL', fdaNumber: null }
+    const ENTRY = { submission: 's1', entryKind: 'DECISION', entryDate: '2026-11-15', decision: 'CLEARED', note: null }
+    const WITHDRAW = { submission: 's1', withdrawnDate: '2026-11-20', reason: 'pulled' }
+    let firstFire = 0
+
+    beforeEach(() => {
+        fire.mockReset()
+        mutate.mockReset()
+        reload.mockReset()
+        mutate.mockImplementation(async (opts: any) => ({ data: { [rootField(opts)]: ACT_ANSWER } }))
+    })
+
+    beforeAll(() => { firstFire = allFires.length })
+
+    // every dialog of these acts is one object with a constant title in titleText, and no title, html or footer key
+    afterAll(() => {
+        const mine = allFires.slice(firstFire)
+        expect(mine.length).toBeGreaterThan(8)
+        for (const c of mine) {
+            expect(c.length).toBe(1)
+            expect(Object.keys(c[0])).toEqual(expect.arrayContaining(['titleText', 'text']))
+            for (const k of ['title', 'html', 'footer']) expect(c[0]).not.toHaveProperty(k)
+            expect(['Error!', 'Submission', 'Add FDA number']).toContain(c[0].titleText)
+        }
+    })
+
+    it('each form act sends its variables once, then its success dialog, then one reload, and answers true', async () => {
+        const cases: [string, (a: any) => Promise<boolean>, any, any, string][] = [
+            ['recordSent', a => a.recordSent(RECORD), Q.RecordSubmissionSentGql, RECORD, 'Recorded as sent.'],
+            ['addTimelineEntry', a => a.addTimelineEntry(ENTRY), Q.AddTimelineEntryGql, ENTRY, 'Timeline entry added.'],
+            ['withdrawSent', a => a.withdrawSent(WITHDRAW), Q.WithdrawSubmissionGql, WITHDRAW, 'Withdrawn at FDA.'],
+        ]
+        for (const [name, run, mutation, variables, done] of cases) {
+            fire.mockReset()
+            mutate.mockClear()
+            reload.mockReset()
+            expect(await run(acts()), name).toBe(true)
+            expect(mutate.mock.calls, name).toEqual([[{ mutation, variables }]])
+            expect(fire.mock.calls, name).toEqual([[{ titleText: 'Submission', text: done, icon: 'success' }]])
+            expect(reload, name).toHaveBeenCalledTimes(1)
+        }
+    })
+
+    it('Add FDA number asks in one text input of 32, sends the number trimmed, then FDA number added.', async () => {
+        fire.mockResolvedValueOnce({ isConfirmed: true, value: '  K263456 ' })
+        await acts().addFdaNumber(SENT_HEAD)
+        const dialog = fire.mock.calls[0][0]
+        expect(dialog).toMatchObject({ titleText: 'Add FDA number', text: 'The FDA number of the Sent version v1.', input: 'text',
+            inputAttributes: { maxlength: '32' }, showCancelButton: true })
+        expect(dialog.inputValidator('')).toBe('An FDA number is required')
+        expect(dialog.inputValidator('x'.repeat(33))).toBe('At most 32 characters')
+        expect(dialog.inputValidator('P200003/S004')).toBeNull()
+        expect(mutate.mock.calls).toEqual([[{ mutation: Q.AddFdaNumberGql, variables: { submission: 's1', fdaNumber: 'K263456', reason: null } }]])
+        expect(fire.mock.calls[1][0]).toEqual({ titleText: 'Submission', text: 'FDA number added.', icon: 'success' })
+        expect(reload).toHaveBeenCalledTimes(1)
+    })
+
+    it('a dismissed Add FDA number sends nothing and reloads nothing', async () => {
+        fire.mockResolvedValueOnce({ isConfirmed: false })
+        await acts().addFdaNumber(SENT_HEAD)
+        expect(mutate).not.toHaveBeenCalled()
+        expect(reload).not.toHaveBeenCalled()
+    })
+
+    it('a refused act goes no further: one mutation, the server sentence, no success dialog, one reload; a form act answers false', async () => {
+        const sentence = 'The sent date must be between 2026-11-01 and 2026-11-17 ' + HOSTILE
+        const cases: [string, (a: any) => Promise<any>, any][] = [
+            ['recordSent', a => a.recordSent(RECORD), null],
+            ['addTimelineEntry', a => a.addTimelineEntry(ENTRY), null],
+            ['withdrawSent', a => a.withdrawSent(WITHDRAW), null],
+            ['addFdaNumber', a => a.addFdaNumber(SENT_HEAD), { isConfirmed: true, value: 'K1' }],
+        ]
+        for (const [name, run, dialog] of cases) {
+            fire.mockReset()
+            mutate.mockReset()
+            reload.mockReset()
+            if (dialog) fire.mockResolvedValueOnce(dialog)
+            mutate.mockRejectedValueOnce({ errors: [{ message: sentence }] })
+            const answered = await run(acts())
+            if (!dialog) expect(answered, name).toBe(false)
+            expect(mutate, name).toHaveBeenCalledTimes(1)
+            expect(fire.mock.calls[fire.mock.calls.length - 1], name).toEqual([{ titleText: 'Error!', text: sentence, icon: 'error' }])
+            expect(fire.mock.calls.some(c => c[0]?.icon === 'success'), name).toBe(false)
+            expect(reload, name).toHaveBeenCalledTimes(1)
+        }
+    })
+
+    it('one act at a time: while Add FDA number waits on its dialog, the other three send nothing and answer false', async () => {
+        let answer!: (v: any) => void
+        fire.mockImplementationOnce(() => new Promise(r => { answer = r }))
+        const a = acts()
+        const first = a.addFdaNumber(SENT_HEAD)
+        expect(a.busy.value).toBe(true)
+        expect(await a.recordSent(RECORD)).toBe(false)
+        expect(await a.addTimelineEntry(ENTRY)).toBe(false)
+        expect(await a.withdrawSent(WITHDRAW)).toBe(false)
+        await a.addFdaNumber(SENT_HEAD)
+        expect(mutate.mock.calls).toEqual([])
+        expect(fire).toHaveBeenCalledTimes(1)
+        answer({ isConfirmed: false })
+        await first
+        expect(a.busy.value).toBe(false)
     })
 })

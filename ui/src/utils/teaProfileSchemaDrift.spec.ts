@@ -427,13 +427,15 @@ const RECIPE_DOCS = {
 const SUBMISSION_KEYS = ['SubmissionsOfComponentGql', 'SubmissionsOfReleaseGql', 'ReleaseDraftsGql', 'DraftGql', 'DraftJobGql',
     'StartDraftGql', 'RebuildDraftGql', 'DiscardDraftGql', 'ConfirmDraftGql', 'ReturnDraftToEditingGql', 'FinalizeDraftGql',
     'CancelSubmissionGql', 'OrgSecondConfirmerGql', 'UpdateSecondConfirmerGql', 'SubmissionReleasesOfBranchGql',
-    'ReleaseRegulatoryPackageKindsGql', 'ComponentRegulatoryPackageKindsGql']
+    'ReleaseRegulatoryPackageKindsGql', 'ComponentRegulatoryPackageKindsGql',
+    // FDAW-10 3.7: the four acts on a Final or Sent head, appended so the first fourteen keep their places
+    'RecordSubmissionSentGql', 'AddFdaNumberGql', 'AddTimelineEntryGql', 'WithdrawSubmissionGql']
 const ACT_MUTATIONS = ['StartDraftGql', 'RebuildDraftGql', 'DiscardDraftGql', 'ConfirmDraftGql', 'ReturnDraftToEditingGql',
-    'FinalizeDraftGql', 'CancelSubmissionGql']
-// The five words of the one-click surface, spelled in parts so that row 11 (c)'s grep over ui/src finds none of
-// them, this spec included.
-const GONE_WORDS = ['lastAct' + 'Kind', 'create' + 'Submission', 'resubmit' + 'Submission', 'withdraw' + 'Submission',
-    'submission' + 'Preview']
+    'FinalizeDraftGql', 'CancelSubmissionGql', 'RecordSubmissionSentGql', 'AddFdaNumberGql', 'AddTimelineEntryGql',
+    'WithdrawSubmissionGql']
+// The four words of the one-click surface, spelled in parts so that row 11 (c)'s grep over ui/src finds none of
+// them, this spec included. withdrawSubmission is served again since FDAW-10 (a Sent version, with its date).
+const GONE_WORDS = ['lastAct' + 'Kind', 'create' + 'Submission', 'resubmit' + 'Submission', 'submission' + 'Preview']
 const GONE = new RegExp('\\b(' + GONE_WORDS.join('|') + ')\\b')
 /** The names of the fields selected directly under the root field of each mutation operation, read from the parsed document. */
 const resultFields = (doc: any): string[] => doc.definitions
@@ -444,11 +446,11 @@ const resultFields = (doc: any): string[] => doc.definitions
 describe('the draft flow submission documents (FDAW-32 row 1)', () => {
     const docs = submissionQueries as Record<string, any>
 
-    it('(b) the default export holds the seventeen documents in order', () => {
+    it('(b) the default export holds the twenty-one documents in order', () => {
         expect(Object.keys(submissionQueries)).toEqual(SUBMISSION_KEYS)
     })
 
-    it.runIf(proSchema)('(c) each of the seventeen validates against the Pro schema', () => {
+    it.runIf(proSchema)('(c) each of the twenty-one validates against the Pro schema', () => {
         for (const k of SUBMISSION_KEYS) expect([k, validate(proSchema!, docs[k]).map(e => e.message)]).toEqual([k, []])
     })
 
@@ -472,6 +474,22 @@ describe('the draft flow submission documents (FDAW-32 row 1)', () => {
             .find((a: any) => a.name.value === 'settings')
         expect(settings.value.kind).toBe(Kind.OBJECT)
         expect(settings.value.fields.map((f: any) => f.name.value)).toEqual(['submissionSecondConfirmer'])
+    })
+})
+
+// FDAW-10 row 18a (F-14): both head reads select the new head fields through the one shared fragment, so a
+// fragment that drops a field fails here although the panel specs mock the read.
+describe('the head fields of Record as sent in both head reads (FDAW-10 row 18a)', () => {
+    const flat = (doc: any) => doc.loc.source.body.replace(/\s+/g, ' ')
+    it('SubmissionsOfComponentGql and SubmissionsOfReleaseGql select fdaNumber, fdaSubmissionType and the versionStates fields', () => {
+        for (const k of ['SubmissionsOfComponentGql', 'SubmissionsOfReleaseGql']) {
+            const body = flat((submissionQueries as Record<string, any>)[k])
+            expect(body, k).toMatch(/\bfdaNumber\b/)
+            expect(body, k).toMatch(/\bfdaSubmissionType\b/)
+            expect(body, k).toContain('versionStates { version state byVersion sentDate withdrawnDate replacedBy { releaseVersion version } }')
+            expect(body, k).toContain('acts { uuid kind cause version actedAt actor actorName reasonText causedBy declaredDate submissionType '
+                + 'fdaNumber previousFdaNumber entryKind decision byVersion replacedBy { releaseVersion version } }')
+        }
     })
 })
 

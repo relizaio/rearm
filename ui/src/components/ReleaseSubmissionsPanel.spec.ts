@@ -10,7 +10,7 @@
 // assessment-narrative prompt before Create and Resubmit of a kind with a REQUIRED NARRATIVE part:
 // its preselection, the organization option without a default, the write it sends (set, clear or
 // none) before the act, and no act when the write fails.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { NNotificationProvider, NSelect } from 'naive-ui'
@@ -674,7 +674,7 @@ describe('ReleaseSubmissionsPanel: Share with customers (FDAW-39 row 51 (d))', (
         expect(b.attributes('title') ?? '').toBe('')
         const actions = w.find('[data-testid="submission-head-FDA_PREMARKET"] .submission-actions')
         expect(actions.findAll('button[data-testid]').map((e: any) => e.attributes('data-testid')))
-            .toEqual(['draft-start', 'submission-cancel', 'submission-share'])
+            .toEqual(['draft-start', 'submission-record-sent', 'submission-cancel', 'submission-share'])
         w.unmount()
     })
 
@@ -883,12 +883,12 @@ describe('ReleaseSubmissionsPanel: the draft (FDAW-32 row 6)', () => {
         const ids = (w: any) => w.findAll('[data-testid="submission-kind-FDA_PREMARKET"] .submission-actions button[data-testid]')
             .map((b: any) => b.attributes('data-testid'))
         const w = await mountPanel({ kinds: ['FDA_PREMARKET'], teaView: TEA_ENABLED })
-        expect(ids(w)).toEqual(['draft-start', 'submission-cancel', 'submission-share'])
+        expect(ids(w)).toEqual(['draft-start', 'submission-record-sent', 'submission-cancel', 'submission-share'])
         w.unmount()
 
         install({ SubmissionsOfRelease: { data: { submissionsOfRelease: [FINAL_S1] } }, ReleaseDrafts: DRAFTS(DH) })
         const withDraft = await mountPanel({ kinds: ['FDA_PREMARKET'], teaView: TEA_ENABLED })
-        expect(ids(withDraft)).toEqual(['submission-cancel', 'submission-share'])
+        expect(ids(withDraft)).toEqual(['submission-record-sent', 'submission-cancel', 'submission-share'])
         expect(withDraft.findAll('[data-testid="draft-card"]')).toHaveLength(1)
         withDraft.unmount()
 
@@ -1306,5 +1306,259 @@ describe('ReleaseSubmissionsPanel: polling (FDAW-32 row 8)', () => {
         await advance(30000)
         expect(settingCalls()).toHaveLength(3)
         expect(draftButtonIds(w)).toEqual(['draft-rebuild', 'draft-discard', 'draft-confirm'])
+    })
+})
+
+// FDAW-10 row 18 (REQ-200): the Regulatory card after Final. The acts by state, the line of an earlier Sent
+// version, the three forms and what they send, the State column of the version history, the timeline in the
+// order of the regulatory story, and the dates west of UTC.
+describe('ReleaseSubmissionsPanel: the Regulatory card (FDAW-10 row 18)', () => {
+    const SENT_ACTS = ['submission-add-fda-number', 'submission-add-timeline', 'submission-more']
+    const actionIds = (w: any) => w.findAll('[data-testid="submission-head-FDA_PREMARKET"] .submission-actions button[data-testid]')
+        .map((b: any) => b.attributes('data-testid'))
+    const head = (w: any) => w.find('[data-testid="submission-head-FDA_PREMARKET"]')
+    const ENTRY_1 = { version: 1, state: 'SENT', byVersion: null, sentDate: '2026-11-15', withdrawnDate: null, replacedBy: null }
+    const SENT_S1 = { ...FINAL_S1, state: 'SENT', latestVersion: 1, currentSentVersion: 1, fdaNumber: null, versions: [v(1)],
+        versionStates: [ENTRY_1], acts: [] }
+    const FINAL_OVER_SENT = { ...FINAL_S1, currentSentVersion: 1, fdaNumber: 'K263456',
+        versionStates: [ENTRY_1, { version: 2, state: 'FINAL' }], acts: [] }
+    const CANCELLED_OVER_SENT = { ...FINAL_OVER_SENT, state: 'CANCELLED',
+        versionStates: [ENTRY_1, { version: 2, state: 'CANCELLED' }],
+        acts: [{ uuid: 'c2', kind: 'CANCEL', cause: 'USER', version: 2, actedAt: '2026-11-16T10:00:00Z', actor: 'u1', actorName: 'Ann',
+            reasonText: 'v2 off' }] }
+    const withHeads = (...heads: any[]) => install({ SubmissionsOfRelease: { data: { submissionsOfRelease: heads } } })
+    const datePicker = (w: any, id: string) => w.findAllComponents({ name: 'DatePicker' }).find((c: any) => c.attributes('data-testid') === id)
+
+    beforeEach(() => {
+        resetMocks()
+        install({})
+    })
+
+    it('acts by state: FINAL offers Record as sent before Cancel; SENT the FDA number, timeline and More with Withdraw', async () => {
+        withHeads(FINAL_S1)
+        const fin = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(actionIds(fin)).toEqual(['draft-start', 'submission-record-sent', 'submission-cancel'])
+        expect(head(fin).find('[data-testid="submission-sent-line"]').exists()).toBe(false)
+        fin.unmount()
+
+        withHeads(SENT_S1)
+        const sent = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(actionIds(sent)).toEqual(['draft-start', ...SENT_ACTS])
+        const more = sent.findAllComponents({ name: 'Dropdown' }).find((c: any) => c.find('[data-testid="submission-more"]').exists())!
+        expect(more.props('options')).toEqual([{ label: 'Withdraw', key: 'withdraw' }])
+        expect(head(sent).find('[data-testid="submission-sent-line"]').exists()).toBe(false)
+        expect(sent.find('[data-testid="submission-withdraw"]').exists()).toBe(false)
+        sent.unmount()
+    })
+
+    it('FINAL over an earlier Sent version: both sets and the sent line; CANCELLED over one: the Sent acts and the line only', async () => {
+        withHeads(FINAL_OVER_SENT)
+        const fin = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(actionIds(fin)).toEqual(['draft-start', 'submission-record-sent', 'submission-cancel', ...SENT_ACTS])
+        expect(head(fin).find('[data-testid="submission-sent-line"]').text()).toBe('v1 sent to FDA 2026-11-15 (K263456)')
+        fin.unmount()
+
+        withHeads(CANCELLED_OVER_SENT)
+        const can = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(actionIds(can)).toEqual(['draft-start', ...SENT_ACTS])
+        expect(head(can).find('[data-testid="submission-sent-line"]').text()).toBe('v1 sent to FDA 2026-11-15 (K263456)')
+        can.unmount()
+    })
+
+    it('a reader sees no act', async () => {
+        withHeads(FINAL_OVER_SENT)
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'], isWritable: false })
+        expect(w.find('.submission-actions').exists()).toBe(false)
+        expect(head(w).find('[data-testid="submission-sent-line"]').exists()).toBe(true)
+        w.unmount()
+    })
+
+    it('Record as sent sends the version shown, the day as yyyy-MM-dd, the type and a blank number as null', async () => {
+        withHeads(FINAL_S1)
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await button(w, 'submission-record-sent').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="submission-record-sent-form"]').exists()).toBe(true)
+        expect(mutate.mock.calls).toEqual([])
+        expect(w.find('[data-testid="record-sent-problem"]').text()).toBe('A submission type is required')
+        expect(isDisabled(w, 'record-sent-confirm')).toBe(true)
+        expect(selectOf(w, 'record-sent-type')!.props('options').map((o: any) => o.value)).toEqual(['K510_TRADITIONAL', 'K510_SPECIAL',
+            'K510_ABBREVIATED', 'DE_NOVO', 'PMA', 'PMA_SUPPLEMENT', 'PDP', 'HDE', 'PRE_SUBMISSION'])
+        expect(datePicker(w, 'record-sent-date')!.props('valueFormat')).toBe('yyyy-MM-dd')
+        datePicker(w, 'record-sent-date')!.vm.$emit('update:formatted-value', '2026-11-14')
+        selectOf(w, 'record-sent-type')!.vm.$emit('update:value', 'DE_NOVO')
+        await w.find('[data-testid="record-sent-number"] input').setValue('   ')
+        await flushPromises()
+        expect(w.find('[data-testid="record-sent-problem"]').exists()).toBe(false)
+        await button(w, 'record-sent-confirm').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls.map(c => [operation(c[0]), c[0].variables])).toEqual([['RecordSubmissionSent',
+            { submission: 's1', version: 2, sentDate: '2026-11-14', submissionType: 'DE_NOVO', fdaNumber: null }]])
+        expect(w.find('[data-testid="submission-record-sent-form"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('a refused Record as sent keeps the form open', async () => {
+        withHeads(FINAL_S1)
+        mutate.mockRejectedValueOnce({ errors: [{ message: 'The submission changed since you opened it; reload and review it again' }] })
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await button(w, 'submission-record-sent').trigger('click')
+        await flushPromises()
+        selectOf(w, 'record-sent-type')!.vm.$emit('update:value', 'PMA')
+        await flushPromises()
+        await button(w, 'record-sent-confirm').trigger('click')
+        await flushPromises()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(w.find('[data-testid="submission-record-sent-form"]').exists()).toBe(true)
+        w.unmount()
+    })
+
+    it('Add timeline entry: the decision select only for DECISION, and a decision only sent with it', async () => {
+        withHeads(SENT_S1)
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        await button(w, 'submission-add-timeline').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="submission-timeline-form"]').exists()).toBe(true)
+        expect(selectOf(w, 'timeline-decision')).toBeUndefined()
+        selectOf(w, 'timeline-kind')!.vm.$emit('update:value', 'DECISION')
+        await flushPromises()
+        expect(selectOf(w, 'timeline-decision')!.props('options').map((o: any) => o.value)).toEqual(['CLEARED', 'NOT_CLEARED'])
+        expect(w.find('[data-testid="timeline-problem"]').text()).toBe('A decision is required')
+        selectOf(w, 'timeline-decision')!.vm.$emit('update:value', 'CLEARED')
+        selectOf(w, 'timeline-kind')!.vm.$emit('update:value', 'AI_REQUEST_RECEIVED')
+        await flushPromises()
+        expect(selectOf(w, 'timeline-decision')).toBeUndefined()
+        datePicker(w, 'timeline-date')!.vm.$emit('update:formatted-value', '2026-11-15')
+        await w.find('[data-testid="timeline-note"] textarea').setValue(' asked for a test report ')
+        await flushPromises()
+        await button(w, 'timeline-confirm').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls.map(c => [operation(c[0]), c[0].variables])).toEqual([['AddTimelineEntry',
+            { submission: 's1', entryKind: 'AI_REQUEST_RECEIVED', entryDate: '2026-11-15', decision: null, note: 'asked for a test report' }]])
+        w.unmount()
+    })
+
+    it('More > Withdraw opens the form, which needs a reason, and sends the date and the reason', async () => {
+        withHeads(SENT_S1)
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        const more = w.findAllComponents({ name: 'Dropdown' }).find((c: any) => c.find('[data-testid="submission-more"]').exists())!
+        more.vm.$emit('select', 'withdraw')
+        await flushPromises()
+        expect(w.find('[data-testid="submission-withdraw-form"]').exists()).toBe(true)
+        expect(w.find('[data-testid="withdraw-problem"]').text()).toBe('A reason is required')
+        datePicker(w, 'withdraw-date')!.vm.$emit('update:formatted-value', '2026-11-20')
+        await w.find('[data-testid="withdraw-reason"] textarea').setValue('pulled')
+        await flushPromises()
+        await button(w, 'withdraw-confirm').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls.map(c => [operation(c[0]), c[0].variables])).toEqual([['WithdrawSubmission',
+            { submission: 's1', withdrawnDate: '2026-11-20', reason: 'pulled' }]])
+        w.unmount()
+    })
+
+    it('the State column after Version, from each version\'s entry', async () => {
+        withHeads(FINAL_OVER_SENT)
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        const table = w.find('[data-testid="submission-versions-FDA_PREMARKET"]')
+        expect(table.findAll('thead th').map((t: any) => t.text()).slice(1, 4)).toEqual(['Version', 'State', 'Created'])
+        const rows = table.findAll('tbody tr.n-data-table-tr:not(.n-data-table-tr--expanded-content)')
+            .filter((r: any) => /^v\d/.test(r.findAll('td')[1]?.text() ?? ''))
+        expect(rows.map((r: any) => r.findAll('td')[2].text())).toEqual(['Final (no confirmation record) - not sent',
+            'Sent to FDA 2026-11-15 (K263456)'])
+        w.unmount()
+    })
+
+    it('F-2: the note under a head whose v1 was cancelled and v2 withdrawn is the WITHDRAW note', async () => {
+        withHeads({ ...FINAL_S1, state: 'WITHDRAWN', currentSentVersion: null, versionStates: [{ version: 1, state: 'CANCELLED' },
+            { version: 2, state: 'WITHDRAWN', sentDate: '2026-11-15', withdrawnDate: '2026-11-20' }],
+        acts: [{ uuid: 'c1', kind: 'CANCEL', cause: 'USER', version: 1, actedAt: '2026-11-02T00:00:00Z', actor: 'u1', actorName: 'Bob', reasonText: 'v1 off' },
+            { uuid: 'w2', kind: 'WITHDRAW', cause: 'USER', version: 2, declaredDate: '2026-11-20', actedAt: '2026-11-21T00:00:00Z',
+                actor: 'u1', actorName: 'Ann', reasonText: 'pulled <b>x</b>' }] })
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(head(w).find('[data-testid="submission-state"]').text()).toBe('Withdrawn at FDA 2026-11-20')
+        expect(head(w).find('.submission-withdrawn').text()).toBe('Withdrawn at FDA on 2026-11-20 by Ann: pulled <b>x</b>')
+        expect(head(w).find('.submission-withdrawn b').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('F-10: the timeline by the day of each act, ties in the served order, snapshots only', async () => {
+        const acts = [
+            { uuid: 'a1', kind: 'RECORD_SENT', cause: 'USER', version: 1, declaredDate: '2026-11-10', actedAt: '2026-11-10T12:00:00Z',
+                actor: 'u1', actorName: 'Ann', submissionType: 'K510_TRADITIONAL' },
+            { uuid: 'a2', kind: 'FDA_NUMBER_ADDED', cause: 'USER', version: 1, actedAt: '2026-11-12T15:00:00Z', actor: 'u2', actorName: 'Bo',
+                fdaNumber: 'K263456' },
+            { uuid: 'a3', kind: 'TIMELINE_ENTRY', cause: 'USER', version: 1, declaredDate: '2026-11-11', actedAt: '2026-11-13T12:00:00Z',
+                actor: 'u1', actorName: 'Ann', entryKind: 'AI_REQUEST_RECEIVED', reasonText: 'test report' },
+            { uuid: 'a4', kind: 'RECORD_SENT', cause: 'USER', version: 2, declaredDate: '2026-11-09', actedAt: '2026-11-14T12:00:00Z',
+                actor: 'u1', actorName: 'Ann', submissionType: 'K510_TRADITIONAL' },
+            { uuid: 'a5', kind: 'AMENDED', cause: 'SYSTEM', causedBy: 'a4', version: 1, byVersion: 2, actedAt: '2026-11-14T12:00:00Z' },
+            { uuid: 'a6', kind: 'FINALIZE', cause: 'USER', version: 2, actedAt: '2026-11-13T00:00:00Z', actor: 'u1', actorName: 'Ann' },
+        ]
+        withHeads({ ...FINAL_S1, state: 'SENT', currentSentVersion: 2, fdaNumber: 'K263456', lastActBy: 'u2', lastActByName: 'Live Name',
+            versionStates: [{ version: 1, state: 'AMENDED', byVersion: 2, sentDate: '2026-11-10' }, { version: 2, state: 'SENT', sentDate: '2026-11-09' }],
+            acts })
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        const lines = w.findAll('[data-testid="submission-timeline-FDA_PREMARKET"] [data-testid="submission-timeline-line"]')
+            .map((l: any) => l.text().replace(/\s+/g, ' '))
+        expect(lines.map((l: string) => l.split(' \u00b7 ')[1].split(':')[0])).toEqual(['Recorded as sent', 'Amended', 'Recorded as sent',
+            'Timeline entry', 'FDA number added'])
+        expect(lines[0]).toBe('2026-11-09 \u00b7 Recorded as sent: v2, 510(k) Traditional by Ann')
+        expect(lines[1]).toMatch(/\u00b7 Amended: v1 by v2$/)
+        expect(lines[3]).toBe('2026-11-11 \u00b7 Timeline entry: AI request received: test report by Ann')
+        // the FDA number line: the snapshot name, never the head's live last-actor name
+        expect(lines[4]).toMatch(/\u00b7 FDA number added: K263456 by Bo$/)
+        expect(lines.join('\n')).not.toContain('Live Name')
+        w.unmount()
+    })
+
+    it('F-10: two acts of one day keep the served order', async () => {
+        withHeads({ ...SENT_S1, acts: [
+            { uuid: 'b1', kind: 'TIMELINE_ENTRY', cause: 'USER', version: 1, declaredDate: '2026-11-15', actedAt: '2026-11-15T10:00:00Z',
+                actorName: 'Ann', entryKind: 'RESPONSE_SENT' },
+            { uuid: 'b2', kind: 'TIMELINE_ENTRY', cause: 'USER', version: 1, declaredDate: '2026-11-15', actedAt: '2026-11-15T11:00:00Z',
+                actorName: 'Ann', entryKind: 'AI_REQUEST_RECEIVED' }] })
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        const lines = w.findAll('[data-testid="submission-timeline-line"]').map((l: any) => l.text())
+        expect(lines.map((l: string) => /Response sent|AI request received/.exec(l)![0])).toEqual(['Response sent', 'AI request received'])
+        w.unmount()
+    })
+
+    describe('in America/New_York, west of UTC (F-1)', () => {
+        let zone: string | undefined
+        beforeAll(() => {
+            zone = process.env.TZ
+            process.env.TZ = 'America/New_York'
+        })
+        afterAll(() => {
+            if (zone === undefined) delete process.env.TZ
+            else process.env.TZ = zone
+        })
+        afterEach(() => { vi.useRealTimers() })
+
+        it('the zone took effect: a date-only string reads as the day before', () => {
+            expect(new Date('2026-11-15').getDate()).toBe(14)
+        })
+
+        it('the tag reads the declared day; a timeline entry line starts with its day and holds no time', async () => {
+            withHeads({ ...SENT_S1, acts: [{ uuid: 't1', kind: 'TIMELINE_ENTRY', cause: 'USER', version: 1, declaredDate: '2026-11-15',
+                actedAt: '2026-11-16T03:30:00Z', actorName: 'Ann', entryKind: 'RESPONSE_SENT' }] })
+            const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+            expect(head(w).find('[data-testid="submission-state"]').text()).toBe('Sent to FDA 2026-11-15')
+            const line = w.find('[data-testid="submission-timeline-line"]').text()
+            expect(line.startsWith('2026-11-15')).toBe(true)
+            expect(line).not.toMatch(/\d{1,2}:\d{2}/)
+            w.unmount()
+        })
+
+        it('the Record as sent form\'s default day at the fake clock is the local day', async () => {
+            vi.useFakeTimers({ toFake: ['Date'] })
+            vi.setSystemTime(new Date('2026-11-16T03:30:00Z'))
+            withHeads(FINAL_S1)
+            const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+            await button(w, 'submission-record-sent').trigger('click')
+            await flushPromises()
+            expect(datePicker(w, 'record-sent-date')!.props('formattedValue')).toBe('2026-11-15')
+            w.unmount()
+        })
     })
 })

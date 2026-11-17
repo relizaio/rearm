@@ -1,7 +1,7 @@
 // Regulatory submissions (task TEA-30, design 4.6 rows 30, 31 and 35): the product page's rows, the
 // lifecycle rule, the version and part rows, the reason check, the confirmations with names in text
 // only, the act error text and the History text over the four shapes the server writes.
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 
@@ -9,7 +9,7 @@ const {
     canCreateSubmission, manifestDownloadRef, manifestFileName, submissionActErrorText,
     submissionHistoryText, submissionOtherRows, submissionPartRows, submissionReasonError, submissionReleaseRows,
     submissionVersionRows, submissionStateText,
-    submissionStateTagType, submissionCancelNote, submissionDateText, SUBMISSION_STATE_LABELS,
+    submissionStateTagType, submissionStateNote, submissionDateText, SUBMISSION_STATE_LABELS,
     submissionActorText, submissionProfileLabel, submissionInStateFilter,
     SUBMISSION_FILTERED_OUT_TEXT, submissionRefLabel, submissionWrittenText, CREATE_LIFECYCLE_REASON,
     SUBMISSION_ACT_KIND_LABELS, NEW_VERSION_REASON_LABELS, DRAFT_STATE_LABELS, DRAFT_JOB_STATE_LABELS,
@@ -222,6 +222,24 @@ describe('the History text (row 35)', () => {
         expect(empty.objectId).toMatch(UUID_RE)
     })
 
+    // FDAW-10 row 20 (REQ-200): a version recorded as sent, superseded by a replacement, withdrawn at FDA.
+    it('FDAW-10 row 20: Sent, Superseded and Withdrawn in words; an unknown shape still falls back', () => {
+        const outs = [
+            both(row('CHANGED', 'FINAL v1', 'SENT v1')),
+            both(row('CHANGED', 'SENT v1', 'SUPERSEDED v1')),
+            both(row('REMOVED', 'SENT v1', 'WITHDRAWN')),
+        ]
+        expect(outs).toEqual([
+            ['Sent', 'Regulatory submission: version 1 sent'],
+            ['Superseded', 'Regulatory submission: version 1 superseded'],
+            ['Withdrawn', 'Regulatory submission: version 1 withdrawn'],
+        ])
+        expectSwept(outs.flat().join('\n'))
+        // two states of different versions is not this shape
+        expect(both(row('CHANGED', 'SENT v1', 'SUPERSEDED v2'))).toEqual(['Changed', 'Regulatory submission updated'])
+        expect(both(row('CHANGED', 'x y z', 'q'))).toEqual(['Changed', 'Regulatory submission updated'])
+    })
+
     it('other scopes: the action label, an unknown action humanized', () => {
         expect(historyActionLabel({ rus: 'LIFECYCLE', rua: 'CHANGED' })).toBe('Changed')
         expect(historyActionLabel({ rus: 'ARTIFACT', rua: 'UPDATED' })).toBe('Updated')
@@ -299,18 +317,18 @@ describe('the head state texts (FDAW-8)', () => {
             { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann', reasonText: 'again' },
             { kind: 'CANCEL', actedAt: '2026-10-03T00:00:00Z', actorName: 'Bob', reasonText: 'newest' },
         ]
-        expect(submissionCancelNote({ state: 'CANCELLED', acts })).toEqual({
+        expect(submissionStateNote({ state: 'CANCELLED', acts })).toEqual({
             lead: 'Cancelled on ' + submissionDateText('2026-10-03T00:00:00Z') + ' by Bob:', reason: 'newest' })
-        expect(submissionCancelNote({ state: 'CANCELLED', legacyState: 'WITHDRAWN', acts: [],
+        expect(submissionStateNote({ state: 'CANCELLED', legacyState: 'WITHDRAWN', acts: [],
             withdrawnDate: '2026-09-03T00:00:00Z', withdrawReason: 'old' }))
             .toEqual({ lead: 'Withdrawn on ' + submissionDateText('2026-09-03T00:00:00Z') + ':', reason: 'old' })
-        expect(submissionCancelNote({ state: 'FINAL', acts })).toBeNull()
-        expect(submissionCancelNote({ state: 'CANCELLED', acts: [] })).toBeNull()
-        // the legacy withdrawal triple needs only one of withdrawnDate/withdrawReason, not both
-        expect(submissionCancelNote({ state: 'WITHDRAWN', acts: [], withdrawnDate: '2026-09-03T00:00:00Z', withdrawReason: null }))
-            .toEqual({ lead: 'Withdrawn on ' + submissionDateText('2026-09-03T00:00:00Z') + ':', reason: '' })
-        expect(submissionCancelNote({ state: 'WITHDRAWN', acts: [], withdrawnDate: null, withdrawReason: 'old, no date' }))
-            .toEqual({ lead: 'Withdrawn on ' + submissionDateText(null) + ':', reason: 'old, no date' })
+        expect(submissionStateNote({ state: 'FINAL', acts })).toBeNull()
+        expect(submissionStateNote({ state: 'CANCELLED', acts: [] })).toBeNull()
+        // a WITHDRAWN head never reads the legacy triple: V107 moved every legacy withdrawal to CANCELLED
+        expect(submissionStateNote({ state: 'WITHDRAWN', acts: [], withdrawnDate: '2026-09-03T00:00:00Z', withdrawReason: null }))
+            .toBeNull()
+        expect(submissionStateNote({ state: 'WITHDRAWN', acts: [], withdrawnDate: null, withdrawReason: 'old, no date' }))
+            .toBeNull()
     })
 })
 
@@ -327,24 +345,24 @@ describe('the actor text and the switched-off kind sentence (FDAW-4)', () => {
     })
 
     // Round 4 (D8, T5) and functional F-3: the cancelled block names the canceller by the same rule.
-    it('submissionCancelNote names the canceller through submissionActorText, never the uuid', () => {
+    it('submissionStateNote names the canceller through submissionActorText, never the uuid', () => {
         const at = '2026-10-03T00:00:00Z'
         const other = 'aaaaaaaa-0000-4000-8000-000000000002'
-        const noName = submissionCancelNote({ state: 'CANCELLED', lastActBy: other, lastActByName: 'Someone Else',
+        const noName = submissionStateNote({ state: 'CANCELLED', lastActBy: other, lastActByName: 'Someone Else',
             acts: [{ kind: 'CANCEL', actedAt: at, actor: U, actorName: null, reasonText: 'recalled' }] })
         expect(noName).toEqual({ lead: 'Cancelled on ' + submissionDateText(at) + ' by removed user:', reason: 'recalled' })
         expect(noName!.lead).not.toContain(U)
-        const named = submissionCancelNote({ state: 'CANCELLED',
+        const named = submissionStateNote({ state: 'CANCELLED',
             acts: [{ kind: 'CANCEL', actedAt: at, actor: U, actorName: 'Bob', reasonText: 'r' }] })
         expect(named!.lead).toBe('Cancelled on ' + submissionDateText(at) + ' by Bob:')
-        const legacy = submissionCancelNote({ state: 'CANCELLED', legacyState: 'WITHDRAWN', acts: [],
+        const legacy = submissionStateNote({ state: 'CANCELLED', legacyState: 'WITHDRAWN', acts: [],
             withdrawnDate: '2026-09-03T00:00:00Z', withdrawReason: 'old' })
         expect(legacy).toEqual({ lead: 'Withdrawn on ' + submissionDateText('2026-09-03T00:00:00Z') + ':', reason: 'old' })
     })
 
     it('F-3: a canceller with no stored name who is the head\'s last actor reads as the head\'s resolved name', () => {
         const at = '2026-10-03T00:00:00Z'
-        const note = submissionCancelNote({ state: 'CANCELLED', lastActBy: U, lastActByName: 'ada@org.example',
+        const note = submissionStateNote({ state: 'CANCELLED', lastActBy: U, lastActByName: 'ada@org.example',
             acts: [{ kind: 'CANCEL', actedAt: at, actor: U, actorName: '', reasonText: 'r' }] })
         expect(note!.lead).toBe('Cancelled on ' + submissionDateText(at) + ' by ada@org.example:')
         expect(note!.lead).not.toContain(U)
@@ -386,5 +404,131 @@ describe('the draft flow words (FDAW-32 row 3)', () => {
         expect(keys).toContain('submissionCancelConfirm')
         for (const k of ['SUBMISSION_ACT_LABELS', 'submissionCreateConfirm', 'submissionResubmitConfirm', 'submissionWithdrawConfirm',
             'submissionKindDisabledText']) expect(keys, k).not.toContain(k)
+    })
+})
+
+// FDAW-10 row 17 (REQ-200): the Regulatory card's texts after Record as sent, the label maps of the four
+// acts, the note under a head and the line of an earlier Sent version.
+describe('the Regulatory card texts (FDAW-10 row 17)', () => {
+    const {
+        FDA_SUBMISSION_TYPE_LABELS, TIMELINE_ENTRY_KIND_LABELS, FDA_DECISION_LABELS, submissionDayText, localDayOf,
+        submissionSentLine, submissionVersionStateText,
+    } = submissionsModule
+    const W = 'aaaaaaaa-0000-4000-8000-00000000000a'
+    const sent = (changes: Record<string, any> = {}) => ({ state: 'SENT', latestVersion: 1, currentSentVersion: 1,
+        versionStates: [{ version: 1, state: 'SENT', sentDate: '2026-11-15' }], ...changes })
+
+    it('the three label maps cover their Pro enums exactly, in order', async () => {
+        const { enumValuesOf, proSchema } = await import('./schemaDriftSupport')
+        expect(FDA_SUBMISSION_TYPE_LABELS).toEqual({ K510_TRADITIONAL: '510(k) Traditional', K510_SPECIAL: '510(k) Special',
+            K510_ABBREVIATED: '510(k) Abbreviated', DE_NOVO: 'De Novo', PMA: 'PMA', PMA_SUPPLEMENT: 'PMA supplement', PDP: 'PDP',
+            HDE: 'HDE', PRE_SUBMISSION: 'Pre-Submission' })
+        expect(TIMELINE_ENTRY_KIND_LABELS).toEqual({ AI_REQUEST_RECEIVED: 'AI request received', RESPONSE_SENT: 'Response sent',
+            DECISION: 'Decision' })
+        expect(FDA_DECISION_LABELS).toEqual({ CLEARED: 'Cleared', NOT_CLEARED: 'Not cleared' })
+        if (proSchema) {
+            expect(Object.keys(FDA_SUBMISSION_TYPE_LABELS)).toEqual(enumValuesOf(proSchema, 'FdaSubmissionType'))
+            expect(Object.keys(TIMELINE_ENTRY_KIND_LABELS)).toEqual(enumValuesOf(proSchema, 'TimelineEntryKind'))
+            expect(Object.keys(FDA_DECISION_LABELS)).toEqual(enumValuesOf(proSchema, 'FdaDecision'))
+        }
+    })
+
+    it('each state text from the entry of latestVersion: SENT with and without a number, WITHDRAWN, AMENDED, SUPERSEDED', () => {
+        expect(submissionStateText(sent())).toBe('Sent to FDA 2026-11-15')
+        expect(submissionStateText(sent({ fdaNumber: 'K263456' }))).toBe('Sent to FDA 2026-11-15 (K263456)')
+        expect(submissionStateText({ state: 'WITHDRAWN', latestVersion: 1,
+            versionStates: [{ version: 1, state: 'WITHDRAWN', sentDate: '2026-11-15', withdrawnDate: '2026-11-20' }] }))
+            .toBe('Withdrawn at FDA 2026-11-20')
+        expect(submissionStateText({ state: 'AMENDED', latestVersion: 1, versionStates: [{ version: 1, state: 'AMENDED', byVersion: 2 }] }))
+            .toBe('Amended by v2')
+        expect(submissionStateText({ state: 'SUPERSEDED', latestVersion: 1,
+            versionStates: [{ version: 1, state: 'SUPERSEDED', replacedBy: { releaseVersion: '2.4.1', version: 1 } }] }))
+            .toBe('Superseded by 2.4.1 v1')
+        expect(submissionStateText({ state: 'SUPERSEDED', latestVersion: 1, versionStates: [{ version: 1, state: 'SUPERSEDED', byVersion: 3 }] }))
+            .toBe('Superseded by v3')
+        // the dates of another version are never the head's
+        expect(submissionStateText({ state: 'SENT', latestVersion: 2, currentSentVersion: 2,
+            versionStates: [{ version: 1, state: 'AMENDED', sentDate: '2026-11-01', byVersion: 2 }, { version: 2, state: 'SENT', sentDate: '2026-11-15' }] }))
+            .toBe('Sent to FDA 2026-11-15')
+        for (const s of ['AMENDED', 'SUPERSEDED']) expect(submissionStateTagType(s), s).toBe('default')
+    })
+
+    it('the version history State cell: each entry by the texts of the tag, FINAL by that version\'s confirmations', () => {
+        const head = { state: 'FINAL', latestVersion: 2, currentSentVersion: 1, fdaNumber: 'K263456',
+            versionStates: [{ version: 1, state: 'SENT', sentDate: '2026-11-15' }, { version: 2, state: 'FINAL' }] }
+        expect(submissionVersionStateText(head, { version: 1 })).toBe('Sent to FDA 2026-11-15 (K263456)')
+        expect(submissionVersionStateText(head, { version: 2, confirmations: [{ confirmedAt: 'x' }] })).toBe('Final - not sent')
+        expect(submissionVersionStateText(head, { version: 3 })).toBe('')
+    })
+
+    it('F-4: the line of an earlier Sent version, on a FINAL and on a CANCELLED head; none on a SENT head or without one', () => {
+        const states = [{ version: 1, state: 'SENT', sentDate: '2026-11-15' }, { version: 2, state: 'FINAL' }]
+        expect(submissionSentLine({ state: 'FINAL', latestVersion: 2, currentSentVersion: 1, fdaNumber: 'K263456', versionStates: states }))
+            .toBe('v1 sent to FDA 2026-11-15 (K263456)')
+        expect(submissionSentLine({ state: 'CANCELLED', latestVersion: 2, currentSentVersion: 1, fdaNumber: 'K263456',
+            versionStates: [states[0], { version: 2, state: 'CANCELLED' }] })).toBe('v1 sent to FDA 2026-11-15 (K263456)')
+        expect(submissionSentLine(sent({ fdaNumber: 'K263456' }))).toBeNull()
+        expect(submissionSentLine({ state: 'FINAL', latestVersion: 2, currentSentVersion: null, versionStates: states })).toBeNull()
+    })
+
+    it('F-2: the note is the act that made the state, on the latest version only', () => {
+        const withdraw = { uuid: 'w1', kind: 'WITHDRAW', cause: 'USER', version: 1, declaredDate: '2026-11-20', actor: W, actorName: 'Ann',
+            actedAt: '2026-11-21T10:00:00Z', reasonText: 'pulled' }
+        const plain = { state: 'WITHDRAWN', latestVersion: 1, withdrawnDate: '2026-01-01T00:00:00Z', withdrawReason: 'legacy',
+            acts: [{ uuid: 's1', kind: 'RECORD_SENT', cause: 'USER', version: 1 }, withdraw] }
+        expect(submissionStateNote(plain)).toEqual({ lead: 'Withdrawn at FDA on 2026-11-20 by Ann:', reason: 'pulled' })
+        // v1 cancelled, v2 finalized, sent and withdrawn: the WITHDRAW of v2, never v1's CANCEL
+        const twice = { state: 'WITHDRAWN', latestVersion: 2, acts: [
+            { uuid: 'c1', kind: 'CANCEL', cause: 'USER', version: 1, actedAt: '2026-11-02T00:00:00Z', actorName: 'Bob', reasonText: 'v1 off' },
+            { ...withdraw, version: 2 }] }
+        expect(submissionStateNote(twice)).toEqual({ lead: 'Withdrawn at FDA on 2026-11-20 by Ann:', reason: 'pulled' })
+        // a CANCELLED head: the CANCEL of latestVersion, the older CANCEL of v1 ignored though it is newer in the list
+        const cancelled = { state: 'CANCELLED', latestVersion: 2, acts: [
+            { uuid: 'c2', kind: 'CANCEL', cause: 'USER', version: 2, actedAt: '2026-11-03T00:00:00Z', actorName: 'Cy', reasonText: 'v2 off' },
+            { uuid: 'c1', kind: 'CANCEL', cause: 'USER', version: 1, actedAt: '2026-11-04T00:00:00Z', actorName: 'Bob', reasonText: 'v1 off' }] }
+        expect(submissionStateNote(cancelled)).toEqual({ lead: 'Cancelled on ' + submissionDateText('2026-11-03T00:00:00Z') + ' by Cy:',
+            reason: 'v2 off' })
+        // a legacy CANCELLED head with no CANCEL act: the triple, as today
+        expect(submissionStateNote({ state: 'CANCELLED', latestVersion: 1, legacyState: 'WITHDRAWN', acts: [],
+            withdrawnDate: '2026-09-03T00:00:00Z', withdrawReason: 'old' }))
+            .toEqual({ lead: 'Withdrawn on ' + submissionDateText('2026-09-03T00:00:00Z') + ':', reason: 'old' })
+        expect(submissionStateNote(sent({ acts: [withdraw] }))).toBeNull()
+        expect(submissionStateNote({ state: 'FINAL', latestVersion: 1, acts: [withdraw] })).toBeNull()
+    })
+
+    it('F-12: submissionCancelNote is no longer exported', () => {
+        const keys = Object.keys(submissionsModule)
+        expect(keys).toContain('submissionStateNote')
+        expect(keys).not.toContain('submissionCancelNote')
+    })
+
+    describe('in America/New_York, west of UTC (F-1)', () => {
+        let zone: string | undefined
+        beforeAll(() => {
+            zone = process.env.TZ
+            process.env.TZ = 'America/New_York'
+        })
+        afterAll(() => {
+            if (zone === undefined) delete process.env.TZ
+            else process.env.TZ = zone
+            vi.useRealTimers()
+        })
+
+        it('the zone took effect: a date-only string reads as the day before', () => {
+            expect(new Date('2026-11-15').getDate()).toBe(14)
+        })
+
+        it('a declared day prints as itself, never through Date', () => {
+            expect(submissionStateText(sent())).toBe('Sent to FDA 2026-11-15')
+            expect(submissionDayText('2026-11-15')).toBe('2026-11-15')
+            for (const d of ['2026-11-15T00:00:00Z', '', null, '15/11/2026']) expect(submissionDayText(d as any), String(d)).toBe('')
+        })
+
+        it('localDayOf is the local day at the fake clock, not the UTC day', () => {
+            vi.useFakeTimers()
+            vi.setSystemTime(new Date('2026-11-16T03:30:00Z'))
+            expect(localDayOf(Date.now())).toBe('2026-11-15')
+            vi.useRealTimers()
+        })
     })
 })

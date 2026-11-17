@@ -1,5 +1,7 @@
 // The acts of the draft flow (task FDAW-32 3.5, after TEA-30 3.5.5), used by the release page's package
-// section: Start, Rebuild, Discard, Confirm, Return to draft, Finalize, and Cancel of a Final head. One act
+// section: Start, Rebuild, Discard, Confirm, Return to draft, Finalize, and Cancel of a Final head; and the
+// four acts on a Final or Sent head (FDAW-10 3.7): Record as sent, Add timeline entry and Withdraw from the
+// panel's forms, Add FDA number from one text input here. One act
 // at a time per page (`busy`). Confirm and Finalize send the revision of the card that was clicked, read
 // before the dialog opens, and require the statement to be ticked; Discard, Return to draft and Cancel
 // require a reason. Every dialog is one SweetAlert2 options object with a constant title in `titleText`
@@ -9,7 +11,7 @@ import { ref } from 'vue'
 import Swal from 'sweetalert2'
 import submissionQueries from './submissionQueries'
 import {
-    SubmissionNames, submissionActErrorText, submissionCancelConfirm, submissionReasonError, submissionWrittenText,
+    SubmissionNames, fdaNumberError, submissionActErrorText, submissionCancelConfirm, submissionReasonError, submissionWrittenText,
 } from './submissions'
 import {
     CONFIRMATION_STATEMENT, STATEMENT_REQUIRED, draftConfirmConfirm, draftDiscardConfirm, draftFinalizeConfirm, draftReturnConfirm,
@@ -143,5 +145,47 @@ export function useSubmissionActs (deps: SubmissionActsDeps) {
         })
     }
 
-    return { busy, start, rebuild, discard, confirm, returnToEditing, finalize, cancel }
+    /** One act of a panel form (FDAW-10 3.7): true when the server took it; reload after either way. */
+    async function formAct (mutation: any, variables: Record<string, any>, field: string, done: string): Promise<boolean> {
+        const answered = await oneAtATime(async () => {
+            const result = await send(mutation, variables, field)
+            if (result) Swal.fire({ titleText: 'Submission', text: done, icon: 'success' })
+            await deps.reload()
+            return Boolean(result)
+        })
+        return answered === true
+    }
+
+    /** Record as sent, from the panel's form: the variables carry the version shown. */
+    function recordSent (variables: Record<string, any>): Promise<boolean> {
+        return formAct(submissionQueries.RecordSubmissionSentGql, variables, 'recordSubmissionSent', 'Recorded as sent.')
+    }
+
+    /** Add timeline entry, from the panel's form. */
+    function addTimelineEntry (variables: Record<string, any>): Promise<boolean> {
+        return formAct(submissionQueries.AddTimelineEntryGql, variables, 'addTimelineEntry', 'Timeline entry added.')
+    }
+
+    /** Withdraw the Sent version at FDA, from the panel's form. */
+    function withdrawSent (variables: Record<string, any>): Promise<boolean> {
+        return formAct(submissionQueries.WithdrawSubmissionGql, variables, 'withdrawSubmission', 'Withdrawn at FDA.')
+    }
+
+    /** Add FDA number: one text input (the object form, no html), the number as typed after the strip. */
+    async function addFdaNumber (head: any) {
+        await oneAtATime(async () => {
+            const answer: any = await Swal.fire({ titleText: 'Add FDA number', text: 'The FDA number of the Sent version v'
+                + (head?.currentSentVersion ?? '') + '.', icon: 'question', input: 'text' as const, inputLabel: 'FDA number',
+            inputAttributes: { maxlength: '32' }, inputValidator: (v: string) => fdaNumberError(v, true), showCancelButton: true,
+            cancelButtonText: 'Cancel', confirmButtonText: 'Add FDA number' })
+            if (!answer?.isConfirmed) return
+            const result = await send(submissionQueries.AddFdaNumberGql, { submission: head.uuid, fdaNumber: reasonOf(answer.value),
+                reason: null }, 'addFdaNumber')
+            if (result) Swal.fire({ titleText: 'Submission', text: 'FDA number added.', icon: 'success' })
+            await deps.reload()
+        })
+    }
+
+    return { busy, start, rebuild, discard, confirm, returnToEditing, finalize, cancel, recordSent, addTimelineEntry, withdrawSent,
+        addFdaNumber }
 }
