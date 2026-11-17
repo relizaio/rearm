@@ -43,6 +43,9 @@ function sidebar() {
           {text: 'Approval Queues', link: '/configure/approval-queues'}
         ]},
         {text: 'Transparency Exchange API', link: '/tea/' },
+        {text: 'Cyber Resilience Act', items: [
+          {text: 'EU CRA Compliance', link: '/cra/eu-cra-compliance'}
+        ]},
         {text: 'Integrations', link: '/integrations/',
           items: [
             {text: 'ReARM CLI', link: '/integrations/rearmcli'},
