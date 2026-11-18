@@ -30,6 +30,7 @@ function sidebar() {
           {text: 'Exporting Compliance Artifacts', link: '/workflows/exporting-compliance-artifacts'},
           {text: 'Regulatory Packages and Submissions', link: '/workflows/regulatory-packages'},
           {text: 'Readiness rules', link: '/workflows/readiness-rules'},
+          {text: 'Regulated output changes', link: '/workflows/regulated-output-changes'},
           {text: 'Scoring an SBOM', link: '/workflows/sbom-scoring'},
           {text: 'Signing exported SBOMs', link: '/workflows/signing-exported-sboms'},
           {text: 'Pull Requests', link: '/workflows/pull-requests'},
