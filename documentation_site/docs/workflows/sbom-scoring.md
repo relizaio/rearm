@@ -62,6 +62,17 @@ report **Check this export** opens shows the same number under the check. The co
 leave the same entries out, so you attest third-party components only. An export or score without
 support metadata carries no marker, and the two checks fail every component as before.
 
+The `fda` checks are listed in [FDA checker rules](./fda-checker-rules), a list with a rule set number. A
+JSON report names the number in the `ruleSetVersion` of its `fda` profile. A Final version of a regulatory
+package keeps the engine's report in its **Check report** part, under `engineReport`: the rule set that
+judged the version is the `ruleSetVersion` of the entry of `engineReport.profiles` whose `key` is `fda`. A
+part without that key was made by an engine older than rule set 1; the version's checker version names
+that engine. The `ruleSetVersion` of the version's check summary is another number: it numbers ReARM's
+readiness rules. **Re-run check** shows the stored and the fresh report and prints neither rule set: the
+stored one is read in the part, and the engine that runs now uses the rule set of the FDA checker rules
+page of this documentation. For the `fda` profile that page is the authority: where this page and the
+list differ, the list is right.
+
 ## Where to score
 
 ### The release BOM export

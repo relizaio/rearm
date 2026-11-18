@@ -7,7 +7,10 @@
 # after the fetch; modules are checked against the commit's go.sum. The engine checks in the
 # builder's tools RUN fail the build on an older engine: the fda report on
 # test/fixtures/score/full.self.cdx.json must carry both "skippedTypes" (SCORE-20) and
-# "selfComponentsSkipped" (SCORE-59; pinned by SCORE-60 ADR-2), the fda report on
+# "selfComponentsSkipped" (SCORE-59; pinned by SCORE-60 ADR-2) and must carry
+# "ruleSetVersion": "1" (FDAW-75, FDAW-125): a commit or release with another fda rule set needs
+# documentation_site/docs/workflows/fda-checker-rules.md replaced with its docs/fda-checker-rules.md,
+# and this number and the sum in documentation_site/Dockerfile changed, the fda report on
 # full.justified.cdx.json must carry a "justified" count of 1 or more (FDAW-13, FDAW-111), and
 # the merge of the two engine-check fixtures (test/fixtures/merge/engine-check-a.cdx.json and
 # engine-check-b.cdx.json) must print `folds into root` on stderr (SCORE-67; pinned by SCORE-68 ADR-2).
@@ -79,6 +82,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     rearm bomutils score --format json --profile fda --infile /tmp/engine-check.cdx.json > /tmp/engine-check.json && \
     grep -q '"skippedTypes"' /tmp/engine-check.json && \
     grep -q '"selfComponentsSkipped"' /tmp/engine-check.json && \
+    grep -q '"ruleSetVersion": "1"' /tmp/engine-check.json && \
     rearm bomutils score --format json --profile fda --infile /tmp/engine-check-justified.cdx.json > /tmp/engine-check-justified.json && \
     grep -Eq '"justified": ?[1-9]' /tmp/engine-check-justified.json && \
     rearm bomutils merge-boms --name engine-check --version 1.0.0 --input-files /tmp/engine-check-a.cdx.json --input-files /tmp/engine-check-b.cdx.json --outfile /tmp/engine-check-merged.json 2> /tmp/engine-check-merge.err && \
