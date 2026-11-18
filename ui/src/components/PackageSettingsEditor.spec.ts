@@ -140,6 +140,24 @@ describe('PackageSettingsEditor', () => {
         expect(noGen[0].attributes('title')).toContain('No generator is registered for this part')
     })
 
+    it('FDAW-17 row 17 (e): the excluded note shows under a VDR or VEX part whose value is EXCLUDE, not under INCLUDE', async () => {
+        const { SUPPRESSED_EXCLUDED_NOTE } = await import('@/utils/packageSettings')
+        views.FDA_PREMARKET = viewOf(FDA, { stored: { mode: 'OVERRIDE', state: 'ENABLED', sbomProfile: 'default', parts: [
+            { part: 'VDR', options: { selection: 'INCLUDE', suppressedFindings: 'EXCLUDE' } },
+            { part: 'VEX', options: { selection: 'INCLUDE' } }] } })
+        const w = await mountWith()
+        const note = (part: string) => w.find('[data-testid="package-suppressed-excluded-note-' + part + '"]')
+        expect(select(w, 'package-suppressed-VDR').props('value')).toBe('EXCLUDE')
+        expect(note('VDR').text()).toBe(SUPPRESSED_EXCLUDED_NOTE)
+        expect(select(w, 'package-suppressed-VEX').props('value')).toBe('INCLUDE')
+        expect(note('VEX').exists()).toBe(false)
+        await select(w, 'package-suppressed-VEX').vm.$emit('update:value', 'EXCLUDE')
+        expect(note('VEX').text()).toBe(SUPPRESSED_EXCLUDED_NOTE)
+        await select(w, 'package-suppressed-VDR').vm.$emit('update:value', 'INCLUDE')
+        expect(note('VDR').exists()).toBe(false)
+        expect(w.findAll('[data-testid^="package-suppressed-excluded-note-"]')).toHaveLength(1)
+    })
+
     it('puts the picker in single mode on the host testid root, and saves the form', async () => {
         const w = await mountWith()
         const root = w.find('[data-testid="package-sbom-profile"]')

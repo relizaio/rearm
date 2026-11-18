@@ -75,7 +75,7 @@ The Findings Modal is accessible from release views, component views, and the da
 - **Sources** - list of sources that reported the finding (specific Releases and Artifacts where finding was discoverd)
 
 The switches above the table filter it:
-- **Show Suppressed** and **Show Unsuppressed** - suppressed findings (state `FALSE_POSITIVE` or `NOT_AFFECTED`) are shown as strikethrough.
+- **Show Suppressed** and **Show Unsuppressed** - suppressed findings (state `FALSE_POSITIVE`, `NOT_AFFECTED` or `RESOLVED`) are shown as strikethrough.
 - **KEV Only** - only known exploited vulnerabilities.
 - **Has Fix** - only findings whose advisory names a version that fixes them.
 - **Group by Component** - one row per component; see [Grouping by Component](#grouping-by-component). ReARM remembers the choice.
@@ -198,8 +198,9 @@ When creating or updating a finding analysis, you will be able to work with the 
 | **Exploitable** | Error | Finding is confirmed and actively exploitable |
 | **False Positive** | Success | Finding does not apply, should not have been reported in the first place - **suppresses** the finding |
 | **Not Affected** | Info | Component is not affected - **suppresses** the finding |
+| **Resolved** | Success | The finding was fixed in this component - **suppresses** the finding |
 
-Findings in `FALSE_POSITIVE` or `NOT_AFFECTED` state are **suppressed** and excluded from active finding counts.
+Findings in `FALSE_POSITIVE`, `NOT_AFFECTED` or `RESOLVED` state are **suppressed** and excluded from active finding counts.
 
 
 

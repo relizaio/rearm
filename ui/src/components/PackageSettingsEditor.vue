@@ -83,6 +83,10 @@
                                         <FieldLabel :label="f.label" :tip="PACKAGE_FIELD_HELP[f.field]" />
                                         <n-select :data-testid="f.testid + p.part" v-model:value="(p as any)[f.field]" :options="f.options"
                                             :multiple="f.multiple" :filterable="false" :disabled="p.selection !== 'INCLUDE' || readOnly" />
+                                        <div v-if="f.field === 'suppressedFindings' && p.suppressedFindings === 'EXCLUDE'"
+                                            :data-testid="'package-suppressed-excluded-note-' + p.part" class="text-muted">
+                                            {{ SUPPRESSED_EXCLUDED_NOTE }}
+                                        </div>
                                     </div>
                                 </td>
                             </tr>
@@ -127,7 +131,8 @@ import SbomProfilePicker from './SbomProfilePicker.vue'
 import {
     Option, PackageScope, PackageSettingsForm, PACKAGE_ARTIFACT_TYPE_OPTIONS, PACKAGE_FIELD_HELP,
     PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS, PACKAGE_INHERIT, PACKAGE_SELECTION_OPTIONS,
-    PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine, packageEnabledHelp, packageEnabledLabel,
+    PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, SUPPRESSED_EXCLUDED_NOTE, packageEffectiveLine,
+    packageEnabledHelp, packageEnabledLabel,
     packageEnabledLine, packageFormError, packageInheritConfirm, packageInheritConflictHint, packageInheritedForm, packageModeOptions,
     packageFormFromView, packageKindLabel, packagePartFields, packagePartLabel, packageRemoveConfirm,
     packageSettingsInput, packageSourceLine,
