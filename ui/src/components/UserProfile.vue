@@ -141,6 +141,7 @@ import graphqlClient from '../utils/graphql'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
 import PermissionTemplatesPanel from './PermissionTemplatesPanel.vue'
 import { createApiKeyControls, apiKeyLabelColumn } from '../utils/apiKeyControls'
+import { retentionRefusal } from '../utils/packageRetention'
 import { apiKeyLabel, apiKeyLabelOf } from '@/utils/apiKeyLabel'
 import { hardEndCell } from '@/utils/cliSessionLifetime'
 
@@ -266,7 +267,7 @@ async function archiveOrganization(orgUUID: string) {
     let orgToArchive = organizations.value.find((o: any) => o.uuid === orgUUID)
     Swal.fire({
         titleText: `Are you sure you want to archive the ${orgToArchive.name} Organization?`,
-        text: `If you proceed, the organization will be archived and you will not have access to its data. The organization will stay archived for 30 days after which it would be permanently deleted.`,
+        text: `If you proceed, the organization will be archived and you will not have access to its data.`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Yes, archive!',
@@ -282,7 +283,12 @@ async function archiveOrganization(orgUUID: string) {
                     store.dispatch('fetchMyOrganizations')
                 }
             } catch (err: any) {
-                Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
+                const retained = retentionRefusal(err)
+                if (retained !== null) {
+                    Swal.fire({ titleText: 'Not archived', text: retained, icon: 'warning' })
+                } else {
+                    Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
+                }
             }
         } else if (result.dismiss === Swal.DismissReason.cancel) {
             notify('info', 'Cancelled', `Organization archiving cancelled. Your organization is still active.`)

@@ -348,6 +348,7 @@ An act or a preview that cannot go ahead answers one of these `SubmissionRefusal
 | `RELEASE_NOT_FOUND` | The release, or its component, does not exist |
 | `RELEASE_ARCHIVED` | The release is archived (Start draft and Finalize) |
 | `COMPONENT_ARCHIVED` | The release's component is archived (Start draft and Finalize) |
+| `ORGANIZATION_ARCHIVED` | The organization is archived (Start draft and Finalize) |
 | `LIFECYCLE_TOO_LOW` | The release is below ASSEMBLED (Start draft and Finalize) |
 | `ALREADY_SUBMITTED` | No act answers it any more; the value stays in the enum |
 | `NOT_SUBMITTED` | An act on a submission (Cancel and the four acts on a Final or Sent version) names no existing submission |
@@ -371,6 +372,22 @@ An act or a preview that cannot go ahead answers one of these `SubmissionRefusal
 | `EDITION_UNSUPPORTED` | The server has no submission support (a Community Edition server once the shared code reaches it) |
 
 The preview, `submissionPreview(release, kind)`, reports the plan and the first refusal before anything is generated.
+
+### Archiving a product or organization that holds package versions
+
+A product, a component or an organization that holds package versions is archived only after the zip of each of its versions has been downloaded, with all the acts recorded on that version. Until then the archive is refused, nothing is archived, and the refusal says which versions to download, for example:
+
+> Product GlucoView cannot be archived: 2 package versions have no recorded zip download that lists all their acts. Download the zip of each version on its release page (Regulatory tab), then archive again. Versions to download: GlucoView 2.1.0, FDA premarket v1; GlucoView 2.2.0, FDA premarket v1 (acts recorded since its last zip download).
+
+The refusal names at most 20 versions and then says how many more there are. A program reads the error's `extensions.code`, `PACKAGE_EXPORT_REQUIRED`, and `extensions.count`, the number of versions; not the sentence.
+
+What counts is a download of **Download zip** of the version on its release page, by any member who may download it, whose record of review lists every act recorded on that version. A draft zip, a record of review export or a download of one part does not count. Any act recorded on the version after its last zip download (Record as sent, an FDA number, a timeline entry, a withdrawal, a cancellation, or the next version of the same package, which supersedes or amends it) makes that zip count no longer: the version is named again with the note "(acts recorded since its last zip download)", and one more download clears it. The zip of a cancelled, superseded or withdrawn version can still be downloaded. Zip downloads made before this rule came in do not count.
+
+ReARM records that a zip was served, not that anyone kept it: keep the zips you downloaded. Archiving deletes nothing, and ReARM has no delete of a product, a component or an organization. There is no override: no role, flag or setting skips this rule.
+
+The same rule holds for an authoritative catalog apply that archives what the file leaves out: the component is reported as an `ERROR` whose message gives the number of versions only, the other entries are applied, and a dry run reports the same. The duplicate-component repair leaves a duplicate that holds such versions as it is and logs it.
+
+In an archived organization, Start draft, the preview, a draft build and Finalize are refused with `ORGANIZATION_ARCHIVED`, `organization <name> is archived`; a draft build fails with the same sentence. Acts on versions that are already stored (Record as sent, Add FDA number, Add timeline entry, Withdraw, Cancel), zip downloads and record of review exports stay possible for a remaining administrator, also on an archived component. Such an act after the archive is not in a zip downloaded before it.
 
 ### Notifications and audit
 
