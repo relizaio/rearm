@@ -71,13 +71,25 @@ export function countText (n: number | null | undefined, singular: string, plura
 }
 
 /**
- * The admin banner text when the instance has accounts outside its license, else null.
+ * The licensed number of users of all kinds: the read and write limits added up, unlimited when
+ * either of them is.
+ */
+function totalLimit (maxReadUsers: any, maxWriteUsers: any): number | null {
+    if (maxReadUsers === null || maxReadUsers === undefined || maxWriteUsers === null || maxWriteUsers === undefined) return null
+    return (Number(maxReadUsers) || 0) + (Number(maxWriteUsers) || 0)
+}
+
+/**
+ * The admin banner text when the instance has accounts outside its license, else null: all users
+ * (read and write) against the read and write limits added up, then the write users against the
+ * write limit.
  * Numbers from `license { maxReadUsers maxWriteUsers globalUserCounts { readUsers writeUsers outsideLimit } }`.
  */
 export function overLicenseBannerText (license: any): string | null {
     const counts = license?.globalUserCounts
     if (!counts || !(Number(counts.outsideLimit) > 0)) return null
-    return `This instance is over its license: ${countText(counts.readUsers, 'read user')} of ${limitText(license.maxReadUsers)}, `
+    const totalUsers = (Number(counts.readUsers) || 0) + (Number(counts.writeUsers) || 0)
+    return `This instance is over its license: ${countText(totalUsers, 'total user')} of ${limitText(totalLimit(license.maxReadUsers, license.maxWriteUsers))}, `
         + `${countText(counts.writeUsers, 'write user')} of ${limitText(license.maxWriteUsers)}. `
         + 'Accounts outside the limit, by creation date, cannot sign in. Please contact support.'
 }

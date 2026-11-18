@@ -54,22 +54,27 @@ describe('banner rules', () => {
     })
 
     it('overLicenseBannerText: the exact text, null with nobody outside, unlimited for an absent limit', () => {
+        // the total limit is unlimited when either limit is: here the write limit
+        expect(overLicenseBannerText({ maxReadUsers: 5, maxWriteUsers: null, globalUserCounts: { readUsers: 7, writeUsers: 3, outsideLimit: 2 } }))
+            .toBe('This instance is over its license: 10 total users of unlimited, 3 write users of unlimited. Accounts outside the limit, by creation date, cannot sign in. Please contact support.')
         expect(overLicenseBannerText({ maxReadUsers: 1, maxWriteUsers: 2, globalUserCounts: { readUsers: 2, writeUsers: 3, outsideLimit: 2 } }))
-            .toBe('This instance is over its license: 2 read users of 1, 3 write users of 2. Accounts outside the limit, by creation date, cannot sign in. Please contact support.')
+            .toBe('This instance is over its license: 5 total users of 3, 3 write users of 2. Accounts outside the limit, by creation date, cannot sign in. Please contact support.')
         expect(overLicenseBannerText({ maxReadUsers: 1, maxWriteUsers: 2, globalUserCounts: { readUsers: 1, writeUsers: 2, outsideLimit: 0 } })).toBeNull()
         expect(overLicenseBannerText({ maxReadUsers: 1, maxWriteUsers: 2, globalUserCounts: null })).toBeNull()
         expect(overLicenseBannerText(null)).toBeNull()
         expect(overLicenseBannerText({ maxWriteUsers: 1, maxReadUsers: null, globalUserCounts: { readUsers: 4, writeUsers: 2, outsideLimit: 1 } }))
-            .toBe('This instance is over its license: 4 read users of unlimited, 2 write users of 1. Accounts outside the limit, by creation date, cannot sign in. Please contact support.')
+            .toBe('This instance is over its license: 6 total users of unlimited, 2 write users of 1. Accounts outside the limit, by creation date, cannot sign in. Please contact support.')
     })
 
     it('overLicenseBannerText: singular for a count of one, plural otherwise (zero included)', () => {
+        expect(overLicenseBannerText({ maxReadUsers: 0, maxWriteUsers: 0, globalUserCounts: { readUsers: 0, writeUsers: 1, outsideLimit: 1 } }))
+            .toMatch(/^This instance is over its license: 1 total user of 0, 1 write user of 0\. /)
         expect(overLicenseBannerText({ maxReadUsers: 1, maxWriteUsers: 232, globalUserCounts: { readUsers: 2, writeUsers: 233, outsideLimit: 2 } }))
-            .toBe('This instance is over its license: 2 read users of 1, 233 write users of 232. Accounts outside the limit, by creation date, cannot sign in. Please contact support.')
+            .toBe('This instance is over its license: 235 total users of 233, 233 write users of 232. Accounts outside the limit, by creation date, cannot sign in. Please contact support.')
         expect(overLicenseBannerText({ maxReadUsers: 1, maxWriteUsers: 0, globalUserCounts: { readUsers: 1, writeUsers: 1, outsideLimit: 1 } }))
-            .toBe('This instance is over its license: 1 read user of 1, 1 write user of 0. Accounts outside the limit, by creation date, cannot sign in. Please contact support.')
+            .toBe('This instance is over its license: 2 total users of 1, 1 write user of 0. Accounts outside the limit, by creation date, cannot sign in. Please contact support.')
         expect(overLicenseBannerText({ maxReadUsers: 0, maxWriteUsers: 0, globalUserCounts: { readUsers: 0, writeUsers: 2, outsideLimit: 2 } }))
-            .toMatch(/^This instance is over its license: 0 read users of 0, 2 write users of 0\. /)
+            .toMatch(/^This instance is over its license: 2 total users of 0, 2 write users of 0\. /)
     })
 
     it('countText', () => {
