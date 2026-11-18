@@ -31,6 +31,7 @@ function sidebar() {
           {text: 'Regulatory Packages and Submissions', link: '/workflows/regulatory-packages'},
           {text: 'FDA checker rules', link: '/workflows/fda-checker-rules'},
           {text: 'Readiness rules', link: '/workflows/readiness-rules'},
+          {text: 'Regulated output changes', link: '/workflows/regulated-output-changes'},
           {text: 'Scoring an SBOM', link: '/workflows/sbom-scoring'},
           {text: 'Signing exported SBOMs', link: '/workflows/signing-exported-sboms'},
           {text: 'Pull Requests', link: '/workflows/pull-requests'},
