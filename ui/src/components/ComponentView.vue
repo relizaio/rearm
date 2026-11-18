@@ -1150,7 +1150,8 @@
                                                 Archiving the {{ words.component }} hides it from the active component
                                                 list. Existing releases keep their data and historical lookups stay
                                                 resolvable, but no new releases can be minted against an archived
-                                                {{ words.component }}.
+                                                {{ words.component }}. A {{ words.component }} that holds package versions
+                                                can be archived only after the zip of each version has been downloaded.
                                             </p>
                                             <n-button v-if="isWritable" type="error" @click="archiveComponent">
                                                 <template #icon>
@@ -1531,6 +1532,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { NAlert, NDatePicker, NIcon, NModal, NTabs, NTabPane, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NSpace, NRadio, NRadioGroup, NDataTable, NotificationType, useNotification, NCheckbox, NCheckboxGroup, NSwitch, NTag, NText, NTooltip, DataTableColumns, NDynamicInput, NGrid, NGi, FormInst, FormRules } from 'naive-ui'
 import commonFunctions from '../utils/commonFunctions'
 import { componentPageWritable } from '../utils/componentWrite'
+import { retentionRefusal } from '../utils/packageRetention'
 import ChangelogView from './ChangelogView.vue'
 import BranchView from './BranchView.vue'
 import MrktReleasesOfComponent from './MrktReleasesOfComponent.vue'
@@ -3623,7 +3625,12 @@ const archiveComponent = async function () {
                 }
             }
         } catch (err: any) {
-            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
+            const retained = retentionRefusal(err)
+            if (retained !== null) {
+                Swal.fire({ titleText: 'Not archived', text: retained, icon: 'warning' })
+            } else {
+                Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
+            }
         }
     } else if (swalResult.dismiss === Swal.DismissReason.cancel) {
         notify('info', 'Cancelled', `${words.value.componentFirstUpper} archiving cancelled. Your ${words.value.component} is still active.`)
