@@ -189,6 +189,9 @@ When creating or updating a finding analysis, you will be able to work with the 
 | **Justification** | Reason for the decision - may be mandatory (see Admin Settings) |
 | **Severity** | Optional severity override |
 | **Details** | Free-form notes |
+| **Discovery method** | How the finding was found: SBOM analysis, security testing, supplier notification, external report or internal review; shown once a state other than In Triage is chosen (ReARM Pro only) |
+| **Risk level** | High, Medium, Low or Negligible; shown for an exploitable or resolved finding (ReARM Pro only) |
+| **Risk controls** | Up to ten risk controls, each a kind (design, compensating, labeling or planned update) and a one-line description; shown for an exploitable or resolved finding (ReARM Pro only) |
 
 ### Analysis States
 
