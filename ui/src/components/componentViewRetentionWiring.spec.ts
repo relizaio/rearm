@@ -35,6 +35,13 @@ describe('the retention refusal in the archive dialogs', () => {
             expect(body).not.toMatch(/html\s*:/)
             expect(source).toMatch(/import \{ retentionRefusal \} from '\.\.\/utils\/packageRetention'/)
         })
+
+        // A mutant that swaps the `!==`/`===` leaves both literal snippets above in the function body, so
+        // that assertion alone cannot catch it; pin the condition guards the warning branch, not the error one.
+        it(`${file}: the retained warning answers a non-null refusal, not a null one`, () => {
+            const body = functionText(source, fn)
+            expect(body).toMatch(/if \(retained !== null\) \{\s*Swal\.fire\(\{ titleText: 'Not archived', text: retained, icon: 'warning' \}\)\s*\} else \{/)
+        })
     }
 
     it('the Danger Zone sentence is there once', () => {
