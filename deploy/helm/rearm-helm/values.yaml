@@ -46,6 +46,14 @@ projectProtocol: http
 projectHost: rearm.localhost
 useDefaultSecrets: true
 max_upload_size_in_MB: 50
+# Seconds the UI nginx waits for the backend on a programmatic API call (/api/programmatic/...:
+# the CLI and API keys), between two reads or two writes. 600 matches the 10 minutes the rearm
+# CLI waits for a call; every other /api route keeps 90 seconds. A whole number from 1 to 99999:
+# the UI container refuses to start on anything else. Raising max_upload_size_in_MB alone turns
+# the 413 of a large batch into a 504: the batch is then accepted, takes longer than the proxy
+# waits, and the backend still completes it. Size this value for the largest batch you send, and
+# let any proxy or load balancer in front of the UI wait at least as long.
+programmatic_api_timeout_in_seconds: 600
 # SBOM reconciles processed per scheduler tick (relizaprops.sbomReconcileDrainBatch).
 # Raise for burst ingestion: a 20k-release burst test cleared backlog at ~245/min
 # at 250 (11G heap) vs ~66/min at the default 50. Size to expected peak
