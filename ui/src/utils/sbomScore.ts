@@ -44,6 +44,9 @@ export interface SbomScoreProfile {
     score: number | null
     summary: { pass: number, fail: number, notAssessed: number, errors: number }
     checks: SbomScoreCheck[]
+    // The FDA checker rule set (rearm-cli FDAW-124, internal/bomscore/report.go, omitempty): absent from
+    // reports of older engines and from profiles other than fda.
+    ruleSetVersion?: string
 }
 
 export interface SbomScoreReport {
@@ -104,6 +107,30 @@ export function parseSbomScoreReport (raw: string): SbomScoreReport {
         if (!Array.isArray(p.checks)) p.checks = []
     }
     return report
+}
+
+// The FDA checker rule set a report's one fda profile names (rearm-cli FDAW-124), or null: the report is not
+// JSON, has no profiles array, has no or more than one fda profile, or its ruleSetVersion is not a non-empty string.
+export function fdaRuleSetOf (raw: string): string | null {
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(raw)
+    } catch {
+        return null
+    }
+    if (parsed === null || typeof parsed !== 'object') return null
+    const profiles = (parsed as { profiles?: unknown }).profiles
+    if (!Array.isArray(profiles)) return null
+    const fda = profiles.filter(p => p !== null && typeof p === 'object' && (p as { key?: unknown }).key === 'fda')
+    if (fda.length !== 1) return null
+    const n = (fda[0] as { ruleSetVersion?: unknown }).ruleSetVersion
+    return typeof n === 'string' && n !== '' ? n : null
+}
+
+// A header of the re-run dialog (FDAW-16 3.9a): the checker, and the FDA checker rule set when the report names one.
+export function checkRerunHeader (side: 'Stored' | 'Now', checker: string, raw: string): string {
+    const n = fdaRuleSetOf(raw)
+    return n === null ? `${side} (${checker})` : `${side} (${checker}, FDA checker rule set ${n})`
 }
 
 const STATUS_ORDER: Record<SbomScoreStatus, number> = { FAIL: 0, ERROR: 1, NOT_ASSESSED: 2, PASS: 3 }

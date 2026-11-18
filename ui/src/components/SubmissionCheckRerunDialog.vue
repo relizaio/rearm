@@ -3,11 +3,11 @@
         @update:show="(v: boolean) => emit('update:show', v)">
         <div v-if="show" class="check-rerun-columns">
             <div class="check-rerun-column" data-testid="check-rerun-stored">
-                <div class="check-rerun-heading" data-testid="check-rerun-stored-heading">{{ storedHeading(loader.checkers.stored) }}</div>
+                <div class="check-rerun-heading" data-testid="check-rerun-stored-heading">{{ storedHeading(loader.checkers.stored, loader.reports.stored) }}</div>
                 <sbom-score-panel :load="loader.loadStored" file-kind="stored" :file-id="submission" />
             </div>
             <div class="check-rerun-column" data-testid="check-rerun-fresh">
-                <div class="check-rerun-heading" data-testid="check-rerun-fresh-heading">{{ freshHeading(loader.checkers.fresh) }}</div>
+                <div class="check-rerun-heading" data-testid="check-rerun-fresh-heading">{{ freshHeading(loader.checkers.fresh, loader.reports.fresh) }}</div>
                 <sbom-score-panel :load="loader.loadFresh" file-kind="now" :file-id="submission" />
             </div>
         </div>

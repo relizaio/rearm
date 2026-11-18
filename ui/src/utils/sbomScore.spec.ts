@@ -12,7 +12,9 @@ import {
     SBOM_SCORE_TIMEOUT_MESSAGE,
     SbomScoreParseError,
     buildReleaseScoreVariables,
+    checkRerunHeader,
     classifySbomScoreError,
+    fdaRuleSetOf,
     orderChecks,
     parseSbomScoreReport,
     rawReportFileName,
@@ -156,6 +158,36 @@ describe('the per-check skip fields', () => {
 
     it('is not one of the pre-SCORE-10 goldens', () => {
         expect(GOLDENS).not.toContain('self')
+    })
+})
+
+// FDAW-126 3.4 (row 10): the FDA checker rule set a report's one fda profile names, and the re-run dialog's
+// headers built from it.
+describe('fdaRuleSetOf and checkRerunHeader', () => {
+    const fda = (extra: object) => ({ key: 'fda', verdict: 'READY', checks: [], ...extra })
+    const cisa = (extra: object) => ({ key: 'cisa-2026', verdict: 'READY', checks: [], ...extra })
+    const report = (...profiles: object[]) => JSON.stringify({ reportVersion: 1, engine: { name: 'rearm-cli', version: '26.11.7' }, profiles })
+
+    it('(a) one fda profile with 1: first, and last after cisa-2026', () => {
+        expect(fdaRuleSetOf(report(fda({ ruleSetVersion: '1' }), cisa({})))).toBe('1')
+        expect(fdaRuleSetOf(report(cisa({}), fda({ ruleSetVersion: '1' })))).toBe('1')
+    })
+    it('(b) no key', () => expect(fdaRuleSetOf(report(cisa({}), fda({})))).toBeNull())
+    it('(c) empty string', () => expect(fdaRuleSetOf(report(fda({ ruleSetVersion: '' })))).toBeNull())
+    it('(d) a number', () => expect(fdaRuleSetOf(report(fda({ ruleSetVersion: 1 })))).toBeNull())
+    it('(e) two fda entries, both 1', () => expect(fdaRuleSetOf(report(fda({ ruleSetVersion: '1' }), fda({ ruleSetVersion: '1' })))).toBeNull())
+    it('(f) cisa-2026 with 9, fda without', () => expect(fdaRuleSetOf(report(cisa({ ruleSetVersion: '9' }), fda({})))).toBeNull())
+    it('(g) not JSON, null JSON, a JSON string, profiles not an array: null, no throw; a null profile entry is skipped', () => {
+        expect(fdaRuleSetOf('not json')).toBeNull()
+        expect(fdaRuleSetOf('null')).toBeNull()
+        expect(fdaRuleSetOf('"text"')).toBeNull()
+        expect(fdaRuleSetOf('{"profiles":{"key":"fda","ruleSetVersion":"1"}}')).toBeNull()
+        expect(fdaRuleSetOf('{"profiles":[null,{"key":"fda","ruleSetVersion":"1"}]}')).toBe('1')
+    })
+    it('headers', () => {
+        expect(checkRerunHeader('Stored', 'rearm-cli 26.11.7', report(fda({ ruleSetVersion: '1' }))))
+            .toBe('Stored (rearm-cli 26.11.7, FDA checker rule set 1)')
+        expect(checkRerunHeader('Now', 'x', report(fda({})))).toBe('Now (x)')
     })
 })
 
