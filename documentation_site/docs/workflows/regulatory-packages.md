@@ -15,6 +15,7 @@ Regulatory packages and submissions are ReARM Pro only. A ReARM Community Editio
 | `AGGREGATE_SBOM` | `REQUIRED` | `INCLUDE` | `aggregate.cdx.json` | `application/vnd.cyclonedx+json` | The release's aggregated SBOM, generated with the SBOM profile the package settings name |
 | `VDR` | `REQUIRED` | `INCLUDE` | `vdr.cdx.json` | `application/vnd.cyclonedx+json` | The vulnerability disclosure report of the release |
 | `VEX` | `OPTIONAL` | `INCLUDE` | `vex.cdx.json` or `openvex.json` | `application/vnd.cyclonedx+json` or `application/json` | The VEX of the release, in the format `vexFormat` chooses |
+| `VULNERABILITY_ASSESSMENT` | `REQUIRED` | `INCLUDE` | `vulnerability-assessment.html` | `text/html; charset=utf-8` | The vulnerability assessment summary: each finding of the release with its assessment and, where one is recorded, its analyst and date |
 | `NARRATIVE` | `REQUIRED` | `INCLUDE` | `narrative.txt` | `text/plain; charset=utf-8` | The FDA assessment narrative: the release's own or the organization default (the file's header says which) |
 | `SUPPORT_ADDENDUM` | `REQUIRED` | `INCLUDE` | `support-addendum.csv` | `text/csv; charset=utf-8` | The software support addendum |
 | `DEVICE_SUPPORT_STATEMENT` | `OPTIONAL` | `EXCLUDE` | `device-support-statement.html` | `text/html; charset=utf-8` | The device software support statement; product releases only |
@@ -28,7 +29,7 @@ Every generated file is named `<stem>-<suffix>`, with the stem `<component name>
 
 ## The documents
 
-No part is a PDF: the addendum is CSV and the statement is HTML, by operator decision, and ReARM renders no PDF. The package page can hand a version's statement to the browser's print dialog (see [Printing the statement](#printing-the-statement)); a PDF saved there is made by the browser and is not a part.
+No part is a PDF: the addendum is CSV, and the statement and the vulnerability assessment summary are HTML, by operator decision, and ReARM renders no PDF. The package page can hand a version's statement or summary to the browser's print dialog (see [Printing the statement and the summary](#printing-the-statement-and-the-summary)); a PDF saved there is made by the browser and is not a part.
 
 ### The support addendum
 
@@ -50,9 +51,13 @@ The "Device software support statement" is generated for a product release only;
 
 The narrative is plain text with a header block: the organization, the device, the release and the justification scope, "this release" or "organization default".
 
+### The vulnerability assessment summary
+
+The "Vulnerability assessment summary" has one block per finding of the release (a finding that its sources report with two states has one block per state), suppressed ones included and marked, with KEV, state, justification, response, discovery method, risk level, controls, analyst, date and scope, and what is missing from its assessment. The header names the KEV catalog the readiness check reads (CISA KEV while it is enabled, else VulnCheck KEV), its date and its last synchronization, while a finding is marked KEV when any KEV source of the organization lists or has listed it. Each analyst is named by the user's name in ReARM; the summary never reads a user's e-mail address. It is refused while the release's vulnerability scan is pending, as the VDR is. A draft copy is marked.
+
 ### The SBOM and vulnerability parts
 
-The aggregated SBOM uses the named SBOM profile's recipe exactly as a TEA publication would, as a fresh document with its own serial number and version 1, never the TEA aggregate of the release. `VDR` and `VEX` take `suppressedFindings` and `inTriageFindings` (`INCLUDE` or `EXCLUDE`; default `EXCLUDE`), and `VEX` takes `vexFormat` (`CYCLONEDX_VEX` or `OPENVEX`; default `CYCLONEDX_VEX`).
+The aggregated SBOM uses the named SBOM profile's recipe exactly as a TEA publication would, as a fresh document with its own serial number and version 1, never the TEA aggregate of the release. `VDR` and `VEX` take `suppressedFindings` (`INCLUDE` or `EXCLUDE`; default `INCLUDE`: each suppressed finding is listed and marked as suppressed), `VEX` also takes `inTriageFindings` (default `EXCLUDE`) and `vexFormat` (`CYCLONEDX_VEX` or `OPENVEX`; default `CYCLONEDX_VEX`). A package settings row saved in the editor with its own part settings (the organization's, or a perspective's or a component's set to Override) before the ReARM release that added the vulnerability assessment summary holds `EXCLUDE` for suppressed findings whether or not anyone chose it, and keeps leaving them out until it is set to `INCLUDE`; the editor says so under such a part.
 
 ### The raw artifacts
 
@@ -71,7 +76,7 @@ The fields:
 
 The built-in default per kind names `default` with the kind's default selections, so a first submission needs no setup. A save is refused when a required part is excluded, when an included `RAW_ARTIFACTS` has no artifact type, when an option does not apply to its part, or when the named SBOM profile does not resolve at the scope. Package settings carry no visibility: nothing they shape is ever public. What the API enforces: reading package settings needs read access on the scope's object, and `savePackageSettings` and `deletePackageSettings` need ADMIN on it (an ADMIN grant on the component or product, on the perspective, or organization-wide; an organization admin holds it at every scope). In the UI, the package settings editor is editable by organization admins, and a perspective, component or product admin can also save through the user GraphQL API.
 
-The package settings editor is per scope and kind, generic over the kinds the server lists, with the profile picker for the SBOM part and the per-part options. The organization's package settings are on the Regulatory tab of Organization Settings (not on the Transparency Exchange tab), a component's or product's on its TEA tab, and a perspective's in its TEA dialog on the Perspectives tab of Organization Settings (ReARM Pro). Screenshots and the exact labels follow once the UI task that builds them lands.
+The package settings editor is per scope and kind, generic over the kinds the server lists, with the profile picker for the SBOM part and the per-part options. The organization's package settings are under Organization Settings > Admin Settings > Regulatory, a component's or product's on the Regulatory tab of its settings, and a perspective's in its TEA profile dialog on the Perspectives tab of Organization Settings (ReARM Pro). Screenshots and the exact labels follow once the UI task that builds them lands.
 
 The user GraphQL API serves `packageKinds`, `packageSettings(org, scope, object, kind)`, `packageSettingsOfScope(org, scope, object)`, `packageSettingsOfOrg(org)`, `packageSettingsEffective(org, scope, object, kind)`, `packageSettingsEditorView(org, scope, object, kind)`, `savePackageSettings(org, scope, object, kind, settings)` and `deletePackageSettings(org, scope, object, kind)`; there is no programmatic operation for package settings. Deleting an SBOM profile that package settings name is refused while they would stop resolving it.
 
@@ -321,11 +326,11 @@ The check passes when all three are true:
 
 A pass shows that the content of each of those files is the content of a part of the record. It does not show that a file is under its own name: the line compares content, not names. The README, the check file, the index and the two record-of-review files are made when the zip is made and are not checked by this line. A draft zip has no manifest and no such line.
 
-### Printing the statement
+### Printing the statement and the summary
 
-On a version, the device support statement has **Print or save as PDF** beside its download. The page fetches the stored statement as a download does (the fetch is recorded in the Download Log as a raw artifact download), and hands it to the browser's print dialog, where "Save as PDF" is the browser's own. The document is shown to the browser in a frame that runs no script. A PDF made this way is made by your browser, not by ReARM: it is not a part of the package, it has no sha256 in the manifest, and two browsers can lay it out differently. The stored HTML statement stays the record.
+On a version, the device support statement and the vulnerability assessment summary each have **Print or save as PDF** beside their download. The page fetches the stored document as a download does (the fetch is recorded in the Download Log as a raw artifact download), and hands it to the browser's print dialog, where "Save as PDF" is the browser's own. The document is shown to the browser in a frame that runs no script. A PDF made this way is made by your browser, not by ReARM: it is not a part of the package, it has no sha256 in the manifest, and two browsers can lay it out differently. The stored HTML document stays the record.
 
-The page prints only a document that starts as ReARM writes its generated HTML; for any other file it says "This file is not a document in the form ReARM generates, so this page does not print it. Download the file and open it instead." When the statement cannot be fetched, the page says why under the buttons of that version, in the sentences of a download: without the Artifact Download function, "ReARM refused this download. It needs the Artifact Download permission on the component of this release." The draft card has no print button: a draft document is passed on from the draft zip, where it is marked.
+The page prints only a document that starts as ReARM writes its generated HTML; for any other file it says "This file is not a document in the form ReARM generates, so this page does not print it. Download the file and open it instead." When the document cannot be fetched, the page says why under the buttons of that version, in the sentences of a download: without the Artifact Download function, "ReARM refused this download. It needs the Artifact Download permission on the component of this release." The draft card has no print button: a draft document is passed on from the draft zip, where it is marked.
 
 ### Permissions
 
@@ -335,7 +340,7 @@ The page prints only a document that starts as ReARM writes its generated HTML; 
 | List a release's submissions, read a submission or a version | Read access covering the release: a grant on the release, on its component, on a perspective that contains the component, on a product that pulls the component in, or the organization-wide type |
 | List a product's or component's submissions, preview | Read access covering the component the same way; a release-scoped grant does not suffice |
 | Download a part or the manifest | The Artifact Download function in a grant that covers the release's component: on the component, on a perspective that contains it, on a product that pulls it in, or organization-wide |
-| Download the zip of a version, a draft zip or the record of review; print the statement | The Artifact Download function in a grant that covers the release's component. The buttons are shown to every member who sees the tab; the server decides |
+| Download the zip of a version, a draft zip or the record of review; print the statement or the summary | The Artifact Download function in a grant that covers the release's component. The buttons are shown to every member who sees the tab; the server decides |
 
 FREEFORM and USER API keys read through the four programmatic operations below with the same read access, and cannot act on a draft or a submission. EXTERNAL keys (TEA consumer keys) are refused everywhere outside TEA (`401`) and never see a submission. A release, submission, component or artifact of another organization is "not found".
 
@@ -429,6 +434,6 @@ Regulatory packages and submissions are ReARM Pro only; the [edition differences
 - **Data-driven package definitions.** The kinds and their part lists are code; adding a kind is a server change, and `FDA_PREMARKET` is the only kind.
 - **Signing.** Every version has a reserved signature slot that is empty today; the digests in the manifest are the only integrity evidence. Signing waits on a server change.
 - **An organization-level submission view.** The product page and the release page are the entries, and the API lists by release and by component only; a view across the organization is a server change.
-- **PDF rendering of the addendum and the statement by ReARM.** Not planned, by operator decision. The package page offers the browser's print dialog for the statement of a version; see [Printing the statement](#printing-the-statement).
+- **PDF rendering of the addendum, the statement and the summary by ReARM.** Not planned, by operator decision. The package page offers the browser's print dialog for the statement and the summary of a version; see [Printing the statement and the summary](#printing-the-statement-and-the-summary).
 - **Programmatic acts.** The programmatic API has no act on a draft or a submission; a server change.
 - **CLE in a package.** It waits on the CLE 1.0.0 alignment listed under [Not implemented yet](../tea/#not-implemented-yet) on the TEA page.

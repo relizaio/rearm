@@ -36,7 +36,7 @@ describe('documentation: regulatory package downloads (FDAW-122)', () => {
         const headings = [...page.matchAll(/^### (.+)$/gm)].map(m => m[1])
         const at = headings.indexOf('Downloading the documents')
         expect(headings.slice(at, at + 7)).toEqual(['Downloading the documents', 'Downloading a version as one zip', 'The record of review',
-            'Downloading a draft as a zip', 'Checking a downloaded zip', 'Printing the statement', 'Permissions'])
+            'Downloading a draft as a zip', 'Checking a downloaded zip', 'Printing the statement and the summary', 'Permissions'])
     })
 
     it('(b) the verify line is on the page once, alone in a code block, with the three conditions of a pass', () => {
@@ -101,7 +101,7 @@ describe('documentation: regulatory package downloads (FDAW-122)', () => {
         expect(draft).not.toContain('A rebuild needs write access. ')
         expect(draft).toContain('the card says "' + packageDownloadProblem('draft-zip', { status: 403 }) + '"')
         expect(packageDownloadProblem('draft-zip', { status: 403 })).toBe(DOWNLOAD_DRAFT_FORBIDDEN)
-        const print = section(page, '### Printing the statement')
+        const print = section(page, '### Printing the statement and the summary')
         expect(print).toContain('**' + PRINT_BUTTON + '**')
         expect(print).toContain('A PDF made this way is made by your browser, not by ReARM: it is not a part of the package, it has no sha256 in the manifest')
         expect(print).toContain('The draft card has no print button')
@@ -112,8 +112,9 @@ describe('documentation: regulatory package downloads (FDAW-122)', () => {
     it('(e) the lines this task made false are gone, here and on the export page', () => {
         expect(page).not.toContain('a PDF rendering is not planned')
         expect(page).toContain('ReARM renders no PDF.')
-        expect(page).toContain('- **PDF rendering of the addendum and the statement by ReARM.** Not planned, by operator decision.')
-        expect(page).toContain('| Download the zip of a version, a draft zip or the record of review; print the statement | The Artifact Download function')
+        // FDAW-17 3.10a: the summary prints too
+        expect(page).toContain('- **PDF rendering of the addendum, the statement and the summary by ReARM.** Not planned, by operator decision.')
+        expect(page).toContain('| Download the zip of a version, a draft zip or the record of review; print the statement or the summary | The Artifact Download function')
         expect(page).toContain("each version's zip and record of review to download, its manifest")
         const log = section(exporting, '## Download Log')
         expect(log).not.toContain('records SBOM, VDR, and VEX download events')
@@ -125,7 +126,7 @@ describe('documentation: regulatory package downloads (FDAW-122)', () => {
 
     it('(f) the two pages are ASCII where this task wrote, with LF line ends and no tab', () => {
         for (const h of ['### Downloading a version as one zip', '### The record of review', '### Downloading a draft as a zip',
-            '### Checking a downloaded zip', '### Printing the statement']) {
+            '### Checking a downloaded zip', '### Printing the statement and the summary']) {
             // eslint-disable-next-line no-control-regex
             expect(section(page, h), h).toMatch(/^[\x0a\x20-\x7e]+$/)
         }

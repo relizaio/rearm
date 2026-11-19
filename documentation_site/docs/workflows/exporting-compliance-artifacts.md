@@ -546,7 +546,7 @@ VDR exports can optionally be scoped to a historical point in time:
 
 | Option | Description |
 |---|---|
-| **Include Suppressed** | Include findings in `FALSE_POSITIVE` or `NOT_AFFECTED` state |
+| **Include Suppressed** | Include findings in `FALSE_POSITIVE`, `NOT_AFFECTED` or `RESOLVED` state |
 | **Up To Date** | Snapshot findings as of a specific date |
 | **Target Lifecycle** | Snapshot findings as of when the release reached a specific lifecycle stage |
 | **Target Approval** | *(ReARM Pro)* Snapshot findings as of a specific approval entry |
