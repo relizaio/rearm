@@ -54,3 +54,35 @@ export const ANALYSIS_JUSTIFICATION_OPTIONS = [
     { label: 'Protected at Perimeter', value: 'PROTECTED_AT_PERIMETER' },
     { label: 'Protected by Mitigating Control', value: 'PROTECTED_BY_MITIGATING_CONTROL' }
 ]
+
+/**
+ * The typed assessment fields of a finding analysis (Pro schema: DiscoveryMethod, RiskLevel,
+ * RiskControlType), value and label in enum order. The labels are the backend's AssessmentLabels.
+ */
+export const DISCOVERY_METHOD_OPTIONS = [
+    { label: 'SBOM analysis', value: 'SBOM_ANALYSIS' },
+    { label: 'Security testing', value: 'SECURITY_TESTING' },
+    { label: 'Supplier notification', value: 'SUPPLIER_NOTIFICATION' },
+    { label: 'External report', value: 'EXTERNAL_REPORT' },
+    { label: 'Internal review', value: 'INTERNAL_REVIEW' }
+]
+
+export const RISK_LEVEL_OPTIONS = [
+    { label: 'High', value: 'HIGH' },
+    { label: 'Medium', value: 'MEDIUM' },
+    { label: 'Low', value: 'LOW' },
+    { label: 'Negligible', value: 'NEGLIGIBLE' }
+]
+
+export const RISK_CONTROL_TYPE_OPTIONS = [
+    { label: 'Design', value: 'DESIGN' },
+    { label: 'Compensating', value: 'COMPENSATING' },
+    { label: 'Labeling', value: 'LABELING' },
+    { label: 'Planned update', value: 'PLANNED_UPDATE' }
+]
+
+/** At most this many risk controls per assessment (the backend's AssessmentFields.MAX_CONTROLS). */
+export const MAX_CONTROLS = 10
+
+/** The longest control description the backend accepts (AssessmentFields.MAX_CONTROL_DESCRIPTION_LENGTH). */
+export const MAX_CONTROL_DESCRIPTION_LENGTH = 2048

@@ -156,6 +156,65 @@
                     :rows="3"
                 />
             </n-form-item>
+            <template v-if="assessmentShown">
+                <n-form-item v-if="visibleAssessment.discoveryMethod" path="discoveryMethod">
+                    <template #label>
+                        <field-label label="Discovery method" :tip="FIELD_HELP.discoveryMethod" />
+                    </template>
+                    <n-select
+                        v-model:value="assessmentForm.discoveryMethod"
+                        :options="DISCOVERY_METHOD_OPTIONS"
+                        placeholder="Select how the finding was found"
+                        clearable
+                    />
+                </n-form-item>
+
+                <n-form-item v-if="visibleAssessment.riskLevel" path="riskLevel">
+                    <template #label>
+                        <field-label label="Risk level" :tip="FIELD_HELP.riskLevel" />
+                    </template>
+                    <n-select
+                        v-model:value="assessmentForm.riskLevel"
+                        :options="RISK_LEVEL_OPTIONS"
+                        placeholder="Select risk level"
+                        clearable
+                    />
+                </n-form-item>
+
+                <n-form-item
+                    v-if="visibleAssessment.controls"
+                    path="controls"
+                    :validation-status="controlsError ? 'error' : undefined"
+                    :feedback="controlsError || undefined"
+                >
+                    <template #label>
+                        <field-label label="Risk controls" :tip="FIELD_HELP.controls" />
+                    </template>
+                    <n-space vertical style="width: 100%;">
+                        <div
+                            v-for="(control, index) in assessmentForm.controls"
+                            :key="index"
+                            style="display: flex; gap: 8px; width: 100%;"
+                        >
+                            <n-select
+                                v-model:value="control.type"
+                                :options="RISK_CONTROL_TYPE_OPTIONS"
+                                placeholder="Kind"
+                                style="width: 200px; flex-shrink: 0;"
+                            />
+                            <n-input
+                                v-model:value="control.description"
+                                placeholder="One-line description"
+                                :maxlength="MAX_CONTROL_DESCRIPTION_LENGTH"
+                            />
+                            <n-button quaternary @click="removeControl(index)">Remove</n-button>
+                        </div>
+                        <n-button size="small" :disabled="assessmentForm.controls.length >= MAX_CONTROLS" @click="addControl">
+                            Add risk control
+                        </n-button>
+                    </n-space>
+                </n-form-item>
+            </template>
         </n-form>
 
         <template #action>
@@ -185,8 +244,22 @@ import {
     ANALYSIS_STATE_OPTIONS,
     ANALYSIS_JUSTIFICATION_OPTIONS,
     ANALYSIS_RESPONSE_OPTIONS,
-    AnalysisState
+    AnalysisState,
+    DISCOVERY_METHOD_OPTIONS,
+    MAX_CONTROL_DESCRIPTION_LENGTH,
+    MAX_CONTROLS,
+    RISK_CONTROL_TYPE_OPTIONS,
+    RISK_LEVEL_OPTIONS
 } from '@/constants/vulnAnalysis'
+import {
+    assessmentFieldsAvailable,
+    assessmentInputOf,
+    emptyAssessmentForm,
+    shownAssessmentForm,
+    validateControls,
+    visibleAssessmentFields,
+    type AssessmentForm
+} from '@/utils/assessmentFields'
 import { FIELD_HELP, STATE_GUIDANCE } from '@/constants/vulnAnalysisFieldHelp'
 import FieldLabel from './FieldLabel.vue'
 
@@ -350,6 +423,32 @@ const showResponses = computed(() =>
 const showRecommendation = computed(() => formData.value.state === AnalysisState.EXPLOITABLE)
 const showWorkaround = computed(() => formData.value.state === AnalysisState.EXPLOITABLE)
 
+// Typed assessment fields (Pro): shown per state; only what the user changed is sent.
+const assessmentShown = computed(() => assessmentFieldsAvailable(store.getters.myuser?.installationType))
+const visibleAssessment = computed(() => visibleAssessmentFields(formData.value.state))
+const initialAssessment = ref<AssessmentForm>(emptyAssessmentForm())
+const assessmentForm = ref<AssessmentForm>(emptyAssessmentForm())
+const controlsError = ref<string | null>(null)
+watch(() => assessmentForm.value.controls, () => { controlsError.value = null }, { deep: true })
+
+const addControl = () => {
+    if (assessmentForm.value.controls.length < MAX_CONTROLS) {
+        assessmentForm.value.controls.push({ type: null, description: '' })
+    }
+}
+const removeControl = (index: number) => {
+    assessmentForm.value.controls.splice(index, 1)
+}
+
+/** The assessment keys to merge into the input, or null when the controls are refused (shown on the form). */
+const assessmentInput = (): Record<string, unknown> | null => {
+    if (!assessmentShown.value) return {}
+    const shown = shownAssessmentForm(initialAssessment.value, assessmentForm.value, formData.value.state)
+    controlsError.value = visibleAssessment.value.controls ? validateControls(shown.controls) : null
+    if (controlsError.value) return null
+    return assessmentInputOf(initialAssessment.value, shown)
+}
+
 // Clear fields that are hidden for the current state so stale values aren't submitted.
 watch(() => formData.value.state, () => {
     if (!showJustification.value) formData.value.justification = null
@@ -442,6 +541,9 @@ watch(() => props.show, (nowShown) => {
     formData.value.responses = []
     formData.value.recommendation = ''
     formData.value.workaround = ''
+    initialAssessment.value = emptyAssessmentForm()
+    assessmentForm.value = emptyAssessmentForm()
+    controlsError.value = null
 })
 
 // Watch for changes in the finding row and populate form
@@ -529,6 +631,10 @@ const handleSubmit = async () => {
         if (formData.value.workaround && formData.value.workaround.trim()) {
             input.workaround = formData.value.workaround.trim()
         }
+
+        const assessment = assessmentInput()
+        if (!assessment) return
+        Object.assign(input, assessment)
         
         const response = await graphqlClient.mutate({
             mutation: gql`
