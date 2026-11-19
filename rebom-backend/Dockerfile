@@ -115,7 +115,15 @@ RUN mkdir /prod && cp package.json package-lock.json /prod/ && \
 # (node 26.12.1 links libatomic.so.1).
 # On arm64 only, gcompat lets the glibc-linked cyclonedx-cli start on musl (no musl
 # arm64 build exists; SCORE-7 design round 3, ADR-8).
-FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS deliverable
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runtime-base
+# Upgrade every package: alpine:3.24.4 still ships zlib 1.3.2-r1 (CVE-2026-4738).
+RUN apk upgrade --no-cache
+
+# Flattened onto scratch: an image SBOM reads every layer, so the base layer's superseded packages
+# would otherwise still be reported after the upgrade above. Alpine's image config sets only PATH.
+FROM scratch AS deliverable
+COPY --from=runtime-base / /
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
