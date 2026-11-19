@@ -68,6 +68,10 @@ ENV KEYCLOAK_ADMIN_PASSWORD=admin
 ENV KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
 ENV KC_DB_USERNAME=postgres
 ENV KC_DB_PASSWORD=password   
+# CVE-2026-114938 (java4shell): turn off the JIT's Base64 intrinsics, as Keycloak advises, until the base image
+# ships a JDK with the fix (Red Hat java-21-openjdk 21.0.13.1 or later). kc.sh appends JAVA_OPTS_APPEND to the
+# JVM options, so a deployment that sets its own JAVA_OPTS_APPEND must keep this flag in it.
+ENV JAVA_OPTS_APPEND="-XX:-UseBASE64Intrinsics"
 
 LABEL org.opencontainers.image.revision $GIT_COMMIT
 LABEL git_branch $GIT_BRANCH
