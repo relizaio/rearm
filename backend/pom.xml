@@ -25,6 +25,10 @@
     <java.version>25</java.version>
     <main-class>org.springframework.boot.loader.launch.JarLauncher</main-class>
     <start-class>io.reliza.ws.App</start-class>
+    <!-- Spring Boot 4.1.2 manages graphql-java 25.1, which shades guava 32.1.2-jre: scanners report
+         CVE-2026-102554 (GHSA-xxph-c9ww-hj94). 25.2 shades 33.8.0-jre. Drop at the next Spring Boot
+         bump that brings graphql-java 25.2 or later. -->
+    <graphql-java.version>25.2</graphql-java.version>
     <!-- No netty/tomcat/postgresql/log4j2/commons-lang3 overrides here on
          purpose. They were added to get ahead of a lagging BOM and then did
          the opposite: by 4.1.1 the BOM had passed every one of them, so the
@@ -220,11 +224,12 @@
             </exclusion>
         </exclusions>
     </dependency>
-    <!-- https://mvnrepository.com/artifact/org.json/json -->
+    <!-- https://mvnrepository.com/artifact/org.json/json
+         20260719 fixes CVE-2026-59171 (GHSA-ghc9-756g-vrcv, affected below 20260719). -->
 	<dependency>
 	    <groupId>org.json</groupId>
 	    <artifactId>json</artifactId>
-	    <version>20260522</version>
+	    <version>20260719</version>
 	</dependency>
 	<dependency>
 	    <groupId>org.springframework.boot</groupId>

@@ -105,10 +105,19 @@ RUN SKIP="$SKIP_TESTS" && if [ "$SKIP" = "auto" ]; then case "$GIT_BRANCH" in ma
     echo "SKIP_TESTS=$SKIP_TESTS GIT_BRANCH=$GIT_BRANCH -> skipTests=$SKIP" && \
     su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B -T1C clean package spring-boot:repackage -DskipTests=$SKIP && cp target/*.jar application.jar && java -Djarmode=tools -jar application.jar extract --layers --launcher --destination extracted
 
-FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS artifact-stage
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runtime-base
+# Upgrade every package, not only ca-certificates: alpine:3.24.4 still ships zlib 1.3.2-r1 (CVE-2026-4738),
+# and the build fails if the upgrade did not reach zlib 1.4-r0. The ca-certificates-bundle check stays for the
+# fixed Alpine bundle (20261020-r0), which Java does not read but the gate's curl and package check do.
+RUN apk upgrade --no-cache && apk info -e -v ca-certificates-bundle && \
+    apk version -t "$(apk info -e -v zlib | sed 's/^zlib-//')" 1.4-r0 | grep -qv '<'
+
+# Flattened onto scratch: an image SBOM reads every layer, so the base layer's superseded zlib would
+# otherwise still be reported after the upgrade above. Alpine's image config sets only PATH, restored below.
+FROM scratch AS artifact-stage
+COPY --from=runtime-base / /
 ENV JAVA_HOME=/opt/java/openjdk
-ENV PATH="${JAVA_HOME}/bin:${PATH}"
-RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk info -e -v ca-certificates-bundle
+ENV PATH="${JAVA_HOME}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 COPY --from=jre-build /javaruntime $JAVA_HOME
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
