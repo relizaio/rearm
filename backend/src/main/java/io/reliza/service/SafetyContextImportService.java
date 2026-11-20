@@ -145,7 +145,7 @@ SafetyContextImportResult result = createProposals(
     ImportMode importMode,
     IssuerClass issuerClass,
     WhoUpdated wu,
-   String documentJson) {
+   String documentJson) throws RelizaException {
 
     SafetyContextParseResult parsed = parser.parse(documentJson);
 
@@ -286,8 +286,9 @@ switch (verdict.action()) {
                 ? wu.getActor()
                 : wu.getLastUpdatedBy());
     }
-}    
-      
+}
+        }
+
         List<String> errors = new ArrayList<>(parsed.warnings());
         return new SafetyContextImportResult(parsed.entries().size(), matched, unmatched,
             ambiguous, deferred, 0, List.copyOf(proposalUuids), List.copyOf(errors));
