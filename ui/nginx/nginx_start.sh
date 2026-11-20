@@ -54,7 +54,7 @@ export PROGRAMMATIC_API_TIMEOUT
 # THAT shell, a child of this one.)
 #
 # What each caller then gets, and they differ:
-#   docker/compose -- the base image sets STOPSIGNAL SIGQUIT, which we inherit, so
+#   docker/compose -- ui/Dockerfile sets STOPSIGNAL SIGQUIT (the flattened image inherits nothing), so
 #     `docker stop` now performs a genuine GRACEFUL drain instead of timing out.
 #   kubernetes     -- the kubelet sends SIGTERM regardless, and for nginx SIGTERM means
 #     FAST shutdown (SIGQUIT is the graceful one). nginx therefore exits in

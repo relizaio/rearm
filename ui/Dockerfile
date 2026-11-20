@@ -14,10 +14,14 @@ RUN npm run build
 # runtime-base is nginx, upgraded; artifact-stage is runtime-base flattened onto scratch.
 FROM nginx:1.31.9-alpine3.24-slim@sha256:5bfced78d24d644270bedb0a9968697042e38d5c03fb6354603df025279c1cbe AS runtime-base
 # Upgrade every package: nginx:1.31.9-alpine3.24-slim still ships libssl3/libcrypto3 3.5.9-r0 and zlib 1.3.2-r1
-# (CVE-2026-4738); the build fails if the upgrade did not reach zlib 1.4-r0. The ca-certificates-bundle check stays
-# for the October 2026 eMudhra CA compromise (hygiene; nginx makes no outbound TLS).
+# (CVE-2026-4738); the build fails unless each reached its fixed release (a missing package or an
+# incomparable version fails too). The ca-certificates-bundle check stays for the October 2026 eMudhra CA
+# compromise (hygiene; nginx makes no outbound TLS).
 RUN apk upgrade --no-cache && apk info -e -v ca-certificates-bundle && \
-    apk version -t "$(apk info -e -v zlib | sed 's/^zlib-//')" 1.4-r0 | grep -qv '<'
+    for p in zlib:1.4-r0 libssl3:3.5.9-r1 libcrypto3:3.5.9-r1; do \
+        v=$(apk info -e -v "${p%%:*}" | sed "s/^${p%%:*}-//") && \
+        apk version -t "$v" "${p#*:}" | grep -qx '[=>]' || { echo "${p%%:*} '$v' is older than ${p#*:}" >&2; exit 1; }; \
+    done
 
 # Flattened onto scratch: an image SBOM reads every layer, so the base layer's superseded packages
 # would otherwise still be reported after the upgrade above. The copy drops the nginx image config,
