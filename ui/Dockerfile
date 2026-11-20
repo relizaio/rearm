@@ -11,13 +11,29 @@ COPY ./ .
 RUN node ci/trust-gate/trust-gate.mjs
 RUN npm run build
 
-FROM nginx:1.31.8-alpine3.24-slim@sha256:f45171d36c76a8b2f5ef97108a3a8a2294248a6578a0a180edc2d78f7d2edc26 AS artifact-stage
+# runtime-base is nginx, upgraded; artifact-stage is runtime-base flattened onto scratch.
+FROM nginx:1.31.9-alpine3.24-slim@sha256:5bfced78d24d644270bedb0a9968697042e38d5c03fb6354603df025279c1cbe AS runtime-base
+# Upgrade every package: nginx:1.31.9-alpine3.24-slim still ships libssl3/libcrypto3 3.5.9-r0 and zlib 1.3.2-r1
+# (CVE-2026-4738); the build fails if the upgrade did not reach zlib 1.4-r0. The ca-certificates-bundle check stays
+# for the October 2026 eMudhra CA compromise (hygiene; nginx makes no outbound TLS).
+RUN apk upgrade --no-cache && apk info -e -v ca-certificates-bundle && \
+    apk version -t "$(apk info -e -v zlib | sed 's/^zlib-//')" 1.4-r0 | grep -qv '<'
+
+# Flattened onto scratch: an image SBOM reads every layer, so the base layer's superseded packages
+# would otherwise still be reported after the upgrade above. The copy drops the nginx image config,
+# so it is restored here; STOPSIGNAL SIGQUIT matters, nginx_start.sh relies on it for a graceful
+# `docker stop`. CMD is not restored: the ENTRYPOINT below resets it, as before.
+FROM scratch AS artifact-stage
+COPY --from=runtime-base / /
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV NGINX_VERSION=1.31.9 PKG_RELEASE=1 DYNPKG_RELEASE=1
+EXPOSE 80
+STOPSIGNAL SIGQUIT
+WORKDIR /
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
 ARG GIT_BRANCH=git_branch_undefined
 ARG VERSION=not_versioned
-# October 2026 eMudhra CA compromise: the fixed Alpine bundle (hygiene; nginx makes no outbound TLS).
-RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk info -e -v ca-certificates-bundle
 COPY --from=build-stage /app/dist /usr/share/nginx/html
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/default.conf.template /etc/nginx/templates/
