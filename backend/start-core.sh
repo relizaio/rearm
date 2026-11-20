@@ -48,6 +48,8 @@
 # immediately (exit 1); CrashOnOutOfMemoryError additionally writes
 # an hs_err_pid log to /app before exit for forensics. K8s then
 # restarts the pod within ~10–15s.
+#
+# Base64 intrinsics (-XX:-UseBASE64Intrinsics): turned off as a java4shell mitigation.
 cd /app
 # Keep in sync with rearm-core/backend/start-core.sh (hand-synced: copy-src.sh
 # mirrors backend/src only).
@@ -66,6 +68,7 @@ cd /app
 # produces the full shutdown sequence in ~30s, so termination gets FASTER (a 45s wait
 # for SIGKILL becomes a 40s drain including the chart's 10s preStop).
 exec java -Djava.security.egd=file:/dev/./urandom \
+     -XX:-UseBASE64Intrinsics \
      -Dlog4j2.formatMsgNoLookups=true \
      -XX:+ShowCodeDetailsInExceptionMessages \
      -XX:+ExitOnOutOfMemoryError \
