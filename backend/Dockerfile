@@ -106,14 +106,19 @@ RUN SKIP="$SKIP_TESTS" && if [ "$SKIP" = "auto" ]; then case "$GIT_BRANCH" in ma
     su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B -T1C clean package spring-boot:repackage -DskipTests=$SKIP && cp target/*.jar application.jar && java -Djarmode=tools -jar application.jar extract --layers --launcher --destination extracted
 
 FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runtime-base
-# Upgrade every package, not only ca-certificates: alpine:3.24.4 still ships zlib 1.3.2-r1 (CVE-2026-4738),
-# and the build fails if the upgrade did not reach zlib 1.4-r0. The ca-certificates-bundle check stays for the
+# Upgrade every package, not only ca-certificates: alpine:3.24.4 still ships zlib 1.3.2-r1 (CVE-2026-4738) and
+# libssl3/libcrypto3 3.5.9-r0; the build fails unless each reached its fixed release (a missing package or an
+# incomparable version fails too), the same gate as ui/Dockerfile. The ca-certificates-bundle check stays for the
 # fixed Alpine bundle (20261020-r0), which Java does not read but the gate's curl and package check do.
 RUN apk upgrade --no-cache && apk info -e -v ca-certificates-bundle && \
-    apk version -t "$(apk info -e -v zlib | sed 's/^zlib-//')" 1.4-r0 | grep -qv '<'
+    for p in zlib:1.4-r0 libssl3:3.5.9-r1 libcrypto3:3.5.9-r1; do \
+        v=$(apk info -e -v "${p%%:*}" | sed "s/^${p%%:*}-//") && \
+        apk version -t "$v" "${p#*:}" | grep -qx '[=>]' || { echo "${p%%:*} '$v' is older than ${p#*:}" >&2; exit 1; }; \
+    done
 
-# Flattened onto scratch: an image SBOM reads every layer, so the base layer's superseded zlib would
-# otherwise still be reported after the upgrade above. Alpine's image config sets only PATH, restored below.
+# Flattened onto scratch: an image SBOM reads every layer, so the base layer's superseded packages would
+# otherwise still be reported after the upgrade above. The copy drops Alpine's image config (PATH and
+# CMD ["/bin/sh"]): PATH is restored below, CMD is set at the end of this stage.
 FROM scratch AS artifact-stage
 COPY --from=runtime-base / /
 ENV JAVA_HOME=/opt/java/openjdk
