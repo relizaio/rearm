@@ -70,9 +70,10 @@ ENV KC_DB_USERNAME=postgres
 ENV KC_DB_PASSWORD=password   
 # CVE-2026-114938 (java4shell): the base image's java-21-openjdk must be 21.0.13.1 or later (keycloak 26.8.2-3, the
 # 2026-11-19 rebuild, ships 21.0.13.1+2); the build fails on an older one.
-RUN v=$(java -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java\.version = //p') && [ -n "$v" ] && \
-    [ "$(printf '%s\n' 21.0.13.1 "$v" | sort -V | head -n1)" = 21.0.13.1 ] || \
-    { echo "java '$v' is older than 21.0.13.1 (CVE-2026-114938)" >&2; exit 1; }
+RUN v=$(java -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java\.version = //p') && \
+    { [ -n "$v" ] || { echo "cannot read java.version from java -XshowSettings:properties" >&2; exit 1; }; } && \
+    { [ "$(printf '%s\n' 21.0.13.1 "$v" | sort -V | head -n1)" = 21.0.13.1 ] || \
+      { echo "java $v is older than 21.0.13.1 (CVE-2026-114938)" >&2; exit 1; }; }
 
 LABEL org.opencontainers.image.revision $GIT_COMMIT
 LABEL git_branch $GIT_BRANCH

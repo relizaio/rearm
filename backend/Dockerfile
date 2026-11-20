@@ -1,27 +1,39 @@
 # The JDK jlink runs from: Temurin 25.0.5.1+2 for alpine-linux, which fixes CVE-2026-114938 (java4shell), from the
-# Adoptium archive, because no eclipse-temurin image carries it yet. Checksum and signature are verified, and the
-# build fails unless the archive is the release named in JDK_RELEASE. To move to a newer build, take link, checksum
-# and signature_link from
-# https://api.adoptium.net/v3/assets/release_name/eclipse/<release>?architecture=x64&image_type=jdk&os=alpine-linux
+# Adoptium archive, because no eclipse-temurin image carries it yet; go back to eclipse-temurin:25-jdk-alpine once
+# one of its tags carries 25.0.5.1 or later. The archive must match its pinned sha256 and carry a signature made by
+# the Adoptium signing key kept in ci/adoptium/adoptium.asc (no keyserver at build time), and IMPLEMENTOR_VERSION
+# must name JDK_RELEASE; the jlinked runtime must be 25.0.5.1 or later. To move to a newer build, take link and
+# checksum for x64 and aarch64 from
+# https://api.adoptium.net/v3/assets/release_name/eclipse/<release>?image_type=jdk&os=alpine-linux
+# (the signature is the link plus .sig).
 FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS jre-build
+ARG TARGETARCH
 ARG JDK_RELEASE=jdk-25.0.5.1+2
-ARG JDK_URL=https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5.1%2B2/OpenJDK25U-jdk_x64_alpine-linux_hotspot_25.0.5.1_2.tar.gz
-ARG JDK_SHA256=dbd75c6332ad995d20b6e25624b84652ef332d6babee4e9ddac3f36ee38d57be
+ARG JDK_URL_AMD64=https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5.1%2B2/OpenJDK25U-jdk_x64_alpine-linux_hotspot_25.0.5.1_2.tar.gz
+ARG JDK_SHA256_AMD64=dbd75c6332ad995d20b6e25624b84652ef332d6babee4e9ddac3f36ee38d57be
+ARG JDK_URL_ARM64=https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5.1%2B2/OpenJDK25U-jdk_aarch64_alpine-linux_hotspot_25.0.5.1_2.tar.gz
+ARG JDK_SHA256_ARM64=0501ef55ea9ec19b14987def7a73e044cd1748f7f3b97237b49007d387a84a1a
 ARG ADOPTIUM_GPG_FINGERPRINT=3B04D753C9050D9A5D343F39843C48A565F8F04B
 ENV JAVA_HOME=/opt/java/openjdk
 ENV PATH="${JAVA_HOME}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-RUN apk add --no-cache gnupg \
- && wget -q -O /tmp/jdk.tar.gz "${JDK_URL}" \
- && wget -q -O /tmp/jdk.tar.gz.sig "${JDK_URL}.sig" \
- && echo "${JDK_SHA256}  /tmp/jdk.tar.gz" | sha256sum -c - \
+COPY ci/adoptium/adoptium.asc /tmp/adoptium.asc
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) url="${JDK_URL_AMD64}" sha="${JDK_SHA256_AMD64}" ;; \
+        arm64) url="${JDK_URL_ARM64}" sha="${JDK_SHA256_ARM64}" ;; \
+        *) echo "jre-build: no Temurin JDK pinned for TARGETARCH ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && apk add --no-cache gnupg \
+ && wget -q -O /tmp/jdk.tar.gz "${url}" \
+ && wget -q -O /tmp/jdk.tar.gz.sig "${url}.sig" \
+ && echo "${sha}  /tmp/jdk.tar.gz" | sha256sum -c - \
  && export GNUPGHOME="$(mktemp -d)" \
- && gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "${ADOPTIUM_GPG_FINGERPRINT}" \
- && gpg --batch --verify /tmp/jdk.tar.gz.sig /tmp/jdk.tar.gz \
- && gpg --batch --list-keys --with-colons "${ADOPTIUM_GPG_FINGERPRINT}" | grep -q "^fpr:::::::::${ADOPTIUM_GPG_FINGERPRINT}:" \
+ && gpg --batch --import /tmp/adoptium.asc \
+ && gpg --batch --status-fd 1 --verify /tmp/jdk.tar.gz.sig /tmp/jdk.tar.gz | grep -q "^\[GNUPG:\] VALIDSIG .* ${ADOPTIUM_GPG_FINGERPRINT}\$" \
  && mkdir -p "${JAVA_HOME}" \
  && tar -xzf /tmp/jdk.tar.gz -C "${JAVA_HOME}" --strip-components=1 --no-same-owner \
  && grep -qx "IMPLEMENTOR_VERSION=\"Temurin-${JDK_RELEASE#jdk-}\"" "${JAVA_HOME}/release" \
- && rm -rf "${GNUPGHOME}" /tmp/jdk.tar.gz /tmp/jdk.tar.gz.sig
+ && gpgconf --kill all \
+ && rm -rf "${GNUPGHOME}" /tmp/jdk.tar.gz /tmp/jdk.tar.gz.sig /tmp/adoptium.asc
 # Create a custom Java runtime
 # to get list of java modules, use the following from target/ directory: 
 # jdeps -R -s --multi-release 16 -cp '.\unjar\BOOT-INF\lib\*' .\rearm-core-Version_Managed_By_CI_AND_Reliza.jar
@@ -38,6 +50,12 @@ RUN $JAVA_HOME/bin/jlink \
          --no-header-files \
          --compress=zip-9 \
          --output /javaruntime
+# CVE-2026-114938 (java4shell): start-core.sh no longer turns off Base64 intrinsics, so the build fails unless the
+# jlinked runtime is 25.0.5.1 or later.
+RUN v=$(sed -n 's/^JAVA_VERSION="\(.*\)"$/\1/p' /javaruntime/release) && \
+    { [ -n "$v" ] || { echo "cannot read JAVA_VERSION from /javaruntime/release" >&2; exit 1; }; } && \
+    { [ "$(printf '%s\n' 25.0.5.1 "$v" | sort -V | head -n1)" = 25.0.5.1 ] || \
+      { echo "jlinked runtime java $v is older than 25.0.5.1 (CVE-2026-114938)" >&2; exit 1; }; }
 
 FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:781f1da87cd3d142e66e47cc149c4582a652fb7f574648206d1e956170c0dc90 AS build-cache-stage
 # October 2026 eMudhra CA compromise: remove emSign ECC Root CA - G3 and AAA Certificate
