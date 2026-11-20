@@ -1,4 +1,27 @@
-FROM eclipse-temurin:25-jdk-alpine@sha256:1e20ead9eec7234db293f1913438090d533ed47c0b9e12dc8c7627a802a44ed6 AS jre-build
+# The JDK jlink runs from: Temurin 25.0.5.1+2 for alpine-linux, which fixes CVE-2026-114938 (java4shell), from the
+# Adoptium archive, because no eclipse-temurin image carries it yet. Checksum and signature are verified, and the
+# build fails unless the archive is the release named in JDK_RELEASE. To move to a newer build, take link, checksum
+# and signature_link from
+# https://api.adoptium.net/v3/assets/release_name/eclipse/<release>?architecture=x64&image_type=jdk&os=alpine-linux
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS jre-build
+ARG JDK_RELEASE=jdk-25.0.5.1+2
+ARG JDK_URL=https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5.1%2B2/OpenJDK25U-jdk_x64_alpine-linux_hotspot_25.0.5.1_2.tar.gz
+ARG JDK_SHA256=dbd75c6332ad995d20b6e25624b84652ef332d6babee4e9ddac3f36ee38d57be
+ARG ADOPTIUM_GPG_FINGERPRINT=3B04D753C9050D9A5D343F39843C48A565F8F04B
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH="${JAVA_HOME}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+RUN apk add --no-cache gnupg \
+ && wget -q -O /tmp/jdk.tar.gz "${JDK_URL}" \
+ && wget -q -O /tmp/jdk.tar.gz.sig "${JDK_URL}.sig" \
+ && echo "${JDK_SHA256}  /tmp/jdk.tar.gz" | sha256sum -c - \
+ && export GNUPGHOME="$(mktemp -d)" \
+ && gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "${ADOPTIUM_GPG_FINGERPRINT}" \
+ && gpg --batch --verify /tmp/jdk.tar.gz.sig /tmp/jdk.tar.gz \
+ && gpg --batch --list-keys --with-colons "${ADOPTIUM_GPG_FINGERPRINT}" | grep -q "^fpr:::::::::${ADOPTIUM_GPG_FINGERPRINT}:" \
+ && mkdir -p "${JAVA_HOME}" \
+ && tar -xzf /tmp/jdk.tar.gz -C "${JAVA_HOME}" --strip-components=1 --no-same-owner \
+ && grep -qx "IMPLEMENTOR_VERSION=\"Temurin-${JDK_RELEASE#jdk-}\"" "${JAVA_HOME}/release" \
+ && rm -rf "${GNUPGHOME}" /tmp/jdk.tar.gz /tmp/jdk.tar.gz.sig
 # Create a custom Java runtime
 # to get list of java modules, use the following from target/ directory: 
 # jdeps -R -s --multi-release 16 -cp '.\unjar\BOOT-INF\lib\*' .\rearm-core-Version_Managed_By_CI_AND_Reliza.jar
