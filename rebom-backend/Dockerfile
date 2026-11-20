@@ -13,7 +13,7 @@ ARG TARGETOS
 # and "selfComponentsSkipped" (SCORE-59; pinned by SCORE-60 ADR-2). The merge of the two
 # engine-check fixtures (test/fixtures/merge/engine-check-a.cdx.json and engine-check-b.cdx.json)
 # must print `folds into root` on stderr (SCORE-67; pinned by SCORE-68 ADR-2).
-ARG REARM_CLI_VERSION=26.10.15
+ARG REARM_CLI_VERSION=26.11.10
 
 # October 2026 eMudhra CA compromise: the fixed Alpine bundle, and Node on it (--use-openssl-ca)
 # until FIXED_NODE is set in ci/trust-gate/trust-gate.mjs.
