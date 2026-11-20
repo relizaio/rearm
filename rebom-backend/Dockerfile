@@ -115,9 +115,12 @@ RUN mkdir /prod && cp package.json package-lock.json /prod/ && \
 # (node 26.12.1 links libatomic.so.1).
 # On arm64 only, gcompat lets the glibc-linked cyclonedx-cli start on musl (no musl
 # arm64 build exists; SCORE-7 design round 3, ADR-8).
+# runtime-base is that alpine, upgraded; deliverable is runtime-base flattened onto scratch.
 FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runtime-base
-# Upgrade every package: alpine:3.24.4 still ships zlib 1.3.2-r1 (CVE-2026-4738).
-RUN apk upgrade --no-cache
+# Upgrade every package: alpine:3.24.4 still ships zlib 1.3.2-r1 (CVE-2026-4738); the build fails if the
+# upgrade did not reach zlib 1.4-r0.
+RUN apk upgrade --no-cache && \
+    apk version -t "$(apk info -e -v zlib | sed 's/^zlib-//')" 1.4-r0 | grep -qv '<'
 
 # Flattened onto scratch: an image SBOM reads every layer, so the base layer's superseded packages
 # would otherwise still be reported after the upgrade above. Alpine's image config sets only PATH.
@@ -143,6 +146,8 @@ ENV \
     LANG=en_US.UTF-8 \
     NODE_OPTIONS=--use-openssl-ca \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+# The ca-certificates upgrade is a no-op after runtime-base's full upgrade; it stays as the eMudhra
+# trust-store pattern shared with the other images.
 RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk info -e -v ca-certificates-bundle && \
     apk add --no-cache \
     libstdc++ \
