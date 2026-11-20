@@ -1,4 +1,4 @@
-FROM quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b AS builder
+FROM quay.io/keycloak/keycloak:26.8.2-3@sha256:7e66a96e4739239070aeaf72e4c5decf0f7f682cfc725b9f7ea2b336eaba38b3 AS builder
 
 ENV KC_HEALTH_ENABLED=true
 ENV KC_METRICS_ENABLED=true
@@ -30,7 +30,7 @@ RUN update-ca-trust \
     && find /etc/pki/ca-trust/extracted -type d -exec chmod 0755 {} + \
     && find /etc/pki/ca-trust/extracted -type f -exec chmod 0444 {} +
 
-FROM quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b AS deliverable
+FROM quay.io/keycloak/keycloak:26.8.2-3@sha256:7e66a96e4739239070aeaf72e4c5decf0f7f682cfc725b9f7ea2b336eaba38b3 AS deliverable
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
 ARG GIT_BRANCH=git_branch_undefined
@@ -68,10 +68,11 @@ ENV KEYCLOAK_ADMIN_PASSWORD=admin
 ENV KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
 ENV KC_DB_USERNAME=postgres
 ENV KC_DB_PASSWORD=password   
-# CVE-2026-114938 (java4shell): turn off the JIT's Base64 intrinsics, as Keycloak advises, until the base image
-# ships a JDK with the fix (Red Hat java-21-openjdk 21.0.13.1 or later). kc.sh appends JAVA_OPTS_APPEND to the
-# JVM options, so a deployment that sets its own JAVA_OPTS_APPEND must keep this flag in it.
-ENV JAVA_OPTS_APPEND="-XX:-UseBASE64Intrinsics"
+# CVE-2026-114938 (java4shell): the base image's java-21-openjdk must be 21.0.13.1 or later (keycloak 26.8.2-3, the
+# 2026-11-19 rebuild, ships 21.0.13.1+2); the build fails on an older one.
+RUN v=$(java -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java\.version = //p') && [ -n "$v" ] && \
+    [ "$(printf '%s\n' 21.0.13.1 "$v" | sort -V | head -n1)" = 21.0.13.1 ] || \
+    { echo "java '$v' is older than 21.0.13.1 (CVE-2026-114938)" >&2; exit 1; }
 
 LABEL org.opencontainers.image.revision $GIT_COMMIT
 LABEL git_branch $GIT_BRANCH
