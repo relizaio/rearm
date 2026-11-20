@@ -5,7 +5,10 @@ COPY go.mod go.sum ./
 COPY ./internal/imports ./internal/imports
 RUN go build ./internal/imports
 COPY . .
-RUN go version
+# Go 1.26.11 fixes CVE-2026-97054 in the standard library; the build fails on an older toolchain (the golang
+# image sets GOTOOLCHAIN=local, so go.mod's toolchain line alone would not stop it).
+RUN v=$(go env GOVERSION) && echo "$v" && [ "$(printf '%s\n%s\n' go1.26.11 "$v" | sort -V | head -n 1)" = go1.26.11 ] || \
+    { echo "Go toolchain $v is older than go1.26.11 (CVE-2026-97054)" >&2; exit 1; }
 # Run the package tests in the build. Nothing else does: the workflow only
 # invokes the image build, so a test not run here is a test that never runs.
 RUN go test ./...
