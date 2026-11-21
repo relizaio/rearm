@@ -80,7 +80,13 @@ public enum AdvisoryLockKey {
 	 * Its own scheduler lock, not the Dependency-Track tick's: that tick runs minutes of SBOM work
 	 * and a queued publish must not wait behind it.
 	 */
-	TEA_ACT_DRAIN(49);
+	TEA_ACT_DRAIN(49),
+	/**
+	 * Serialises SAFETY_CONTEXT imports and manual accepts that touch the same coarse key (org,
+	 * scope target, component purl, scheme), so the ACTIVE-record upsert and the downgrade check
+	 * see a stable baseline. Two-key form.
+	 */
+	SAFETY_CONTEXT(54);
 	
 	private int queryVal;
 	

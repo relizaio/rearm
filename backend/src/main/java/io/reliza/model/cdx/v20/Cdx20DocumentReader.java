@@ -7,6 +7,7 @@ import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import lombok.extern.slf4j.Slf4j;
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Reads a CycloneDX 2.0 document into the {@link Cdx20Document} subset. Tolerant: fields outside
@@ -28,10 +29,19 @@ public final class Cdx20DocumentReader {
 
 	/** Reads {@code json}; refuses it when it is not a JSON CycloneDX document with a 2.x specVersion. */
 	public static Cdx20Document read(String json) throws RelizaException {
+		return read(json, Utils.OM);
+	}
+
+	/**
+	 * As {@link #read(String)}, parsing with {@code mapper}, for example one built with tighter
+	 * stream read constraints for untrusted uploads. A constraint breach is refused like any
+	 * other unreadable document.
+	 */
+	public static Cdx20Document read(String json, ObjectMapper mapper) throws RelizaException {
 		if (json == null || json.isBlank()) throw new RelizaException("CycloneDX 2.0 document is empty");
 		Cdx20Document doc;
 		try {
-			doc = Utils.OM.readValue(json, Cdx20Document.class);
+			doc = mapper.readValue(json, Cdx20Document.class);
 		} catch (JacksonException e) {
 			// The parser's message can quote the input; keep it in the log, not in the refusal.
 			log.debug("CycloneDX 2.0 document not readable: {}", e.getOriginalMessage());

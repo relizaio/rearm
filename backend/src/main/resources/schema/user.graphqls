@@ -304,6 +304,15 @@ type Query {
 	getVexStatementProposal(uuid: ID!): VexStatementProposalWebDto
 	getVexStatementProposalsBySourceArtifact(artifact: ID!): [VexStatementProposalWebDto]
 	getVexStatementProposalsByRelease(org: ID!, release: ID!): [VexStatementProposalWebDto]
+	# SAFETY_CONTEXT import (CycloneDX 2.0 safety integrity levels). Levels are declared by the
+	# issuer and not verified by ReARM. Lists are paged (limit default 100, max 500).
+	getSafetyContextProposals(org: ID!, status: ProposalStatus, limit: Int, offset: Int): [SafetyContextEntry]
+	getSafetyContextProposalsByRelease(org: ID!, release: ID!, limit: Int, offset: Int): [SafetyContextEntry]
+	getSafetyContextProposalsBySourceArtifact(org: ID!, artifact: ID!, limit: Int, offset: Int): [SafetyContextEntry]
+	getSafetyContextRecordsByRelease(org: ID!, release: ID!, includeSuperseded: Boolean, limit: Int, offset: Int): [SafetyContextEntry]
+	getSafetyContextRecordsByComponent(org: ID!, component: ID!, includeSuperseded: Boolean, limit: Int, offset: Int): [SafetyContextEntry]
+	# The imported asset JSON a proposal or record came from.
+	getSafetyContextSourceAssertion(uuid: ID!): String
 	getMitigationAttestations(org: ID!, status: AttestationStatus): [MitigationAttestationWebDto]
 	getMitigationAttestation(uuid: ID!): MitigationAttestationWebDto
 	getMitigationAttestationsByAssignee(assignee: ID!, status: AttestationStatus): [MitigationAttestationWebDto]
@@ -1228,6 +1237,9 @@ type Mutation {
 	updateVulnAnalysis(analysis: UpdateVulnAnalysisInput!): VulnAnalysisWebDto
 	acceptVexStatementProposal(uuid: ID!, comment: String): VexStatementProposalWebDto
 	rejectVexStatementProposal(uuid: ID!, reason: String): VexStatementProposalWebDto
+	# Accepting an unmatched or ambiguous proposal needs component; a downgrade needs comment.
+	acceptSafetyContextProposal(uuid: ID!, component: ID, comment: String): SafetyContextEntry
+	rejectSafetyContextProposal(uuid: ID!, reason: String): SafetyContextEntry
 	updateVexStatementProposal(uuid: ID!, updates: VexProposalUpdateInput!): VexStatementProposalWebDto
 	attestMitigation(uuid: ID!, evidence: String!): MitigationAttestationWebDto
 	waiveMitigation(uuid: ID!, reason: String!): MitigationAttestationWebDto
@@ -5581,6 +5593,85 @@ type VexStatementProposalWebDto {
 	"""Version string of scopeReleaseUuid; null whenever that is null."""
 	scopeReleaseVersion: String
 }
+
+# One safety integrity level imported from a CycloneDX 2.0 SAFETY_CONTEXT document, either a
+# proposal (kind PROPOSAL) or an accepted record (kind RECORD). verificationStatus is always
+# UNVERIFIED: the level is the issuer's declaration, not a ReARM verification.
+type SafetyContextEntry {
+	uuid: ID
+	kind: SafetyContextKind
+	org: ID
+	# Set for kind PROPOSAL.
+	proposalStatus: ProposalStatus
+	# Set for kind RECORD.
+	recordStatus: SafetyRecordStatus
+	scope: AnalysisScope
+	scopeUuid: ID
+	componentPurl: String
+	sbomComponentUuid: ID
+	schemeKey: String
+	blueprintRefId: String
+	assetRefId: String
+	levelRaw: String
+	levelNormalized: String
+	levelRank: Int
+	levelNote: SafetyLevelNote
+	levelChange: SafetyLevelChange
+	# True on the highest-ranked ACTIVE level for this component and scheme across all assets.
+	componentMostConservative: Boolean
+	verificationStatus: SafetyVerificationStatus
+	issuerClassDerived: IssuerClass
+	issuerClassEffective: IssuerClass
+	originBinding: ArtifactBelongsToEnum
+	issuerOverride: IssuerClass
+	overrideHonoured: Boolean
+	elevatedByOverride: Boolean
+	overrideActor: ID
+	overrideActorName: String
+	importMode: ImportMode
+	gateRule: SafetyGateRule
+	notes: [SafetyNote]
+	matchStatus: SafetyMatchStatus
+	statusReason: String
+	conflictFlag: Boolean
+	sourceArtifact: ID
+	sourceDeleted: Boolean
+	releaseUuid: ID
+	sourceFormat: SafetySourceFormat
+	specCommit: String
+	docSerialNumber: String
+	docVersion: Int
+	sourceDocumentHash: String
+	sourceAssertionHash: String
+	uploadedBy: ID
+	lineageKey: String
+	actedBy: ID
+	actedAt: String
+	acceptComment: String
+	rejectReason: String
+	acceptedRecordUuid: ID
+	proposalUuid: ID
+	acceptedVia: SafetyAcceptedVia
+	acceptedBy: ID
+	acceptedByName: String
+	acceptedAt: String
+	acceptedByUploader: Boolean
+	supersededBy: ID
+}
+
+enum SafetyContextKind { PROPOSAL RECORD }
+enum SafetyRecordStatus { ACTIVE SUPERSEDED }
+enum SafetyLevelNote { OK UNMAPPED DECOMPOSITION CUSTOM_SCHEME }
+enum SafetyLevelChange { NEW UNCHANGED UPGRADE DOWNGRADE UNCOMPARABLE }
+enum SafetyVerificationStatus { UNVERIFIED }
+enum SafetyGateRule {
+	DOWNGRADE THIRD_PARTY_STAGE SELF_AUTO VENDOR_CUSTOM VENDOR_UNMAPPED VENDOR_DECOMPOSITION
+	VENDOR_BOTTOM VENDOR_AUTO INTRA_ASSET_CONFLICT UNMATCHED AMBIGUOUS SBOM_PENDING UNCOMPARABLE WIDE_SCOPE
+}
+enum SafetyNote { CROSS_DOC_CONFLICT USER_MODE_STAGE OVERRIDE_IGNORED }
+enum SafetyMatchStatus { MATCHED UNMATCHED AMBIGUOUS SBOM_PENDING }
+enum SafetySourceFormat { CDX_2_0 }
+enum SafetyAcceptedVia { AUTO_SELF AUTO_VENDOR MANUAL }
 
 type ViolationWithAttribution {
 	# Opaque handle to page this finding's full attribution via findingAttributionByDate.

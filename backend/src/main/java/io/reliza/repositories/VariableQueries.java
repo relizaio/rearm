@@ -2349,4 +2349,93 @@ class VariableQueries {
 				WHERE uuid = :uuid AND record_data->'entries' @> CAST(:needle AS jsonb)
 				ORDER BY version LIMIT 1
 			""";
+
+	/*
+	 * SAFETY_CONTEXT proposals and records (V106). Every query filters by org first; identity
+	 * predicates repeat the partial unique index expressions verbatim (null scopeUuid and refs are
+	 * bound as '').
+	 */
+	private static final String SAFETY_CONTEXT_IDENTITY = """
+			record_data->>'org' = :org
+			AND record_data->>'scope' = :scope
+			AND COALESCE(record_data->>'scopeUuid', '') = :scopeUuid
+			AND record_data->>'componentPurl' = :componentPurl
+			AND record_data->>'schemeKey' = :schemeKey
+			AND COALESCE(record_data->>'blueprintRefId', '') = :blueprintRefId
+			AND COALESCE(record_data->>'assetRefId', '') = :assetRefId
+			""";
+
+	protected static final String SAFETY_CONTEXT_LOCK_COARSE_KEY = """
+			SELECT 1 FROM (SELECT pg_advisory_xact_lock(:lockNamespace, hashtext(:key))) AS locked
+			""";
+
+	protected static final String FIND_SAFETY_CONTEXT_PROPOSAL_PENDING_AT_IDENTITY =
+			"SELECT * FROM rearm.safety_context_proposals WHERE " + SAFETY_CONTEXT_IDENTITY + """
+			AND record_data->>'lineageKey' = :lineageKey
+			AND record_data->>'status' = 'PENDING'
+			""";
+
+	protected static final String FIND_SAFETY_CONTEXT_PROPOSALS_PENDING_AT_IDENTITY =
+			"SELECT * FROM rearm.safety_context_proposals WHERE " + SAFETY_CONTEXT_IDENTITY + """
+			AND record_data->>'status' = 'PENDING'
+			""";
+
+	protected static final String EXISTS_SAFETY_CONTEXT_PROPOSAL_UNDECIDED_OR_REJECTED_WITH_HASH =
+			"SELECT count(*) > 0 FROM rearm.safety_context_proposals WHERE " + SAFETY_CONTEXT_IDENTITY + """
+			AND record_data->>'lineageKey' = :lineageKey
+			AND record_data->>'sourceAssertionHash' = :sourceAssertionHash
+			AND record_data->>'status' IN ('PENDING', 'REJECTED')
+			""";
+
+	protected static final String COUNT_SAFETY_CONTEXT_PROPOSALS_PENDING_BY_ORG_AND_RELEASE = """
+			SELECT count(*) FROM rearm.safety_context_proposals
+				WHERE record_data->>'org' = :org AND record_data->>'releaseUuid' = :release
+				AND record_data->>'status' = 'PENDING'
+			""";
+
+	protected static final String FIND_SAFETY_CONTEXT_PROPOSALS_BY_ORG_AND_STATUS = """
+			SELECT * FROM rearm.safety_context_proposals
+				WHERE record_data->>'org' = :org
+				AND (CAST(:status AS text) IS NULL OR record_data->>'status' = CAST(:status AS text))
+				ORDER BY created_date DESC LIMIT :limit OFFSET :offset
+			""";
+
+	protected static final String FIND_SAFETY_CONTEXT_PROPOSALS_BY_ORG_AND_RELEASE = """
+			SELECT * FROM rearm.safety_context_proposals
+				WHERE record_data->>'org' = :org AND record_data->>'releaseUuid' = :release
+				ORDER BY created_date DESC LIMIT :limit OFFSET :offset
+			""";
+
+	protected static final String FIND_SAFETY_CONTEXT_PROPOSALS_BY_ORG_AND_ARTIFACT = """
+			SELECT * FROM rearm.safety_context_proposals
+				WHERE record_data->>'org' = :org AND record_data->>'sourceArtifact' = :artifact
+				ORDER BY created_date DESC LIMIT :limit OFFSET :offset
+			""";
+
+	protected static final String FIND_SAFETY_CONTEXT_RECORD_ACTIVE_AT_IDENTITY =
+			"SELECT * FROM rearm.safety_context_records WHERE " + SAFETY_CONTEXT_IDENTITY
+			+ " AND record_data->>'status' = 'ACTIVE'";
+
+	protected static final String FIND_SAFETY_CONTEXT_RECORDS_ACTIVE_AT_COARSE_KEY = """
+			SELECT * FROM rearm.safety_context_records
+				WHERE record_data->>'org' = :org AND record_data->>'scope' = :scope
+				AND COALESCE(record_data->>'scopeUuid', '') = :scopeUuid
+				AND record_data->>'componentPurl' = :componentPurl AND record_data->>'schemeKey' = :schemeKey
+				AND record_data->>'status' = 'ACTIVE'
+			""";
+
+	protected static final String FIND_SAFETY_CONTEXT_RECORDS_BY_ORG_AND_RELEASE = """
+			SELECT * FROM rearm.safety_context_records
+				WHERE record_data->>'org' = :org AND record_data->>'releaseUuid' = :release
+				AND (:includeSuperseded OR record_data->>'status' = 'ACTIVE')
+				ORDER BY created_date DESC LIMIT :limit OFFSET :offset
+			""";
+
+	protected static final String FIND_SAFETY_CONTEXT_RECORDS_BY_ORG_AND_SCOPE_TARGET = """
+			SELECT * FROM rearm.safety_context_records
+				WHERE record_data->>'org' = :org AND record_data->>'scope' = :scope
+				AND record_data->>'scopeUuid' = :scopeUuid
+				AND (:includeSuperseded OR record_data->>'status' = 'ACTIVE')
+				ORDER BY created_date DESC LIMIT :limit OFFSET :offset
+			""";
 }
