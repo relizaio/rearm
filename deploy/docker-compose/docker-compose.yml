@@ -243,7 +243,7 @@ services:
     # https or localhost. Serves a self-signed certificate by default
     # (browser warning; fine for IP-based evals); set REARM_ACME_EMAIL and
     # a real REARM_TLS_HOST domain on default ports for Let's Encrypt.
-    image: traefik:v3.7.8@sha256:5cb000ad823bfcfff911e22a4c4fa09cee74c7a2d960c012a1a46a8d0a159fcf
+    image: traefik:v3.7.19@sha256:a6c0194dda77bcb804824580f36fa7edc56e315b1acfe933366c8b52844a78a4
     profiles: ["tls"]
     command:
      - --entrypoints.websecure.address=:443
