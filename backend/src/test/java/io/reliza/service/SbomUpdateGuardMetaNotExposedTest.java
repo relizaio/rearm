@@ -37,16 +37,18 @@ import graphql.language.ObjectTypeExtensionDefinition;
 import graphql.language.Type;
 import graphql.language.TypeName;
 import graphql.parser.Parser;
-import io.reliza.common.Utils;
+import graphql.parser.ParserEnvironment;
+import graphql.parser.ParserOptions;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
+import io.reliza.common.Utils;
 import io.reliza.model.Artifact;
-import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactVersionSnapshot;
+import io.reliza.model.ArtifactData;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.model.SystemInfo;
 import io.reliza.model.SystemInfoData;
 import io.reliza.model.dto.ArtifactWebDto;
-import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.service.RebomService.BomMeta;
 
 /**
@@ -67,7 +69,9 @@ class SbomUpdateGuardMetaNotExposedTest {
 		List<Document> docs = new ArrayList<>();
 		try (Stream<Path> files = Files.list(Paths.get("src/main/resources/schema"))) {
 			for (Path p : files.filter(f -> f.toString().endsWith(".graphqls")).sorted().toList()) {
-				docs.add(Parser.parse(Files.readString(p)));
+				// SDL parser options, as production uses: the default ones cancel past 15,000 tokens.
+				docs.add(new Parser().parseDocument(ParserEnvironment.newParserEnvironment()
+					.document(Files.readString(p)).parserOptions(ParserOptions.getDefaultSdlParserOptions()).build()));
 			}
 		}
 		assertTrue(docs.size() >= 3, "schema, user and programmatic files");

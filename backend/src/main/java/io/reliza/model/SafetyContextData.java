@@ -53,7 +53,7 @@ public abstract class SafetyContextData extends RelizaDataParent implements Reli
 	public enum MatchStatus { MATCHED, UNMATCHED, AMBIGUOUS, SBOM_PENDING }
 
 	/** Format of the imported document. */
-	public enum SourceFormat { CDX_2_0 }
+	public enum DocumentFormat { CDX_2_0 }
 
 	@JsonProperty("uuid") private UUID uuid;
 	@JsonProperty("org") private UUID org;
@@ -94,7 +94,7 @@ public abstract class SafetyContextData extends RelizaDataParent implements Reli
 	@JsonProperty("releaseUuid") private UUID releaseUuid;
 	@JsonProperty("sbomComponentUuid") private UUID sbomComponentUuid;
 	@JsonProperty("componentRefId") private String componentRefId;
-	@JsonProperty("sourceFormat") private SourceFormat sourceFormat = SourceFormat.CDX_2_0;
+	@JsonProperty("sourceFormat") private DocumentFormat sourceFormat = DocumentFormat.CDX_2_0;
 	@JsonProperty("specCommit") private String specCommit;
 	@JsonProperty("docSerialNumber") private String docSerialNumber;
 	@JsonProperty("docVersion") private Integer docVersion;

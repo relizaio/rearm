@@ -17,7 +17,7 @@ import io.reliza.model.SafetyContextData.LevelChange;
 import io.reliza.model.SafetyContextData.LevelNote;
 import io.reliza.model.SafetyContextData.MatchStatus;
 import io.reliza.model.SafetyContextData.Note;
-import io.reliza.model.SafetyContextData.SourceFormat;
+import io.reliza.model.SafetyContextData.DocumentFormat;
 import io.reliza.model.SafetyContextData.VerificationStatus;
 import io.reliza.model.SafetyContextProposalData;
 import io.reliza.model.SafetyContextRecordData;
@@ -71,7 +71,7 @@ public class SafetyContextEntryWebDto {
 	private UUID sourceArtifact;
 	private Boolean sourceDeleted;
 	private UUID releaseUuid;
-	private SourceFormat sourceFormat;
+	private DocumentFormat sourceFormat;
 	private String specCommit;
 	private String docSerialNumber;
 	private Integer docVersion;
