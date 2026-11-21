@@ -37,6 +37,8 @@ public class ImportSummary {
     private int attestationsDeferred;
     private int statementsUnmatched;
     private int statementsErrored;
+    // Re-imported statements identical to what is already stored (no new proposal or record).
+    private int statementsUnchanged;
     // Capped at MAX_ERROR_MESSAGES so a pathological VEX can't bloat the artifact record.
     private List<String> errorMessages;
 

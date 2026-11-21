@@ -578,6 +578,8 @@ public class CommonVariables {
 		VCS_REPOSITORIES("vcs_repositories"),
 		VERSION_ASSIGNMENTS("version_assignments"),
 		VEX_STATEMENT_PROPOSAL("vex_statement_proposals"),
+		SAFETY_CONTEXT_PROPOSAL("safety_context_proposals"),
+		SAFETY_CONTEXT_RECORD("safety_context_records"),
 		MITIGATION_ATTESTATION("mitigation_attestations"),
 		ATTESTATION("attestations"),
 		VULNERABILITY_RECORDS("vulnerability_records"),

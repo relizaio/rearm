@@ -3,71 +3,56 @@
 */
 package io.reliza.model;
 
-import java.time.ZonedDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import tools.jackson.core.type.TypeReference;
 
 import io.reliza.common.Utils;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import tools.jackson.core.type.TypeReference;
 
 /**
- * Typed JSONB shape shared by staged proposals and accepted safety-context records.
- * acceptedVia records the import path and is not approval of the source decision.
+ * An accepted safety-context level. At most one ACTIVE record exists per identity; a change
+ * supersedes it ({@link #supersededBy}) and records are never deleted. "Accepted" records the
+ * import path ({@link #acceptedVia}), not ReARM approval of the issuer's safety decision.
  */
 @Data
+@EqualsAndHashCode(callSuper = true)
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class SafetyContextRecordData implements RelizaObject {
-    @JsonProperty("uuid") private UUID uuid;
-    @JsonProperty("org") private UUID org;
-    @JsonProperty("sourceArtifact") private UUID sourceArtifact;
-    @JsonProperty("sourceFormat") private String sourceFormat;
-    @JsonProperty("sourceDocumentHash") private String sourceDocumentHash;
-    @JsonProperty("sourceAssertionHash") private String sourceAssertionHash;
-    @JsonProperty("sourceDocumentJson") private String sourceDocumentJson;
-    @JsonProperty("sourceAssertionJson") private String sourceAssertionJson;
-    @JsonProperty("releaseUuid") private UUID releaseUuid;
-    @JsonProperty("sbomComponentUuid") private UUID sbomComponentUuid;
-    @JsonProperty("scope") private AnalysisScope scope = AnalysisScope.COMPONENT;
-    @JsonProperty("scopeUuid") private UUID scopeUuid;
-    @JsonProperty("componentPurl") private String componentPurl;
-    @JsonProperty("componentRefId") private String componentRefId;
-    @JsonProperty("componentBomRef") private String componentBomRef;
-    @JsonProperty("assertionRefId") private String assertionRefId;
-    @JsonProperty("outcome") private String outcome;
-    @JsonProperty("rationale") private String rationale;
-    @JsonProperty("assertionStatus") private String assertionStatus;
-    @JsonProperty("classificationJson") private List<String> classificationJson = new ArrayList<>();
-    @JsonProperty("evidenceJson") private List<String> evidenceJson = new ArrayList<>();
-    @JsonProperty("matchStatus") private String matchStatus;
-    @JsonProperty("status") private ProposalStatus status = ProposalStatus.PENDING;
-    @JsonProperty("statusReason") private String statusReason;
-    @JsonProperty("acceptedVia") private String acceptedVia;
-    @JsonProperty("acceptedAt") private ZonedDateTime acceptedAt;
-    @JsonProperty("acceptedBy") private UUID acceptedBy;
-    @JsonProperty("acceptedRecordUuid") private UUID acceptedRecordUuid;
+public class SafetyContextRecordData extends SafetyContextData {
 
-    public static SafetyContextRecordData dataFromRecord(SafetyContextProposal entity) {
-        SafetyContextRecordData data =
-            Utils.OM.convertValue(entity.getRecordData(), new TypeReference<SafetyContextRecordData>() {});
-        data.setUuid(entity.getUuid());
-        return data;
-    }
-    public static SafetyContextRecordData dataFromRecord(SafetyContext entity) {
-        SafetyContextRecordData data =
-            Utils.OM.convertValue(entity.getRecordData(), new TypeReference<SafetyContextRecordData>() {});
-        data.setUuid(entity.getUuid());
-        return data;
-    }
-    public Map<String, Object> toRecordData() {
-        return Utils.OM.convertValue(this, new TypeReference<Map<String, Object>>() {});
-    }
-    @Override public UUID getResourceGroup() { return null; }
+	public enum RecordStatus { ACTIVE, SUPERSEDED }
+
+	public enum AcceptedVia { AUTO_SELF, AUTO_VENDOR, MANUAL }
+
+	@JsonProperty("status") private RecordStatus status = RecordStatus.ACTIVE;
+	@JsonProperty("proposalUuid") private UUID proposalUuid;
+	@JsonProperty("acceptedVia") private AcceptedVia acceptedVia;
+	@JsonProperty("acceptedBy") private UUID acceptedBy;
+	@JsonFormat(shape = JsonFormat.Shape.STRING)
+	@JsonProperty("acceptedAt") private Instant acceptedAt;
+	@JsonProperty("acceptedByUploader") private boolean acceptedByUploader;
+	@JsonProperty("acceptComment") private String acceptComment;
+	@JsonProperty("supersededBy") private UUID supersededBy;
+
+	public static SafetyContextRecordData dataFromRecord(SafetyContextRecord entity) {
+		if (entity.getSchemaVersion() != 0) {
+			throw new IllegalStateException("Safety context record schema version is "
+				+ entity.getSchemaVersion() + ", which is not currently supported");
+		}
+		SafetyContextRecordData data = Utils.OM.convertValue(entity.getRecordData(), SafetyContextRecordData.class);
+		data.setUuid(entity.getUuid());
+		return data;
+	}
+
+	public Map<String, Object> toRecordData() {
+		return Utils.OM.convertValue(this, new TypeReference<Map<String, Object>>() {});
+	}
 }

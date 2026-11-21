@@ -8,6 +8,7 @@ import java.util.UUID;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData.ArtifactType;
+import io.reliza.model.IssuerClass;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
@@ -39,4 +40,17 @@ public interface ArtifactImportHandler {
 	 */
 	ImportSummary dispatch(UUID artifactUuid, ArtifactDto artDto, ReleaseData rd,
 			ArtifactBelongsTo belongsTo, byte[] content, WhoUpdated wu) throws RelizaException;
+
+	/**
+	 * The issuer class an upload's binding implies: SELF when the file is attached to the org's
+	 * own release, deliverable or source code entry, otherwise THIRD_PARTY. An upload's
+	 * {@code userIssuerClassOverride} is applied on top by each import type's own policy.
+	 */
+	static IssuerClass deriveIssuerClass(ArtifactBelongsTo belongsTo) {
+		if (ArtifactBelongsTo.RELEASE == belongsTo || ArtifactBelongsTo.SCE == belongsTo
+				|| ArtifactBelongsTo.DELIVERABLE == belongsTo) {
+			return IssuerClass.SELF;
+		}
+		return IssuerClass.THIRD_PARTY;
+	}
 }

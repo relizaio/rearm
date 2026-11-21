@@ -120,7 +120,7 @@ public class VexImportService implements ArtifactImportHandler {
         SourceFormat format = (artDto.getBomFormat() == BomFormat.CYCLONEDX)
             ? SourceFormat.CDX_VEX
             : SourceFormat.OPENVEX;
-        IssuerClass issuerClass = deriveIssuerClass(belongsTo);
+        IssuerClass issuerClass = ArtifactImportHandler.deriveIssuerClass(belongsTo);
 
         VexImportInput input = new VexImportInput();
         input.setOrg(rd.getOrg());
@@ -142,19 +142,6 @@ public class VexImportService implements ArtifactImportHandler {
             result.getStatementsUnmatched(), result.getStatementsErrored(),
             result.getErrorMessages().isEmpty() ? "" : " errors=" + result.getErrorMessages());
         return ImportSummary.fromResult(result);
-    }
-
-    /**
-     * Initial IssuerClass from binding context — RELEASE / SCE / DELIVERABLE default to SELF
-     * (own org), everything else to THIRD_PARTY. The user-facing VEX upload picker exposes
-     * userIssuerClassOverride which the pipeline applies on top of this default.
-     */
-    private IssuerClass deriveIssuerClass(ArtifactBelongsTo belongsTo) {
-        if (belongsTo == null) return IssuerClass.THIRD_PARTY;
-        if (ArtifactBelongsTo.RELEASE.equals(belongsTo)) return IssuerClass.SELF;
-        if (ArtifactBelongsTo.SCE.equals(belongsTo)) return IssuerClass.SELF;
-        if (ArtifactBelongsTo.DELIVERABLE.equals(belongsTo)) return IssuerClass.SELF;
-        return IssuerClass.THIRD_PARTY;
     }
 
     /**

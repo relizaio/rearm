@@ -1473,6 +1473,8 @@ type ImportSummary {
 	attestationsDeferred: Int
 	statementsUnmatched: Int
 	statementsErrored: Int
+	# Re-imported statements identical to what is already stored.
+	statementsUnchanged: Int
 	errorMessages: [String]
 }
 
@@ -1488,6 +1490,8 @@ type VexImportSummary {
 	attestationsDeferred: Int
 	statementsUnmatched: Int
 	statementsErrored: Int
+	# Re-imported statements identical to what is already stored.
+	statementsUnchanged: Int
 	errorMessages: [String]
 }
 
