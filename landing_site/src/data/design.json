@@ -550,6 +550,55 @@
       "evidence": "VEX IMPORT · TRUST GATE · SCOPED ANALYSIS · MITIGATION ATTESTATIONS · VEX EXPORT"
     },
     {
+      "id": "3s",
+      "href": "#3s",
+      "path": "/use-cases/functional-safety",
+      "label": "Functional Safety",
+      "persona": "FOR SAFETY ENGINEERING + PRODUCT ASSURANCE TEAMS",
+      "h1": "Know what software is safety relevant. Preserve the evidence behind it.",
+      "pain": "Safety-critical products depend on supplier declarations, third-party assessments, component classifications, safety analyses, and evidence that often live outside release records.",
+      "a1": "rgba(94,235,195,0.10)",
+      "a2": "rgba(91,124,250,0.10)",
+      "stripLabel": "STANDARDS",
+      "strip": [
+        "ISO 26262",
+        "IEC 61508",
+        "IEC 62304",
+        "EN 50128",
+        "DO-178C"
+      ],
+      "evidence": "SAFETY CONTEXT · SUPPLIER ASSERTIONS · THIRD-PARTY CONTEXT · CYCLONEDX · SPDX · RELEASE EVIDENCE",
+      "publicDemo": false,
+      "shot": false,
+      "note": false,
+      "steps": [
+        {
+          "num": "01",
+          "title": "Safety Context arrives from multiple sources",
+          "body": "Supplier declarations, independent assessments, certification authority reports, and internal engineering reviews can all be imported as Safety Context artifacts. ReARM preserves the source, issuer, and supporting evidence for every assertion.",
+          "cap": "SBOM/XBOM Management"
+        },
+        {
+          "num": "02",
+          "title": "Trust depends on who is talking",
+          "body": "Assertions from trusted issuers can be accepted automatically based on organizational policy, while other assertions remain pending review. ReARM supports supplier, third-party, and internal assertions with clear provenance and review workflows.",
+          "cap": "Findings Aggregation"
+        },
+        {
+          "num": "03",
+          "title": "One assertion, correct scope",
+          "body": "Safety assertions can apply to a component, a subsystem, or an entire release. ReARM records the intended scope, correlates assertions to the right components, and prevents broader assertions from silently overriding more specific evidence.",
+          "cap": "Findings Aggregation"
+        },
+        {
+          "num": "04",
+          "title": "Review decisions become evidence",
+          "body": "Accepted, pending, and rejected assertions remain attached to the release together with the supporting documents and audit trail. Nothing is lost when personnel, suppliers, or products change.",
+          "cap": "Audit Evidence"
+        }
+      ]
+    },
+    {
       "id": "3f",
       "href": "#3f",
       "path": "/use-cases/medical-devices",
