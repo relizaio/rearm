@@ -3,12 +3,15 @@
         <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 8px;" data-testid="safety-context-inbox-note">
             {{ DECLARED_NOT_VERIFIED }} Accepting records the level against the component; it does not verify it.
         </n-text>
-        <n-tabs v-if="!releaseUuid" v-model:value="statusFilter" type="segment" animated>
-            <n-tab-pane name="PENDING" tab="Pending" />
-            <n-tab-pane name="ACCEPTED" tab="Accepted" />
-            <n-tab-pane name="REJECTED" tab="Rejected" />
-            <n-tab-pane name="SUPERSEDED" tab="Superseded" />
-        </n-tabs>
+        <!-- Radio buttons, not nested segment tabs: inside the Finding Analysis tabs a nested
+             segment n-tabs renders without its labels. -->
+        <n-radio-group v-if="!releaseUuid" v-model:value="statusFilter" size="small" style="margin-bottom: 8px;"
+            data-testid="safety-context-status-filter">
+            <n-radio-button value="PENDING">Pending</n-radio-button>
+            <n-radio-button value="ACCEPTED">Accepted</n-radio-button>
+            <n-radio-button value="REJECTED">Rejected</n-radio-button>
+            <n-radio-button value="SUPERSEDED">Superseded</n-radio-button>
+        </n-radio-group>
         <n-data-table
             :columns="columns"
             :data="proposals"
@@ -89,7 +92,7 @@ export default {
 <script lang="ts" setup>
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { NAlert, NButton, NDataTable, NDescriptions, NDescriptionsItem, NFormItem, NIcon, NInput, NModal, NSelect, NSpace, NTabPane, NTabs, NTag, NText, NTooltip } from 'naive-ui'
+import { NAlert, NButton, NDataTable, NDescriptions, NDescriptionsItem, NFormItem, NIcon, NInput, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NTag, NText, NTooltip } from 'naive-ui'
 import { Check, Code, X } from '@vicons/tabler'
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'

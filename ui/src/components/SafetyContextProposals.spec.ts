@@ -84,4 +84,14 @@ describe('SafetyContextProposals', () => {
         expect(w.text()).toContain("Staged by the upload's import mode")
         expect(w.text()).not.toContain('auto-accepted')
     })
+
+    it('switches the org inbox status with labelled buttons', async () => {
+        const w = await mounted([row({})])
+        expect(w.find('[data-testid="safety-context-status-filter"]').text()).toContain('Rejected')
+        query.mockResolvedValueOnce({ data: { getSafetyContextProposals: [] } })
+        const rejected = w.findAll('input[type="radio"]').find((i: any) => i.attributes('value') === 'REJECTED')!
+        await rejected.setValue(true)
+        await flushPromises()
+        expect(query.mock.calls.at(-1)![0].variables).toMatchObject({ status: 'REJECTED' })
+    })
 })
