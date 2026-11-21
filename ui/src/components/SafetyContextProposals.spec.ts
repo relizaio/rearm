@@ -9,7 +9,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 const query = vi.fn()
 const mutate = vi.fn()
 vi.mock('@/utils/graphql', () => ({ default: { query, mutate } }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ params: { orguuid: 'org-1' } }) }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ params: { orguuid: 'org-1' } }), RouterLink: { props: ['to'], template: '<a :href="to"><slot/></a>' } }))
 vi.mock('sweetalert2', () => ({ default: { fire: vi.fn() } }))
 const { default: Proposals } = await import('./SafetyContextProposals.vue')
 
