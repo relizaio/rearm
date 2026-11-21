@@ -3,6 +3,8 @@
 */
 package io.reliza.service;
 
+import java.util.Locale;
+
 import io.reliza.model.IssuerClass;
 import io.reliza.model.SafetyContextData.GateRule;
 import io.reliza.model.SafetyContextData.LevelChange;
@@ -18,8 +20,9 @@ import io.reliza.model.TrustAction;
  *
  * <p>Gate, first matching row wins (ranks compare only within one scheme):
  * <ol start="0">
- * <li>a lower rank than the ACTIVE record at the same identity stages for every issuer (skipped
- * when either rank is unknown);</li>
+ * <li>a lower rank than the ACTIVE record at the same identity stages for every issuer, and so
+ * does a different level that cannot be ranked against it (unmapped text or a custom scheme), so
+ * an unrankable level never silently replaces an accepted one;</li>
  * <li>THIRD_PARTY stages;</li>
  * <li>SELF auto-accepts, its scheme's bottom level included;</li>
  * <li>VENDOR stages a custom scheme, an unmapped level, an ISO 26262 decomposition, or the
@@ -46,6 +49,7 @@ public final class SafetyContextTrustPolicy {
 
 	public static Gate gate(IssuerClass issuer, LevelNote note, Integer rank, LevelChange change) {
 		if (change == LevelChange.DOWNGRADE) return new Gate(TrustAction.STAGE, GateRule.DOWNGRADE);
+		if (change == LevelChange.UNCOMPARABLE) return new Gate(TrustAction.STAGE, GateRule.UNCOMPARABLE);
 		if (issuer == IssuerClass.THIRD_PARTY || issuer == null) {
 			return new Gate(TrustAction.STAGE, GateRule.THIRD_PARTY_STAGE);
 		}
@@ -57,16 +61,31 @@ public final class SafetyContextTrustPolicy {
 		return new Gate(TrustAction.AUTO_ACCEPT, GateRule.VENDOR_AUTO);
 	}
 
-	/** The level compared with the ACTIVE record at the same identity. */
-	public static LevelChange levelChange(boolean activeExists, Integer activeRank, String activeNormalized,
-			Integer rank, String normalized) {
+	/**
+	 * The level compared with the ACTIVE record at the same identity. Unranked levels compare by
+	 * their normalized label, else by their raw text ignoring case and separators.
+	 */
+	public static LevelChange levelChange(boolean activeExists, Integer activeRank, String activeLabel,
+			Integer rank, String label) {
 		if (!activeExists) return LevelChange.NEW;
 		if (rank == null || activeRank == null) {
-			return normalized != null && normalized.equals(activeNormalized)
-				? LevelChange.UNCHANGED : LevelChange.UNCOMPARABLE;
+			return label != null && sameLabel(label, activeLabel) ? LevelChange.UNCHANGED : LevelChange.UNCOMPARABLE;
 		}
 		int cmp = Integer.compare(rank, activeRank);
 		return cmp == 0 ? LevelChange.UNCHANGED : cmp > 0 ? LevelChange.UPGRADE : LevelChange.DOWNGRADE;
+	}
+
+	/** The label a level compares by: its normalized form, else its raw text. */
+	public static String label(String normalized, String raw) {
+		return normalized != null ? normalized : raw;
+	}
+
+	private static boolean sameLabel(String a, String b) {
+		return b != null && squash(a).equals(squash(b));
+	}
+
+	private static String squash(String s) {
+		return s.replaceAll("[\\s_\\-.:]+", "").toUpperCase(Locale.ROOT);
 	}
 
 	private static int trust(IssuerClass c) {

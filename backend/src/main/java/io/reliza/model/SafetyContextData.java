@@ -43,7 +43,7 @@ public abstract class SafetyContextData extends RelizaDataParent implements Reli
 	public enum GateRule {
 		DOWNGRADE, THIRD_PARTY_STAGE, SELF_AUTO, VENDOR_CUSTOM, VENDOR_UNMAPPED,
 		VENDOR_DECOMPOSITION, VENDOR_BOTTOM, VENDOR_AUTO, INTRA_ASSET_CONFLICT,
-		UNMATCHED, AMBIGUOUS, SBOM_PENDING
+		UNMATCHED, AMBIGUOUS, SBOM_PENDING, UNCOMPARABLE, WIDE_SCOPE
 	}
 
 	/** Facts recorded alongside the gate outcome; not decision rows. */
@@ -106,6 +106,12 @@ public abstract class SafetyContextData extends RelizaDataParent implements Reli
 	@Override
 	public UUID getResourceGroup() {
 		return null;
+	}
+
+	/** Adds {@code note} once. */
+	public void addNote(Note note) {
+		if (notes == null) notes = new ArrayList<>();
+		if (!notes.contains(note)) notes.add(note);
 	}
 
 	/** Copies every shared field from {@code other}, except uuid. */

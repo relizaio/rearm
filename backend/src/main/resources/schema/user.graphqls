@@ -308,7 +308,7 @@ type Query {
 	# issuer and not verified by ReARM. Lists are paged (limit default 100, max 500).
 	getSafetyContextProposals(org: ID!, status: ProposalStatus, limit: Int, offset: Int): [SafetyContextEntry]
 	getSafetyContextProposalsByRelease(org: ID!, release: ID!, limit: Int, offset: Int): [SafetyContextEntry]
-	getSafetyContextProposalsBySourceArtifact(org: ID!, artifact: ID!): [SafetyContextEntry]
+	getSafetyContextProposalsBySourceArtifact(org: ID!, artifact: ID!, limit: Int, offset: Int): [SafetyContextEntry]
 	getSafetyContextRecordsByRelease(org: ID!, release: ID!, includeSuperseded: Boolean, limit: Int, offset: Int): [SafetyContextEntry]
 	getSafetyContextRecordsByComponent(org: ID!, component: ID!, includeSuperseded: Boolean, limit: Int, offset: Int): [SafetyContextEntry]
 	# The imported asset JSON a proposal or record came from.
@@ -5599,9 +5599,12 @@ type VexStatementProposalWebDto {
 # UNVERIFIED: the level is the issuer's declaration, not a ReARM verification.
 type SafetyContextEntry {
 	uuid: ID
-	kind: String
+	kind: SafetyContextKind
 	org: ID
-	status: String
+	# Set for kind PROPOSAL.
+	proposalStatus: ProposalStatus
+	# Set for kind RECORD.
+	recordStatus: SafetyRecordStatus
 	scope: AnalysisScope
 	scopeUuid: ID
 	componentPurl: String
@@ -5612,29 +5615,29 @@ type SafetyContextEntry {
 	levelRaw: String
 	levelNormalized: String
 	levelRank: Int
-	levelNote: String
-	levelChange: String
+	levelNote: SafetyLevelNote
+	levelChange: SafetyLevelChange
 	# True on the highest-ranked ACTIVE level for this component and scheme across all assets.
 	componentMostConservative: Boolean
-	verificationStatus: String
-	issuerClassDerived: String
-	issuerClassEffective: String
-	originBinding: String
-	issuerOverride: String
+	verificationStatus: SafetyVerificationStatus
+	issuerClassDerived: IssuerClass
+	issuerClassEffective: IssuerClass
+	originBinding: ArtifactBelongsToEnum
+	issuerOverride: IssuerClass
 	overrideHonoured: Boolean
 	elevatedByOverride: Boolean
 	overrideActor: ID
 	overrideActorName: String
-	importMode: String
-	gateRule: String
-	notes: [String]
-	matchStatus: String
+	importMode: ImportMode
+	gateRule: SafetyGateRule
+	notes: [SafetyNote]
+	matchStatus: SafetyMatchStatus
 	statusReason: String
 	conflictFlag: Boolean
 	sourceArtifact: ID
 	sourceDeleted: Boolean
 	releaseUuid: ID
-	sourceFormat: String
+	sourceFormat: SafetySourceFormat
 	specCommit: String
 	docSerialNumber: String
 	docVersion: Int
@@ -5648,13 +5651,27 @@ type SafetyContextEntry {
 	rejectReason: String
 	acceptedRecordUuid: ID
 	proposalUuid: ID
-	acceptedVia: String
+	acceptedVia: SafetyAcceptedVia
 	acceptedBy: ID
 	acceptedByName: String
 	acceptedAt: String
 	acceptedByUploader: Boolean
 	supersededBy: ID
 }
+
+enum SafetyContextKind { PROPOSAL RECORD }
+enum SafetyRecordStatus { ACTIVE SUPERSEDED }
+enum SafetyLevelNote { OK UNMAPPED DECOMPOSITION CUSTOM_SCHEME }
+enum SafetyLevelChange { NEW UNCHANGED UPGRADE DOWNGRADE UNCOMPARABLE }
+enum SafetyVerificationStatus { UNVERIFIED }
+enum SafetyGateRule {
+	DOWNGRADE THIRD_PARTY_STAGE SELF_AUTO VENDOR_CUSTOM VENDOR_UNMAPPED VENDOR_DECOMPOSITION
+	VENDOR_BOTTOM VENDOR_AUTO INTRA_ASSET_CONFLICT UNMATCHED AMBIGUOUS SBOM_PENDING UNCOMPARABLE WIDE_SCOPE
+}
+enum SafetyNote { CROSS_DOC_CONFLICT USER_MODE_STAGE OVERRIDE_IGNORED }
+enum SafetyMatchStatus { MATCHED UNMATCHED AMBIGUOUS SBOM_PENDING }
+enum SafetySourceFormat { CDX_2_0 }
+enum SafetyAcceptedVia { AUTO_SELF AUTO_VENDOR MANUAL }
 
 type ViolationWithAttribution {
 	# Opaque handle to page this finding's full attribution via findingAttributionByDate.

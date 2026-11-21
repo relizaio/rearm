@@ -91,6 +91,10 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 	static final int MAX_PENDING_PER_RELEASE = 10000;
 	static final int MESSAGE_VALUE_CHARS = 40;
 	static final int MAX_LEVEL_CHARS = 64;
+	static final int MAX_REF_CHARS = 256;
+	static final int MAX_PURL_CHARS = 1024;
+	/** Each asset's JSON is stored on every row it yields; larger assets refuse the import. */
+	static final int MAX_ASSET_JSON_CHARS = 64 * 1024;
 
 	private static final Pattern CUSTOM_SCHEME_NAME = Pattern.compile("[A-Za-z0-9 ._-]{1,64}");
 
@@ -151,7 +155,8 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 		} catch (JacksonException e) {
 			return refused("SAFETY_CONTEXT document is not readable JSON or exceeds the import limits");
 		} catch (RelizaException e) {
-			return refused(clip(e.getMessage(), 160));
+			// The reader's message can quote the document's specVersion; do not echo it.
+			return refused("SAFETY_CONTEXT document is not a CycloneDX 2.x JSON document");
 		}
 
 		ImportMode importMode = artDto.getImportMode() != null ? artDto.getImportMode() : ImportMode.AUTO_ACCEPT;
@@ -159,9 +164,16 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 		IssuerClass derived = ArtifactImportHandler.deriveIssuerClass(belongsTo);
 		IssuerClass override = artDto.getUserIssuerClassOverride();
 		UUID actor = SafetyContextService.actorOf(wu);
-		SafetyContextTrustPolicy.Issuer issuer = SafetyContextTrustPolicy.effectiveIssuer(derived, override,
-			override != null && actorHoldsWrite(actor, rd.getOrg()));
+		// Scopes wider than the release's own component apply org- or branch-wide, so, like the
+		// issuer override, they take Finding Analysis write; without it every level stages.
+		boolean wideScope = importScope == AnalysisScope.ORG || importScope == AnalysisScope.BRANCH;
+		boolean holdsWrite = (override != null || wideScope) && actorHoldsWrite(actor, rd.getOrg());
+		SafetyContextTrustPolicy.Issuer issuer = SafetyContextTrustPolicy.effectiveIssuer(derived, override, holdsWrite);
+		boolean stageForScope = wideScope && !holdsWrite;
 		List<String> messages = new ArrayList<>();
+		if (stageForScope) {
+			messages.add("Import scope " + importScope + " needs Finding Analysis write permission; all levels were staged for review");
+		}
 		if (issuer.overrideIgnored()) {
 			messages.add("Issuer override " + override + " ignored: it needs Finding Analysis write permission; "
 				+ "the upload's own class " + derived + " was used");
@@ -181,7 +193,7 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 			return refused("Import scope " + importScope + " resolved to " + targets.size() + " targets; nothing was imported");
 		}
 
-		Base base = new Base(rd, artifactUuid, belongsTo, derived, override, issuer, importMode, actor,
+		Base base = new Base(rd, artifactUuid, belongsTo, derived, override, issuer, importMode, actor, stageForScope,
 			Utils.sha256Hex(json), doc,
 			Utils.sha256Hex(String.join("|", rd.getOrg().toString(), rd.getUuid().toString(),
 				String.valueOf(belongsTo), issuer.effective().name(), String.valueOf(actor))));
@@ -222,7 +234,7 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 	/** Upload-wide values every candidate shares. */
 	private record Base(ReleaseData rd, UUID artifactUuid, ArtifactBelongsTo belongsTo, IssuerClass derived,
 			IssuerClass override, SafetyContextTrustPolicy.Issuer issuer, ImportMode importMode, UUID actor,
-			String documentHash, Cdx20Document doc, String lineageKey) {}
+			boolean stageForScope, String documentHash, Cdx20Document doc, String lineageKey) {}
 
 	/** Fills {@code out}; returns a refusal message when a bound is exceeded (never truncates). */
 	private String collectCandidates(Cdx20Document doc, JsonNode root, Base base, List<MatchCandidate> targets,
@@ -258,6 +270,15 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 					return "Asset " + clip(asset.getRefId()) + " has more than " + MAX_LEVELS_PER_ASSET + " safety integrity levels";
 				}
 				String assetJson = assetNodes.path(a).toString();
+				if (assetJson.length() > MAX_ASSET_JSON_CHARS) {
+					return "Asset " + clip(asset.getRefId()) + " is larger than " + (MAX_ASSET_JSON_CHARS / 1024) + " KB";
+				}
+				if (tooLong(blueprint.getRefId(), MAX_REF_CHARS) || tooLong(asset.getRefId(), MAX_REF_CHARS)) {
+					errored[0] += levels.size() * targets.size();
+					messages.add("Asset " + clip(asset.getRefId()) + " has a reference id longer than " + MAX_REF_CHARS
+						+ " characters; ignored");
+					continue;
+				}
 				// One proposal per scheme; an asset declaring several levels for one scheme becomes
 				// a single staged conflict carrying all of them.
 				Map<String, SafetyContextProposalData> byScheme = new LinkedHashMap<>();
@@ -271,6 +292,9 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 						continue;
 					}
 					SafetyContextProposalData first = byScheme.get(proto.getSchemeKey());
+					if (first != null && List.of(first.getLevelRaw().split(" \\| ")).contains(proto.getLevelRaw())) {
+						continue; // the same level stated twice is one level
+					}
 					if (first != null) {
 						first.setLevelRaw(first.getLevelRaw() + " | " + proto.getLevelRaw());
 						first.setLevelNormalized(null);
@@ -339,6 +363,9 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 		List<String> purls = found.get(0).purls();
 		String canonical = purls.isEmpty() ? null : canonical(purls.get(0));
 		if (canonical == null) return "Component " + clip(asset.getComponentRef()) + " has no usable purl; its levels were ignored";
+		if (canonical.length() > MAX_PURL_CHARS || tooLong(asset.getComponentRef(), MAX_REF_CHARS)) {
+			return "Component " + clip(asset.getComponentRef()) + " has a purl or reference that is too long; ignored";
+		}
 		proto.setComponentRefId(asset.getComponentRef());
 		proto.setComponentPurl(canonical);
 		return null;
@@ -383,10 +410,10 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 		c.setOverrideHonoured(base.issuer().overrideHonoured());
 		c.setElevatedByOverride(base.issuer().elevatedByOverride());
 		if (base.override() != null) c.setOverrideActor(base.actor());
-		if (base.issuer().overrideIgnored()) c.getNotes().add(Note.OVERRIDE_IGNORED);
+		if (base.issuer().overrideIgnored()) c.addNote(Note.OVERRIDE_IGNORED);
 		c.setImportMode(base.importMode());
 		c.setLineageKey(base.lineageKey());
-		c.setGateRule(proto.getGateRule());
+		c.setGateRule(proto.getGateRule() == null && base.stageForScope() ? GateRule.WIDE_SCOPE : proto.getGateRule());
 		return c;
 	}
 
@@ -418,6 +445,10 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 		if (value == null) return "<none>";
 		String clean = value.replaceAll("\\p{Cntrl}", "");
 		return clean.length() > max ? clean.substring(0, max) + "..." : clean;
+	}
+
+	private static boolean tooLong(String value, int max) {
+		return value != null && value.length() > max;
 	}
 
 	private static String clipStored(String value) {

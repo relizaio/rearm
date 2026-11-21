@@ -32,6 +32,9 @@ import io.reliza.model.SafetyContextRecordData.RecordStatus;
 import io.reliza.model.WhoUpdated;
 import io.reliza.repositories.SafetyContextProposalRepository;
 import io.reliza.repositories.SafetyContextRecordRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
 
 /**
  * Persistence for safety-context proposals and records: every save goes through the audit path
@@ -45,6 +48,10 @@ public class SafetyContextService {
 	public static final String NOT_FOUND = "Safety context entry not found";
 
 	public static final int MAX_PAGE = 500;
+
+	static final int MAX_TEXT = 2000;
+
+	@PersistenceContext private EntityManager entityManager;
 
 	@Autowired private SafetyContextProposalRepository proposalRepository;
 	@Autowired private SafetyContextRecordRepository recordRepository;
@@ -176,14 +183,9 @@ public class SafetyContextService {
 	@Transactional
 	public SafetyContextProposalData accept(UUID uuid, UUID componentUuid, String comment, WhoUpdated wu)
 			throws RelizaException {
-		SafetyContextProposalData unlocked = getProposal(uuid).orElseThrow(() -> new RelizaException(NOT_FOUND));
-		lockCoarse(List.of(coarseKey(unlocked)));
-		SafetyContextProposal e = proposalRepository.findByIdWriteLocked(uuid)
-			.orElseThrow(() -> new RelizaException(NOT_FOUND));
+		checkText(comment, "comment");
+		SafetyContextProposal e = lockedForDecision(uuid);
 		SafetyContextProposalData d = SafetyContextProposalData.dataFromRecord(e);
-		if (d.getStatus() != ProposalStatus.PENDING) {
-			throw new RelizaException("Safety context proposal is not pending (was " + d.getStatus() + ")");
-		}
 		if (d.getGateRule() == GateRule.INTRA_ASSET_CONFLICT) {
 			throw new RelizaException("The asset declares conflicting levels for this scheme; reject it and correct the document");
 		}
@@ -200,11 +202,12 @@ public class SafetyContextService {
 		Optional<SafetyContextRecordData> active = findActiveAtIdentity(d);
 		LevelChange change = SafetyContextTrustPolicy.levelChange(active.isPresent(),
 			active.map(SafetyContextData::getLevelRank).orElse(null),
-			active.map(SafetyContextData::getLevelNormalized).orElse(null),
-			d.getLevelRank(), d.getLevelNormalized());
+			active.map(a -> SafetyContextTrustPolicy.label(a.getLevelNormalized(), a.getLevelRaw())).orElse(null),
+			d.getLevelRank(), SafetyContextTrustPolicy.label(d.getLevelNormalized(), d.getLevelRaw()));
 		d.setLevelChange(change);
-		if (change == LevelChange.DOWNGRADE && (comment == null || comment.isBlank())) {
-			throw new RelizaException("Accepting a lower safety level than the current one needs a comment");
+		if ((change == LevelChange.DOWNGRADE || change == LevelChange.UNCOMPARABLE)
+				&& (comment == null || comment.isBlank())) {
+			throw new RelizaException("Accepting a level lower than, or not comparable with, the current one needs a comment");
 		}
 		UUID actor = actorOf(wu);
 		SafetyContextRecordData record = upsertActive(d, AcceptedVia.MANUAL, actor, comment, wu);
@@ -218,17 +221,34 @@ public class SafetyContextService {
 
 	@Transactional
 	public SafetyContextProposalData reject(UUID uuid, String reason, WhoUpdated wu) throws RelizaException {
-		SafetyContextProposal e = proposalRepository.findByIdWriteLocked(uuid)
-			.orElseThrow(() -> new RelizaException(NOT_FOUND));
-		SafetyContextProposalData d = SafetyContextProposalData.dataFromRecord(e);
-		if (d.getStatus() != ProposalStatus.PENDING) {
-			throw new RelizaException("Safety context proposal is not pending (was " + d.getStatus() + ")");
-		}
+		checkText(reason, "reason");
+		SafetyContextProposalData d = SafetyContextProposalData.dataFromRecord(lockedForDecision(uuid));
 		d.setStatus(ProposalStatus.REJECTED);
 		d.setRejectReason(reason);
 		d.setActedBy(actorOf(wu));
 		d.setActedAt(Instant.now());
 		return saveProposal(d, wu);
+	}
+
+	/**
+	 * Takes the coarse advisory lock (the order an import takes it in), then the row lock, and
+	 * re-reads the row so a decision never acts on a state an import changed while it waited.
+	 */
+	private SafetyContextProposal lockedForDecision(UUID uuid) throws RelizaException {
+		SafetyContextProposal e = proposalRepository.findById(uuid).orElseThrow(() -> new RelizaException(NOT_FOUND));
+		lockCoarse(List.of(coarseKey(SafetyContextProposalData.dataFromRecord(e))));
+		entityManager.refresh(e, LockModeType.PESSIMISTIC_WRITE);
+		ProposalStatus status = SafetyContextProposalData.dataFromRecord(e).getStatus();
+		if (status != ProposalStatus.PENDING) {
+			throw new RelizaException("Safety context proposal is not pending (was " + status + ")");
+		}
+		return e;
+	}
+
+	private static void checkText(String value, String what) throws RelizaException {
+		if (value != null && value.length() > MAX_TEXT) {
+			throw new RelizaException("The " + what + " is longer than " + MAX_TEXT + " characters");
+		}
 	}
 
 	public Optional<SafetyContextProposalData> getProposal(UUID uuid) {
@@ -249,8 +269,9 @@ public class SafetyContextService {
 			Math.max(0, offset)).stream().map(SafetyContextProposalData::dataFromRecord).toList();
 	}
 
-	public List<SafetyContextProposalData> listProposalsForArtifact(UUID org, UUID artifact) {
-		return proposalRepository.findByOrgAndSourceArtifact(org.toString(), artifact.toString())
+	public List<SafetyContextProposalData> listProposalsForArtifact(UUID org, UUID artifact, int limit, int offset) {
+		return proposalRepository.findByOrgAndSourceArtifact(org.toString(), artifact.toString(), page(limit),
+				Math.max(0, offset))
 			.stream().map(SafetyContextProposalData::dataFromRecord).toList();
 	}
 

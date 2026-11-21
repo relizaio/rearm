@@ -83,7 +83,8 @@ public class SafetyContextDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getSafetyContextProposalsBySourceArtifact")
 	public List<SafetyContextEntryWebDto> getProposalsBySourceArtifact(@InputArgument("org") UUID org,
-			@InputArgument("artifact") UUID artifact) throws RelizaException {
+			@InputArgument("artifact") UUID artifact, @InputArgument("limit") Integer limit,
+			@InputArgument("offset") Integer offset) throws RelizaException {
 		UserData oud = currentUser();
 		Optional<ArtifactData> oad = artifactService.getArtifactData(artifact);
 		if (oad.isPresent() && org.equals(oad.get().getOrg())) {
@@ -92,7 +93,7 @@ public class SafetyContextDataFetcher {
 		} else {
 			gateOrg(oud, org, PermissionFunction.FINDING_ANALYSIS_READ, CallType.READ);
 		}
-		return proposals(safetyContextService.listProposalsForArtifact(org, artifact));
+		return proposals(safetyContextService.listProposalsForArtifact(org, artifact, intOf(limit), intOf(offset)));
 	}
 
 	@PreAuthorize("isAuthenticated()")

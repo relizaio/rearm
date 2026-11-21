@@ -41,7 +41,7 @@ class SafetyContextTrustPolicyTest {
 		assertGate(TrustAction.AUTO_ACCEPT, GateRule.SELF_AUTO,
 			SafetyContextTrustPolicy.gate(IssuerClass.SELF, LevelNote.OK, 0, LevelChange.NEW));
 		assertGate(TrustAction.AUTO_ACCEPT, GateRule.SELF_AUTO,
-			SafetyContextTrustPolicy.gate(IssuerClass.SELF, LevelNote.CUSTOM_SCHEME, null, LevelChange.UNCOMPARABLE));
+			SafetyContextTrustPolicy.gate(IssuerClass.SELF, LevelNote.CUSTOM_SCHEME, null, LevelChange.NEW));
 	}
 
 	@Test
@@ -96,5 +96,19 @@ class SafetyContextTrustPolicyTest {
 		assertEquals(IssuerClass.SELF, same.effective());
 		assertFalse(same.overrideIgnored());
 		assertFalse(same.overrideHonoured());
+	}
+
+	@Test
+	void uncomparableChangeStagesForEveryIssuer() {
+		for (IssuerClass issuer : IssuerClass.values()) {
+			assertGate(TrustAction.STAGE, GateRule.UNCOMPARABLE,
+				SafetyContextTrustPolicy.gate(issuer, LevelNote.UNMAPPED, null, LevelChange.UNCOMPARABLE));
+		}
+	}
+
+	@Test
+	void unrankedLevelsCompareByText() {
+		assertEquals(LevelChange.UNCHANGED, SafetyContextTrustPolicy.levelChange(true, null, "Tier-2", null, "tier 2"));
+		assertEquals(LevelChange.UNCOMPARABLE, SafetyContextTrustPolicy.levelChange(true, null, "tier-2", null, "tier-3"));
 	}
 }

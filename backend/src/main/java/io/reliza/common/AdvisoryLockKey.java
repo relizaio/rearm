@@ -84,7 +84,7 @@ public enum AdvisoryLockKey {
 	/**
 	 * Serialises SAFETY_CONTEXT imports and manual accepts that touch the same coarse key (org,
 	 * scope target, component purl, scheme), so the ACTIVE-record upsert and the downgrade check
-	 * see a stable baseline. Two-key form; 54 is free in rearm-core too (its highest is 53).
+	 * see a stable baseline. Two-key form.
 	 */
 	SAFETY_CONTEXT(54);
 	

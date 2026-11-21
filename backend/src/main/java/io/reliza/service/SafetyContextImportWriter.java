@@ -62,17 +62,18 @@ public class SafetyContextImportWriter {
 			}
 			c.setLevelChange(SafetyContextTrustPolicy.levelChange(active.isPresent(),
 				active.map(SafetyContextData::getLevelRank).orElse(null),
-				active.map(SafetyContextData::getLevelNormalized).orElse(null),
-				c.getLevelRank(), c.getLevelNormalized()));
+				active.map(a -> SafetyContextTrustPolicy.label(a.getLevelNormalized(), a.getLevelRaw())).orElse(null),
+				c.getLevelRank(), SafetyContextTrustPolicy.label(c.getLevelNormalized(), c.getLevelRaw())));
 			if (active.isPresent() && c.getLevelChange() != LevelChange.UNCHANGED
 					&& !c.getSourceDocumentHash().equals(active.get().getSourceDocumentHash())) {
-				c.getNotes().add(Note.CROSS_DOC_CONFLICT);
+				c.addNote(Note.CROSS_DOC_CONFLICT);
 				c.setConflictFlag(true);
 			}
 
 			TrustAction gateAction;
 			if (c.getGateRule() != null) {
-				// Phase A already forced a stage (unmatched, ambiguous, SBOM pending, intra-asset conflict).
+				// Phase A already forced a stage (unmatched, ambiguous, SBOM pending, intra-asset
+				// conflict, or a scope wider than the uploader may set).
 				gateAction = TrustAction.STAGE;
 			} else {
 				SafetyContextTrustPolicy.Gate gate = SafetyContextTrustPolicy.gate(c.getIssuerClassEffective(),
@@ -86,13 +87,13 @@ public class SafetyContextImportWriter {
 				continue;
 			}
 			if (action == TrustAction.STAGE && gateAction == TrustAction.AUTO_ACCEPT) {
-				c.getNotes().add(Note.USER_MODE_STAGE);
+				c.addNote(Note.USER_MODE_STAGE);
 			}
 
 			service.supersedePendingOfLineage(c, wu);
 			List<SafetyContextProposalData> otherLineages = service.findAllPendingAtIdentity(c);
 			if (!otherLineages.isEmpty()) {
-				c.getNotes().add(Note.CROSS_DOC_CONFLICT);
+				c.addNote(Note.CROSS_DOC_CONFLICT);
 				c.setConflictFlag(true);
 				for (SafetyContextProposalData other : otherLineages) {
 					if (!other.isConflictFlag()) {

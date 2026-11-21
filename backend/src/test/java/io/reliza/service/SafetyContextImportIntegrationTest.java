@@ -357,4 +357,68 @@ class SafetyContextImportIntegrationTest {
 		List<SafetyContextRecordData> records = active();
 		assertEquals(2, records.size(), "one ACTIVE record per identity");
 	}
+
+	@Test
+	void unrankableLevelDoesNotSilentlyReplaceARankedOne() throws Exception {
+		upload(twoAssets("class-c"), ArtifactBelongsTo.RELEASE);
+		ImportSummary s = upload(twoAssets("class-c-ish"), ArtifactBelongsTo.RELEASE);
+		assertEquals(1, s.getProposalsCreated());
+		SafetyContextProposalData p = pending().get(0);
+		assertEquals(GateRule.UNCOMPARABLE, p.getGateRule());
+		assertThrows(RelizaException.class, () -> service.accept(p.getUuid(), null, null, reviewer),
+			"an uncomparable replacement needs a comment");
+	}
+
+	@Test
+	void wideScopeWithoutWritePermissionStages() throws Exception {
+		when(scopeTargetResolver.targets(eq(org), eq(AnalysisScope.ORG), any(), eq(release)))
+			.thenReturn(List.of(new MatchCandidate(AnalysisScope.ORG, org)));
+		ArtifactDto dto = ArtifactDto.builder().importScope(AnalysisScope.ORG).build();
+		ImportSummary s = handler.dispatch(UUID.randomUUID(), dto, rd, ArtifactBelongsTo.RELEASE,
+			twoAssets("class-c").getBytes(StandardCharsets.UTF_8), uploader);
+		assertEquals(2, s.getProposalsCreated());
+		assertTrue(pending().stream().allMatch(p -> p.getGateRule() == GateRule.WIDE_SCOPE));
+		assertTrue(active().isEmpty());
+	}
+
+	@Test
+	void sameLineageReuploadSupersedesItsPendingProposal() throws Exception {
+		upload(twoAssets("class-b"), null);
+		ImportSummary s = upload(twoAssets("class-c"), null);
+		assertEquals(1, s.getProposalsCreated());
+		assertEquals(1, s.getStatementsUnchanged());
+		List<SafetyContextProposalData> pump = pending().stream().filter(p -> PUMP.equals(p.getComponentPurl())).toList();
+		assertEquals(1, pump.size(), "the newer proposal replaces the older one of the same lineage");
+		assertEquals("class-c", pump.get(0).getLevelRaw());
+		assertEquals(1, service.listProposals(org, ProposalStatus.SUPERSEDED, 100, 0).size());
+	}
+
+	@Test
+	void anotherUploaderStagesAlongsideAndBothAreFlagged() throws Exception {
+		upload(twoAssets("class-b"), null);
+		WhoUpdated other = WhoUpdated.getWhoUpdated(ProgrammaticType.MANUAL, UUID.randomUUID(), "127.0.0.1");
+		upload(twoAssets("class-c"), null, null, null, other);
+		List<SafetyContextProposalData> pump = pending().stream().filter(p -> PUMP.equals(p.getComponentPurl())).toList();
+		assertEquals(2, pump.size(), "one uploader cannot clear another's pending proposal");
+		assertTrue(pump.stream().allMatch(SafetyContextProposalData::isConflictFlag));
+	}
+
+	@Test
+	void decisionsNeedAPendingProposal() throws Exception {
+		upload(twoAssets("class-c"), null);
+		SafetyContextProposalData p = pending().get(0);
+		service.reject(p.getUuid(), "no", reviewer);
+		assertThrows(RelizaException.class, () -> service.reject(p.getUuid(), "again", reviewer));
+		assertThrows(RelizaException.class, () -> service.accept(p.getUuid(), null, "late", reviewer));
+	}
+
+	@Test
+	void oversizedAssetRefusesTheImport() throws Exception {
+		String big = "x".repeat(SafetyContextImportService.MAX_ASSET_JSON_CHARS);
+		String json = doc(List.of(new Asset("asset-pump", "comp-pump", PUMP, "IEC-62304", "C")))
+			.replace("\"name\":\"asset-pump\"", "\"name\":\"" + big + "\"");
+		ImportSummary s = upload(json, ArtifactBelongsTo.RELEASE);
+		assertEquals(1, s.getStatementsErrored());
+		assertTrue(active().isEmpty());
+	}
 }
