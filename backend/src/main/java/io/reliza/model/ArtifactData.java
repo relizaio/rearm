@@ -44,6 +44,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         VDR,
         BOV,
         VEX,
+        SAFETY_CONTEXT,
         USER_DOCUMENT,
         DEVELOPMENT_DOCUMENT,
         PROJECT_DOCUMENT,

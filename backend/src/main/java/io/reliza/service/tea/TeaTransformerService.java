@@ -295,6 +295,7 @@ public class TeaTransformerService {
 			case BOV:
 				tat = TeaArtifactType.VULNERABILITIES;
 				break;
+			case SAFETY_CONTEXT:
 			case USER_DOCUMENT:
 			case DEVELOPMENT_DOCUMENT:
 			case PROJECT_DOCUMENT:
