@@ -8001,8 +8001,8 @@ const parentReleaseRowKey = (row: any) => row.release
 function renderArtifactTypeColumn (row: any) {
     let content = row.type
     if (row.type === 'SAFETY_CONTEXT') {
-    content = 'Safety Context'
-}
+        content = 'Safety Context'
+    }
     if (row.specVersion && row.serializationFormat) {
         content += ` - ${commonFunctions.formatSpecVersion(row.specVersion)} (${row.serializationFormat})`
     } else if (row.type === 'BOM') {
@@ -8113,22 +8113,22 @@ function renderArtifactFactsColumn (row: any) {
             }
             factContent.push(h('li', {}, adChildren))
             if (row.type === 'SAFETY_CONTEXT' && row.importSummary) {
-    factContent.push(
-        h('li', `Assertions Imported: ${row.importSummary.statementsTotal}`)
-    )
+                factContent.push(
+                    h('li', `Assertions Imported: ${row.importSummary.statementsTotal}`)
+                )
 
-    factContent.push(
-        h('li', `Proposals Created: ${row.importSummary.proposalsCreated}`)
-    )
+                factContent.push(
+                    h('li', `Proposals Created: ${row.importSummary.proposalsCreated}`)
+                )
 
-    factContent.push(
-        h('li', `Unmatched Assertions: ${row.importSummary.statementsUnmatched}`)
-    )
+                factContent.push(
+                    h('li', `Unmatched Assertions: ${row.importSummary.statementsUnmatched}`)
+                )
 
-    factContent.push(
-        h('li', `Errored Assertions: ${row.importSummary.statementsErrored}`)
-    )
-}
+                factContent.push(
+                    h('li', `Errored Assertions: ${row.importSummary.statementsErrored}`)
+                )
+            }
         })
     }
     return h('div', [
