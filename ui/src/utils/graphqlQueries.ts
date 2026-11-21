@@ -1007,6 +1007,15 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
     bomFormat
     serializationFormat
     specVersion
+    importSummary {
+        statementsTotal
+        proposalsCreated
+        proposalsAutoAccepted
+        proposalsAutoRejected
+        statementsUnmatched
+        statementsErrored
+        errorMessages
+    }
     tags{
         key
         value
@@ -1096,6 +1105,15 @@ const ARTIFACT_DETAIL_DATA = `
     bomFormat
     serializationFormat
     specVersion
+    importSummary {
+        statementsTotal
+        proposalsCreated
+        proposalsAutoAccepted
+        proposalsAutoRejected
+        statementsUnmatched
+        statementsErrored
+        errorMessages
+    }
     tags{
         key
         value

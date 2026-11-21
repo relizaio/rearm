@@ -1784,6 +1784,9 @@
                         />
                     </n-space>
                 </n-tab-pane>
+                <n-tab-pane v-if="!isDocumentRound" name="safety" tab="Safety Context" data-testid="release-safety-context-tab">
+                    <release-safety-context v-if="release && release.org" :org-uuid="release.org" :release-uuid="releaseUuid" />
+                </n-tab-pane>
                 <!-- SUPPORT: everything this release ASSERTS about support, in one place.
                      Until now these controls were scattered down the Components tab, between
                      the component table and the artifact list, where an operator preparing a
@@ -2350,6 +2353,7 @@ import CreateArtifact from '@/components/CreateArtifact.vue'
 import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
+import ReleaseSafetyContext from '@/components/ReleaseSafetyContext.vue'
 import SbomScorePanel from '@/components/SbomScorePanel.vue'
 import ArtifactScanStatusPanel from '@/components/ArtifactScanStatusPanel.vue'
 import ReleaseSubmissionsPanel from '@/components/ReleaseSubmissionsPanel.vue'
@@ -8112,24 +8116,16 @@ function renderArtifactFactsColumn (row: any) {
                 })
             }
             factContent.push(h('li', {}, adChildren))
-            if (row.type === 'SAFETY_CONTEXT' && row.importSummary) {
-                factContent.push(
-                    h('li', `Assertions Imported: ${row.importSummary.statementsTotal}`)
-                )
-
-                factContent.push(
-                    h('li', `Proposals Created: ${row.importSummary.proposalsCreated}`)
-                )
-
-                factContent.push(
-                    h('li', `Unmatched Assertions: ${row.importSummary.statementsUnmatched}`)
-                )
-
-                factContent.push(
-                    h('li', `Errored Assertions: ${row.importSummary.statementsErrored}`)
-                )
-            }
         })
+    }
+    if (row.type === 'SAFETY_CONTEXT' && row.importSummary) {
+        const sum = row.importSummary
+        factContent.push(h('li', `Safety levels: ${sum.statementsTotal ?? 0} (auto-accepted ${sum.proposalsAutoAccepted ?? 0}, `
+            + `staged ${sum.proposalsCreated ?? 0}, unmatched ${sum.statementsUnmatched ?? 0}, `
+            + `errored ${sum.statementsErrored ?? 0}). Declared by the issuer; not verified by ReARM.`))
+        if (sum.errorMessages && sum.errorMessages.length) {
+            factContent.push(h('li', 'Import messages:'), h('ul', sum.errorMessages.map((m: string) => h('li', m))))
+        }
     }
     return h('div', [
         h(NTooltip, {

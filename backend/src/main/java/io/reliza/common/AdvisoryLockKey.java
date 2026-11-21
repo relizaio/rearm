@@ -84,9 +84,9 @@ public enum AdvisoryLockKey {
 	/**
 	 * Serialises SAFETY_CONTEXT imports and manual accepts that touch the same coarse key (org,
 	 * scope target, component purl, scheme), so the ACTIVE-record upsert and the downgrade check
-	 * see a stable baseline. Two-key form.
+	 * see a stable baseline. Two-key form. 60: 54 to 57 are claimed on other branches.
 	 */
-	SAFETY_CONTEXT(54);
+	SAFETY_CONTEXT(60);
 	
 	private int queryVal;
 	
