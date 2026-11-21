@@ -135,7 +135,7 @@
                 </n-form-item>
                 <n-form-item label="Import mode">
                     <n-radio-group v-model:value="safetyImport.mode">
-                        <n-radio value="AUTO_ACCEPT">Auto-accept where the trust rules allow</n-radio>
+                        <n-radio value="AUTO_ACCEPT">Auto-accept where the trust rules allow (Self and most Vendor levels are accepted without review)</n-radio>
                         <n-radio value="STAGE">Stage all for review</n-radio>
                         <n-radio value="REJECT">Reject all</n-radio>
                     </n-radio-group>
