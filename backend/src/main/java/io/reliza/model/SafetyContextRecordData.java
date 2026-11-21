@@ -36,6 +36,7 @@ public class SafetyContextRecordData implements RelizaObject {
     @JsonProperty("releaseUuid") private UUID releaseUuid;
     @JsonProperty("sbomComponentUuid") private UUID sbomComponentUuid;
     @JsonProperty("scope") private AnalysisScope scope = AnalysisScope.COMPONENT;
+    @JsonProperty("scopeUuid") private UUID scopeUuid;
     @JsonProperty("componentPurl") private String componentPurl;
     @JsonProperty("componentRefId") private String componentRefId;
     @JsonProperty("componentBomRef") private String componentBomRef;

@@ -11,6 +11,9 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ImportSummary;
+import io.reliza.model.IssuerClass;
+import io.reliza.model.ImportMode;
+import io.reliza.model.TrustAction;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -36,6 +39,7 @@ import io.reliza.model.dto.SafetyContextEntry;
 import io.reliza.model.dto.SafetyContextImportResult;
 import io.reliza.model.dto.SafetyContextParseResult;
 import io.reliza.repositories.SafetyContextProposalRepository;
+import io.reliza.model.dto.MatchCandidate;
 
 /**
  * Resolves CycloneDX 2.0 component PURLs against a release's reconciled SBOM
@@ -50,14 +54,24 @@ public class SafetyContextImportService implements ArtifactImportHandler {
     private final SafetyContextParser parser;
     private final SbomComponentService sbomComponentService;
     private final SafetyContextProposalRepository proposalRepository;
+    private final ScopeTargetResolver scopeTargetResolver;
+    private final ImportVerdictResolver verdictResolver;
+    private final SafetyContextAcceptanceService acceptanceService;
 
-    public SafetyContextImportService(SafetyContextParser parser,
-            SbomComponentService sbomComponentService,
-            SafetyContextProposalRepository proposalRepository) {
-        this.parser = parser;
-        this.sbomComponentService = sbomComponentService;
-        this.proposalRepository = proposalRepository;
-    }
+public SafetyContextImportService(
+        SafetyContextParser parser,
+        SbomComponentService sbomComponentService,
+        SafetyContextProposalRepository proposalRepository,
+        ScopeTargetResolver scopeTargetResolver,
+        ImportVerdictResolver verdictResolver,
+        SafetyContextAcceptanceService acceptanceService) {
+    this.parser = parser;
+    this.sbomComponentService = sbomComponentService;
+    this.proposalRepository = proposalRepository;
+    this.scopeTargetResolver = scopeTargetResolver;
+    this.verdictResolver = verdictResolver;
+    this.acceptanceService = acceptanceService;
+}
     
     @Override
     public ArtifactType type() {
@@ -86,11 +100,25 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 
         verifyPreconditions(rd);
 
-        SafetyContextImportResult result = createProposals(
-                rd.getOrg(),
-                rd.getUuid(),
-                artifactUuid,
-                new String(content, StandardCharsets.UTF_8));
+IssuerClass issuerClass = deriveIssuerClass(belongsTo);
+
+if (artDto.getUserIssuerClassOverride() != null) {
+    issuerClass = artDto.getUserIssuerClassOverride();
+}
+
+SafetyContextImportResult result = createProposals(
+    rd.getOrg(),
+    rd.getUuid(),
+    artifactUuid,
+    artDto.getImportScope() != null
+        ? artDto.getImportScope()
+        : AnalysisScope.COMPONENT,
+    artDto.getImportMode() != null
+        ? artDto.getImportMode()
+        : ImportMode.AUTO_ACCEPT,
+    issuerClass,
+    wu,
+    new String(content, StandardCharsets.UTF_8));
 
         ImportSummary summary = new ImportSummary();
         summary.setStatementsTotal(result.total());
@@ -101,11 +129,27 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 
         return summary;
     }
+    private IssuerClass deriveIssuerClass(ArtifactBelongsTo belongsTo) {
+    if (belongsTo == null) return IssuerClass.THIRD_PARTY;
+    if (ArtifactBelongsTo.RELEASE.equals(belongsTo)) return IssuerClass.SELF;
+    if (ArtifactBelongsTo.SCE.equals(belongsTo)) return IssuerClass.SELF;
+    if (ArtifactBelongsTo.DELIVERABLE.equals(belongsTo)) return IssuerClass.SELF;
+    return IssuerClass.THIRD_PARTY;
+    }
     @Transactional
     public SafetyContextImportResult createProposals(
-            UUID org, UUID releaseUuid, UUID sourceArtifact, String documentJson) {
-        SafetyContextParseResult parsed = parser.parse(documentJson);
-        if (!parsed.valid()) {
+    UUID org,
+    UUID releaseUuid,
+    UUID sourceArtifact,
+    AnalysisScope importScope,
+    ImportMode importMode,
+    IssuerClass issuerClass,
+    WhoUpdated wu,
+   String documentJson) {
+
+    SafetyContextParseResult parsed = parser.parse(documentJson);
+
+    if (!parsed.valid()) {
             return new SafetyContextImportResult(0, 0, 0, 0, 0, 1,
                 List.of(), parsed.errors());
         }
@@ -171,7 +215,20 @@ public class SafetyContextImportService implements ArtifactImportHandler {
             data.setSourceAssertionHash(sha256(entry.rawAssetJson()));
             data.setSourceDocumentJson(documentJson);
             data.setSourceAssertionJson(entry.rawAssetJson());
-            data.setScope(AnalysisScope.COMPONENT);
+            List<MatchCandidate> targets =
+            scopeTargetResolver.targets(
+                org,
+                importScope,
+                Set.of(releaseUuid),
+                releaseUuid);
+
+        if (!targets.isEmpty()) {
+            MatchCandidate target = targets.get(0);
+            data.setScope(target.scope());
+            data.setScopeUuid(target.scopeUuid());
+        } else {
+            data.setScope(importScope);
+        }
             data.setSbomComponentUuid(componentUuid);
             data.setComponentPurl(entry.componentPurl());
             data.setComponentRefId(entry.componentRefId());
@@ -180,14 +237,57 @@ public class SafetyContextImportService implements ArtifactImportHandler {
             data.setClassificationJson(entry.safetyIntegrityLevelsJson());
             data.setMatchStatus(matchStatus);
             data.setStatus(ProposalStatus.PENDING);
+if (data.getScopeUuid() != null
+        && !proposalRepository.findDedupeCandidates(
+                org.toString(),
+                sourceArtifact.toString(),
+                data.getSourceAssertionHash(),
+                data.getScope().name(),
+                data.getScopeUuid().toString()).isEmpty()) {
+    continue;
+}
 
-            SafetyContextProposal proposal = new SafetyContextProposal();
-            proposal.setUuid(data.getUuid());
-            proposal.setRecordData(data.toRecordData());
-            proposalRepository.save(proposal);
-            proposalUuids.add(proposal.getUuid());
-        }
+        TrustAction gate =
+    SafetyContextTrustGate.effectiveAction(
+        TrustAction.AUTO_ACCEPT,
+        issuerClass);
 
+ImportVerdictResolver.Verdict verdict =
+    verdictResolver.resolve(gate, importMode);
+
+switch (verdict.action()) {
+
+    case REJECT -> {
+        continue;
+    }
+
+    case STAGE -> {
+        SafetyContextProposal proposal = new SafetyContextProposal();
+        proposal.setUuid(data.getUuid());
+        proposal.setRecordData(data.toRecordData());
+
+        proposal = proposalRepository.save(proposal);
+        proposalUuids.add(proposal.getUuid());
+    }
+
+    case AUTO_ACCEPT -> {
+        SafetyContextProposal proposal = new SafetyContextProposal();
+        proposal.setUuid(data.getUuid());
+        proposal.setRecordData(data.toRecordData());
+
+        proposal = proposalRepository.save(proposal);
+        proposalUuids.add(proposal.getUuid());
+
+        acceptanceService.applyTrustGate(
+            proposal.getUuid(),
+            TrustAction.AUTO_ACCEPT,
+            issuerClass,
+            wu.getActor() != null
+                ? wu.getActor()
+                : wu.getLastUpdatedBy());
+    }
+}    
+      
         List<String> errors = new ArrayList<>(parsed.warnings());
         return new SafetyContextImportResult(parsed.entries().size(), matched, unmatched,
             ambiguous, deferred, 0, List.copyOf(proposalUuids), List.copyOf(errors));
