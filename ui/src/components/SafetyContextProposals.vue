@@ -1,5 +1,8 @@
 <template>
     <div>
+        <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 8px;" data-testid="safety-context-inbox-note">
+            {{ DECLARED_NOT_VERIFIED }} Accepting records the level against the component; it does not verify it.
+        </n-text>
         <n-tabs v-if="!releaseUuid" v-model:value="statusFilter" type="segment" animated>
             <n-tab-pane name="PENDING" tab="Pending" />
             <n-tab-pane name="ACCEPTED" tab="Accepted" />
@@ -14,12 +17,35 @@
             :pagination="{ pageSize: 25 }"
             data-testid="safety-context-proposals"
         />
+        <n-text v-if="truncated" type="warning" style="font-size: 12px;">
+            Showing the first {{ PAGE_LIMIT }} proposals; act on these to see the rest.
+        </n-text>
 
         <n-modal v-model:show="acceptOpen" preset="card" title="Accept safety level" style="max-width: 560px;">
             <n-space vertical v-if="current">
-                <n-text>
-                    {{ current.componentPurl }}: {{ current.schemeKey }} {{ current.levelNormalized || current.levelRaw }}
-                </n-text>
+                <n-descriptions :column="1" size="small" label-placement="left" bordered>
+                    <n-descriptions-item label="Component">{{ current.componentPurl }}</n-descriptions-item>
+                    <n-descriptions-item label="Level">
+                        {{ current.levelNormalized || current.levelRaw }} ({{ current.schemeKey }})
+                        <span v-if="current.levelNormalized && current.levelNormalized !== current.levelRaw"> - declared as "{{ current.levelRaw }}"</span>
+                    </n-descriptions-item>
+                    <n-descriptions-item label="Compared with the current level">{{ current.levelChange || '-' }}</n-descriptions-item>
+                    <n-descriptions-item label="Why it was staged">{{ GATE_RULE_LABELS[current.gateRule] || current.gateRule }}</n-descriptions-item>
+                    <n-descriptions-item label="Issuer">
+                        {{ current.issuerClassEffective }}
+                        <span v-if="current.elevatedByOverride"> (raised from {{ current.issuerClassDerived }} by {{ current.overrideActorName || 'an override' }})</span>
+                    </n-descriptions-item>
+                    <n-descriptions-item label="Component match">{{ current.matchStatus }}</n-descriptions-item>
+                    <n-descriptions-item v-if="current.docSerialNumber" label="Document">
+                        {{ current.docSerialNumber }}<span v-if="current.docVersion"> v{{ current.docVersion }}</span>
+                    </n-descriptions-item>
+                </n-descriptions>
+                <n-alert v-if="current.conflictFlag" type="warning" :show-icon="false">
+                    Another declaration for this component and scheme disagrees with this one.
+                </n-alert>
+                <n-alert v-if="current.sourceDeleted" type="warning" :show-icon="false">
+                    The uploaded document this level came from has been archived.
+                </n-alert>
                 <n-text depth="3" style="font-size: 12px;">{{ DECLARED_NOT_VERIFIED }}</n-text>
                 <n-form-item v-if="needsComponent" label="Release component this level applies to" required>
                     <n-select v-model:value="acceptComponent" :options="componentOptions" filterable
@@ -60,7 +86,7 @@ export default {
 <script lang="ts" setup>
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { NButton, NDataTable, NFormItem, NIcon, NInput, NModal, NSelect, NSpace, NTabPane, NTabs, NTag, NText, NTooltip } from 'naive-ui'
+import { NAlert, NButton, NDataTable, NDescriptions, NDescriptionsItem, NFormItem, NIcon, NInput, NModal, NSelect, NSpace, NTabPane, NTabs, NTag, NText, NTooltip } from 'naive-ui'
 import { Check, Code, X } from '@vicons/tabler'
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
@@ -83,30 +109,35 @@ const org = computed(() => props.orgUuid || (route.params.orguuid as string))
 const statusFilter = ref<'PENDING' | 'ACCEPTED' | 'REJECTED' | 'SUPERSEDED'>('PENDING')
 const proposals = ref<any[]>([])
 const loading = ref(false)
+const PAGE_LIMIT = 500
+const truncated = computed(() => proposals.value.length >= PAGE_LIMIT)
+// Only the latest request may write the list: a slow earlier response must not overwrite a newer tab.
+let requestSeq = 0
 
 async function fetchProposals () {
     if (!org.value) return
+    const seq = ++requestSeq
     loading.value = true
     try {
         if (props.releaseUuid) {
             const r = await graphqlClient.query({
                 query: GET_SAFETY_PROPOSALS_BY_RELEASE,
-                variables: { org: org.value, release: props.releaseUuid, limit: 500 },
+                variables: { org: org.value, release: props.releaseUuid, limit: PAGE_LIMIT },
                 fetchPolicy: 'network-only'
             })
-            proposals.value = r.data?.getSafetyContextProposalsByRelease ?? []
+            if (seq === requestSeq) proposals.value = r.data?.getSafetyContextProposalsByRelease ?? []
         } else {
             const r = await graphqlClient.query({
                 query: GET_SAFETY_PROPOSALS,
-                variables: { org: org.value, status: statusFilter.value, limit: 500 },
+                variables: { org: org.value, status: statusFilter.value, limit: PAGE_LIMIT },
                 fetchPolicy: 'network-only'
             })
-            proposals.value = r.data?.getSafetyContextProposals ?? []
+            if (seq === requestSeq) proposals.value = r.data?.getSafetyContextProposals ?? []
         }
     } catch (err: any) {
         Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
     } finally {
-        loading.value = false
+        if (seq === requestSeq) loading.value = false
     }
 }
 
@@ -135,6 +166,7 @@ async function openAccept (row: any) {
     current.value = row
     acceptComment.value = ''
     acceptComponent.value = null
+    componentOptions.value = []
     acceptOpen.value = true
     if (row.matchStatus !== 'MATCHED' && row.releaseUuid) {
         componentsLoading.value = true
@@ -144,10 +176,14 @@ async function openAccept (row: any) {
                 variables: { releaseUuid: row.releaseUuid },
                 fetchPolicy: 'network-only'
             })
-            componentOptions.value = (r.data?.getReleaseSbomComponents ?? []).map((c: any) => ({
-                label: c.component?.canonicalPurl || c.sbomComponentUuid,
-                value: c.sbomComponentUuid
-            }))
+            if (current.value?.uuid === row.uuid) {
+                componentOptions.value = (r.data?.getReleaseSbomComponents ?? []).map((c: any) => ({
+                    label: c.component?.canonicalPurl || c.sbomComponentUuid,
+                    value: c.sbomComponentUuid
+                }))
+            }
+        } catch (err: any) {
+            Swal.fire('Error!', 'Could not load the release components: ' + commonFunctions.parseGraphQLError(err.message), 'error')
         } finally {
             componentsLoading.value = false
         }

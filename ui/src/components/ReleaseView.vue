@@ -2352,8 +2352,8 @@ import ComponentBranchesTable from '@/components/ComponentBranchesTable.vue'
 import CreateArtifact from '@/components/CreateArtifact.vue'
 import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
-import ReleaseSafetyContext from '@/components/ReleaseSafetyContext.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
+import ReleaseSafetyContext from '@/components/ReleaseSafetyContext.vue'
 import SbomScorePanel from '@/components/SbomScorePanel.vue'
 import ArtifactScanStatusPanel from '@/components/ArtifactScanStatusPanel.vue'
 import ReleaseSubmissionsPanel from '@/components/ReleaseSubmissionsPanel.vue'
@@ -8121,8 +8121,8 @@ function renderArtifactFactsColumn (row: any) {
     if (row.type === 'SAFETY_CONTEXT' && row.importSummary) {
         const sum = row.importSummary
         factContent.push(h('li', `Safety levels: ${sum.statementsTotal ?? 0} (auto-accepted ${sum.proposalsAutoAccepted ?? 0}, `
-            + `staged ${sum.proposalsCreated ?? 0}, unchanged ${sum.statementsUnchanged ?? 0}, `
-            + `unmatched ${sum.statementsUnmatched ?? 0}, errored ${sum.statementsErrored ?? 0})`))
+            + `staged ${sum.proposalsCreated ?? 0}, unmatched ${sum.statementsUnmatched ?? 0}, `
+            + `errored ${sum.statementsErrored ?? 0}). Declared by the issuer; not verified by ReARM.`))
         if (sum.errorMessages && sum.errorMessages.length) {
             factContent.push(h('li', 'Import messages:'), h('ul', sum.errorMessages.map((m: string) => h('li', m))))
         }

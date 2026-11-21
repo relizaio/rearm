@@ -3,7 +3,8 @@
         <h3>Safety integrity levels</h3>
         <n-alert type="info" :show-icon="false" data-testid="safety-context-not-verified">
             {{ DECLARED_NOT_VERIFIED }} Levels come from SAFETY_CONTEXT (CycloneDX 2.0) artifacts uploaded
-            to this release. The highest level per component and scheme is marked.
+            to this release. Where assets declare different levels for one component and scheme, the most
+            stringent is marked.
         </n-alert>
         <n-checkbox v-model:checked="includeSuperseded">Show superseded levels</n-checkbox>
         <n-data-table
@@ -44,8 +45,12 @@ const includeSuperseded = ref(false)
 const sourceOpen = ref(false)
 const sourceUuid = ref<string | null>(null)
 
+// Only the latest request may write the list (the superseded toggle can race).
+let requestSeq = 0
+
 async function fetchRecords () {
     if (!props.orgUuid || !props.releaseUuid) return
+    const seq = ++requestSeq
     loading.value = true
     try {
         const r = await graphqlClient.query({
@@ -53,11 +58,11 @@ async function fetchRecords () {
             variables: { org: props.orgUuid, release: props.releaseUuid, includeSuperseded: includeSuperseded.value, limit: 500 },
             fetchPolicy: 'network-only'
         })
-        records.value = r.data?.getSafetyContextRecordsByRelease ?? []
+        if (seq === requestSeq) records.value = r.data?.getSafetyContextRecordsByRelease ?? []
     } catch (err: any) {
         Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
     } finally {
-        loading.value = false
+        if (seq === requestSeq) loading.value = false
     }
 }
 
@@ -73,7 +78,7 @@ const recordColumns = [
         render: (r: any) => {
             const label = h('strong', {}, r.levelNormalized || r.levelRaw)
             return r.componentMostConservative
-                ? h('span', {}, [label, ' ', h(NTag, { size: 'small', type: 'warning', round: true }, () => 'highest')])
+                ? h('span', {}, [label, ' ', h(NTag, { size: 'small', type: 'warning', round: true }, () => 'most stringent')])
                 : label
         }
     },
@@ -89,7 +94,8 @@ const recordColumns = [
         render: (r: any) => {
             const who = r.acceptedVia === 'MANUAL' ? (r.acceptedByName || 'reviewer') : 'auto'
             const text = `${who}${r.acceptedAt ? ', ' + new Date(r.acceptedAt).toLocaleString() : ''}`
-            const detail = [GATE_RULE_LABELS[r.gateRule] || r.gateRule, r.acceptComment].filter(Boolean).join(' - ')
+            const detail = [GATE_RULE_LABELS[r.gateRule] || r.gateRule, r.acceptComment, r.statusReason,
+                r.supersededBy ? 'superseded by a later level' : null].filter(Boolean).join(' - ')
             return detail ? h(NTooltip, { trigger: 'hover' }, { trigger: () => h('span', {}, text), default: () => detail }) : text
         }
     },

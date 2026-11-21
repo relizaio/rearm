@@ -520,7 +520,8 @@ function showSafetyOutcome(release: any, displayId: string) {
     Swal.fire({
         icon: s.statementsErrored ? 'warning' : 'success',
         title: 'Safety context processed',
-        text: `${parts.join(' ')} ${messages} Open the Safety Context tab on this release to review.`.trim()
+        text: `${parts.join(' ')} ${messages} Levels are the issuer's declaration; ReARM does not verify them. `
+            + 'Open the Safety Context tab on this release to review.'
     })
 }
 

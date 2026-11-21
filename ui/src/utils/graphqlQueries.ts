@@ -1012,7 +1012,6 @@ const ARTIFACT_DETAIL_DATA_SINGLE = `
         proposalsCreated
         proposalsAutoAccepted
         proposalsAutoRejected
-        statementsUnchanged
         statementsUnmatched
         statementsErrored
         errorMessages
@@ -1111,7 +1110,6 @@ const ARTIFACT_DETAIL_DATA = `
         proposalsCreated
         proposalsAutoAccepted
         proposalsAutoRejected
-        statementsUnchanged
         statementsUnmatched
         statementsErrored
         errorMessages
