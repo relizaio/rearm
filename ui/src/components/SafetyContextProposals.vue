@@ -17,6 +17,9 @@
             :pagination="{ pageSize: 25 }"
             data-testid="safety-context-proposals"
         />
+        <n-text depth="3" style="font-size: 12px; display: block; margin-top: 4px;">
+            * Hover the reason for details: a conflicting declaration, an issuer raised or ignored override.
+        </n-text>
         <n-text v-if="truncated" type="warning" style="font-size: 12px;">
             Showing the first {{ PAGE_LIMIT }} proposals; act on these to see the rest.
         </n-text>
@@ -85,7 +88,7 @@ export default {
 </script>
 <script lang="ts" setup>
 import { computed, h, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { NAlert, NButton, NDataTable, NDescriptions, NDescriptionsItem, NFormItem, NIcon, NInput, NModal, NSelect, NSpace, NTabPane, NTabs, NTag, NText, NTooltip } from 'naive-ui'
 import { Check, Code, X } from '@vicons/tabler'
 import Swal from 'sweetalert2'
@@ -246,6 +249,7 @@ function iconButton (title: string, icon: any, type: any, onClick: () => void, d
 const columns = computed(() => {
     const cols: any[] = [
         { title: 'Component', key: 'componentPurl', ellipsis: { tooltip: true } },
+        { title: 'Asset', key: 'assetRefId', ellipsis: { tooltip: true } },
         {
             title: 'Level',
             key: 'levelRaw',
@@ -279,6 +283,15 @@ const columns = computed(() => {
         },
         { title: 'Issuer', key: 'issuerClassEffective' }
     ]
+    if (!props.releaseUuid) {
+        cols.splice(1, 0, {
+            title: 'Release',
+            key: 'releaseUuid',
+            render: (r: any) => r.releaseUuid
+                ? h(RouterLink, { to: `/release/show/${r.releaseUuid}` }, () => 'open release')
+                : '-'
+        })
+    }
     if (props.releaseUuid || statusFilter.value !== 'PENDING') {
         cols.push({
             title: 'Status',

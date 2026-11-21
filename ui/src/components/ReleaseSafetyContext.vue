@@ -76,6 +76,7 @@ function activeLevelsFor (r: any): number {
 
 const recordColumns = [
     { title: 'Component', key: 'componentPurl', ellipsis: { tooltip: true } },
+    { title: 'Asset', key: 'assetRefId', ellipsis: { tooltip: true } },
     { title: 'Scheme', key: 'schemeKey' },
     {
         title: 'Level',
