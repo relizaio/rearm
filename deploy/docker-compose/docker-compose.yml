@@ -1,6 +1,6 @@
 services:
   rearm-core:
-    image: registry.relizahub.com/library/rearm-backend:26.11.2@sha256:ecc33d2e101e3ba39d47e1f80b7483c51b6fb8c5b77df42845026e6936314de2
+    image: registry.relizahub.com/library/rearm-backend:26.11.9@sha256:a369c5e449b40f8fc6b76b943966b0c543231c806b27f6e36f880c32f1c6384f
     # Legacy core.env kept for one release for backward compatibility --
     # prefer the OCI_* variables in .env (see .env.example).
     env_file:
@@ -74,7 +74,7 @@ services:
     volumes:
       - "rearm-postgres-data:/relizaio/postgresql"
   keycloak:
-    image: registry.relizahub.com/library/rearm-keycloak:26.10.3@sha256:ef3212f3fb0fd737379dbc9e443dee09bc42d081837570b48307f6546e9451c7
+    image: registry.relizahub.com/library/rearm-keycloak:26.11.1@sha256:d677bb454f714b0b9f23bf8ec9e01fd058136e8ac15008c8845436e14365faff
     # build: ../../keycloak
     ports:
      - "9080:9080"
@@ -124,7 +124,7 @@ services:
       - ./postgres-keycloak-init.sql:/docker-entrypoint-initdb.d/init.sql
       - "rearm-keycloak-compose-postgres-data:/relizaio/postgresql"
   oci-artifact-service:
-    image: registry.relizahub.com/library/rearm-oci-artifact-service:26.10.1@sha256:6eb2726d670752ab639e2fb1253c0f2a397692d0b42e0ccb53d60503d05138d9
+    image: registry.relizahub.com/library/rearm-oci-artifact-service:26.10.2@sha256:b724b8e6934d578e0ec1763e46e8e85994582dabd3e269c664952f83f7a0be8a
     # Legacy oci.env kept for one release for backward compatibility --
     # prefer the OCI_* variables in .env (see .env.example).
     env_file:
@@ -188,7 +188,7 @@ services:
       restart_policy:
         condition: on-failure
   rebom-backend:
-    image: registry.relizahub.com/library/rebom-backend:0.27.1@sha256:48df483ec882fd649c3f6b49092eff76e9fecfff455301c36eaf8750439b7eea
+    image: registry.relizahub.com/library/rebom-backend:0.27.3@sha256:8261e5c58c9f151600376b1ed7ddda079e1530cdc25b9ab3d5fc440455193834
     # Legacy rebom.env kept for one release for backward compatibility --
     # prefer the OCI_* variables in .env (see .env.example).
     env_file:
@@ -243,7 +243,7 @@ services:
     # https or localhost. Serves a self-signed certificate by default
     # (browser warning; fine for IP-based evals); set REARM_ACME_EMAIL and
     # a real REARM_TLS_HOST domain on default ports for Let's Encrypt.
-    image: traefik:v3.7.8@sha256:5cb000ad823bfcfff911e22a4c4fa09cee74c7a2d960c012a1a46a8d0a159fcf
+    image: traefik:v3.7.19@sha256:a6c0194dda77bcb804824580f36fa7edc56e315b1acfe933366c8b52844a78a4
     profiles: ["tls"]
     command:
      - --entrypoints.websecure.address=:443
