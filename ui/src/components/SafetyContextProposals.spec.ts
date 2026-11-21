@@ -78,4 +78,10 @@ describe('SafetyContextProposals', () => {
         const confirm = w.find('.modal').findAll('button').find((b: any) => b.text() === 'Accept')!
         expect(confirm.attributes('disabled')).toBeDefined()
     })
+
+    it('says a level the upload mode staged was staged by the mode, not auto-accepted', async () => {
+        const w = await mounted([row({ gateRule: 'SELF_AUTO', notes: ['USER_MODE_STAGE'], issuerClassEffective: 'SELF' })])
+        expect(w.text()).toContain("Staged by the upload's import mode")
+        expect(w.text()).not.toContain('auto-accepted')
+    })
 })

@@ -30,7 +30,7 @@
                         <span v-if="current.levelNormalized && current.levelNormalized !== current.levelRaw"> - declared as "{{ current.levelRaw }}"</span>
                     </n-descriptions-item>
                     <n-descriptions-item label="Compared with the current level">{{ current.levelChange || '-' }}</n-descriptions-item>
-                    <n-descriptions-item label="Why it was staged">{{ GATE_RULE_LABELS[current.gateRule] || current.gateRule }}</n-descriptions-item>
+                    <n-descriptions-item label="Why it was staged">{{ stagedReason(current) }}</n-descriptions-item>
                     <n-descriptions-item label="Issuer">
                         {{ current.issuerClassEffective }}
                         <span v-if="current.elevatedByOverride"> (raised from {{ current.issuerClassDerived }} by {{ current.overrideActorName || 'an override' }})</span>
@@ -92,8 +92,8 @@ import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import {
-    ACCEPT_SAFETY_PROPOSAL, DECLARED_NOT_VERIFIED, GATE_RULE_LABELS, GET_RELEASE_SBOM_COMPONENT_CHOICES,
-    GET_SAFETY_PROPOSALS, GET_SAFETY_PROPOSALS_BY_RELEASE, REJECT_SAFETY_PROPOSAL
+    ACCEPT_SAFETY_PROPOSAL, DECLARED_NOT_VERIFIED, GET_RELEASE_SBOM_COMPONENT_CHOICES,
+    GET_SAFETY_PROPOSALS, GET_SAFETY_PROPOSALS_BY_RELEASE, REJECT_SAFETY_PROPOSAL, stagedReason
 } from '@/graphql/safetyContext'
 import SafetyContextSourceModal from './SafetyContextSourceModal.vue'
 
@@ -271,7 +271,7 @@ const columns = computed(() => {
                 if (r.conflictFlag) flags.push('conflicts with another declaration')
                 if (r.elevatedByOverride) flags.push(`issuer raised by override (${r.overrideActorName || 'unknown user'})`)
                 if ((r.notes || []).includes('OVERRIDE_IGNORED')) flags.push('issuer override ignored')
-                const text = GATE_RULE_LABELS[r.gateRule] || r.gateRule || '-'
+                const text = stagedReason(r)
                 return flags.length
                     ? h(NTooltip, { trigger: 'hover' }, { trigger: () => h('span', {}, `${text} *`), default: () => flags.join('; ') })
                     : text

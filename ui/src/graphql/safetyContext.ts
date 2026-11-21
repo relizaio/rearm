@@ -78,5 +78,14 @@ export const GATE_RULE_LABELS: Record<string, string> = {
     WIDE_SCOPE: 'Organization or branch scope needs review'
 }
 
+/**
+ * Why a proposal stands where it does. A level the gate would accept but the upload's import
+ * mode staged says so, rather than showing the gate's accept reason on a pending row.
+ */
+export function stagedReason (row: any): string {
+    if ((row.notes || []).includes('USER_MODE_STAGE')) return 'Staged by the upload\'s import mode'
+    return GATE_RULE_LABELS[row.gateRule] || row.gateRule || '-'
+}
+
 /** Shown wherever accepted levels are displayed. */
 export const DECLARED_NOT_VERIFIED = 'Declared by the issuer; not verified by ReARM.'
