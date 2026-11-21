@@ -59,7 +59,10 @@ import io.reliza.model.ModelFacts;
 import io.reliza.model.ModelOntologyData;
 import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.RearmSpecificationType;
+import io.reliza.model.SafetyContextData;
+import io.reliza.model.SafetyContextRecordData;
 import io.reliza.model.VersionAssignment;
+import io.reliza.model.dto.SafetyContextEntryWebDto;
 import io.reliza.model.dto.notifications.EvaluationMode;
 import io.reliza.model.DigestAlgorithm;
 import io.reliza.model.tea.TeaCollectionUpdateReasonType;
@@ -200,6 +203,17 @@ class GraphQlSchemaEnumSyncTest {
 			entry("Status", CommonVariables.StatusEnum.class),
 			entry("SyntheticEventTemplateEnum", SyntheticEventTemplates.Template.class),
 			entry("TeaArtifactChecksumType", DigestAlgorithm.class),
+			// SAFETY_CONTEXT import: schema names are prefixed, the Java enums are nested.
+			entry("SafetyAcceptedVia", SafetyContextRecordData.AcceptedVia.class),
+			entry("SafetyContextKind", SafetyContextEntryWebDto.Kind.class),
+			entry("SafetyGateRule", SafetyContextData.GateRule.class),
+			entry("SafetyLevelChange", SafetyContextData.LevelChange.class),
+			entry("SafetyLevelNote", SafetyContextData.LevelNote.class),
+			entry("SafetyMatchStatus", SafetyContextData.MatchStatus.class),
+			entry("SafetyNote", SafetyContextData.Note.class),
+			entry("SafetyRecordStatus", SafetyContextRecordData.RecordStatus.class),
+			entry("SafetySourceFormat", SafetyContextData.DocumentFormat.class),
+			entry("SafetyVerificationStatus", SafetyContextData.VerificationStatus.class),
 			// Name collides with io.reliza.versioning.VersionType (version schemes, unrelated).
 			entry("VersionType", VersionAssignment.VersionTypeEnum.class));
 
