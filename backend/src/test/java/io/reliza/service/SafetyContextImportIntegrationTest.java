@@ -421,4 +421,20 @@ class SafetyContextImportIntegrationTest {
 		assertEquals(1, s.getStatementsErrored());
 		assertTrue(active().isEmpty());
 	}
+
+	@Test
+	void aPendingReconcileDoesNotUnmatchAPurlTheInventoryHas() throws Exception {
+		// Any artifact upload marks the release's inventory for reconcile; a purl already in it still matches.
+		Map<UUID, String> purls = new LinkedHashMap<>();
+		purls.put(pumpComponent, PUMP);
+		when(sbomComponentService.resolveReleaseComponentPurls(release))
+			.thenReturn(new SbomComponentService.ReleaseComponentPurls(org, purls, Map.of(), true));
+		String json = doc(List.of(new Asset("asset-pump", "comp-pump", PUMP, "IEC-62304", "C"),
+			new Asset("asset-new", "comp-new", "pkg:npm/not-yet@1.0.0", "IEC-62304", "B")));
+		ImportSummary s = upload(json, ArtifactBelongsTo.RELEASE);
+		assertEquals(1, s.getProposalsAutoAccepted(), "the inventory's purl matches and SELF accepts it");
+		assertEquals(1, s.getProposalsCreated());
+		SafetyContextProposalData waiting = pending().get(0);
+		assertEquals(MatchStatus.SBOM_PENDING, waiting.getMatchStatus(), "a purl not found yet waits on the reconcile");
+	}
 }

@@ -373,8 +373,11 @@ public class SafetyContextImportService implements ArtifactImportHandler {
 
 	private static void matchRelease(SafetyContextProposalData proto, SbomComponentService.ReleaseComponentPurls release,
 			Map<String, Set<UUID>> byPurl) {
+		// A match against the current inventory stands even while a reconcile is pending (any
+		// artifact upload, this one included, marks the release pending). Only a purl not found
+		// yet waits on the reconcile, since it may appear once the inventory is rebuilt.
 		Set<UUID> matches = byPurl.getOrDefault(proto.getComponentPurl(), Set.of());
-		if (release.reconcilePending()) {
+		if (matches.isEmpty() && release.reconcilePending()) {
 			proto.setMatchStatus(MatchStatus.SBOM_PENDING);
 			proto.setGateRule(GateRule.SBOM_PENDING);
 		} else if (matches.isEmpty()) {
