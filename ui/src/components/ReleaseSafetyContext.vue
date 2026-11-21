@@ -69,6 +69,11 @@ async function fetchRecords () {
 onMounted(fetchRecords)
 watch([includeSuperseded, () => props.releaseUuid], fetchRecords)
 
+function activeLevelsFor (r: any): number {
+    return records.value.filter((x: any) => x.recordStatus === 'ACTIVE' && x.componentPurl === r.componentPurl
+        && x.schemeKey === r.schemeKey && x.scopeUuid === r.scopeUuid).length
+}
+
 const recordColumns = [
     { title: 'Component', key: 'componentPurl', ellipsis: { tooltip: true } },
     { title: 'Scheme', key: 'schemeKey' },
@@ -77,7 +82,8 @@ const recordColumns = [
         key: 'levelRaw',
         render: (r: any) => {
             const label = h('strong', {}, r.levelNormalized || r.levelRaw)
-            return r.componentMostConservative
+            // Marked only where several active levels exist for the component and scheme.
+            return r.componentMostConservative && activeLevelsFor(r) > 1
                 ? h('span', {}, [label, ' ', h(NTag, { size: 'small', type: 'warning', round: true }, () => 'most stringent')])
                 : label
         }
