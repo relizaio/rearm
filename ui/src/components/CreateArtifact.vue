@@ -120,6 +120,42 @@
                         placeholder="Auto-detect from binding" />
                 </n-form-item>
             </n-card>
+            <n-card v-if="artifact.type === 'SAFETY_CONTEXT'"
+                title="Safety context import settings"
+                size="small"
+                :bordered="true"
+                style="margin: 8px 0 16px 0;"
+                data-testid="safety-context-import-settings">
+                <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 12px;">
+                    A CycloneDX 2.0 document declaring safety integrity levels for this release's components. Levels are
+                    recorded as the issuer's declaration; ReARM does not verify them. Defaults suit most uploads.
+                </n-text>
+                <n-form-item label="Scope">
+                    <n-select v-model:value="safetyImport.scope" :options="safetyScopeOptions" />
+                </n-form-item>
+                <n-form-item label="Import mode">
+                    <n-radio-group v-model:value="safetyImport.mode">
+                        <n-radio value="AUTO_ACCEPT">Auto-accept where the trust rules allow</n-radio>
+                        <n-radio value="STAGE">Stage all for review</n-radio>
+                        <n-radio value="REJECT">Reject all</n-radio>
+                    </n-radio-group>
+                </n-form-item>
+                <n-form-item>
+                    <template #label>
+                        <n-tooltip trigger="hover" placement="top" :style="{ maxWidth: '420px' }">
+                            <template #trigger>
+                                <span>Issuer class <n-icon :component="QuestionCircle20Regular" size="14" style="vertical-align: middle;" /></span>
+                            </template>
+                            Leave empty to use the upload's own class: Self when the file is attached to this release, a
+                            deliverable or a source code entry. An override needs Finding Analysis write permission and is
+                            recorded on every level. Self auto-accepts; Vendor auto-accepts unless the level is the scheme's
+                            lowest, unrecognised or custom; Third party stages everything.
+                        </n-tooltip>
+                    </template>
+                    <n-select v-model:value="safetyImport.issuer" :options="safetyIssuerOptions" clearable
+                        placeholder="Use the upload's own class" />
+                </n-form-item>
+            </n-card>
             <n-form-item
                         path="version"
                         label="Artifact Version">
@@ -279,6 +315,22 @@ const vexScopeOptions = [
     { label: 'Branch (this release\'s branch only)', value: 'BRANCH' },
     { label: 'Release (only this specific release)', value: 'RELEASE' },
 ]
+// SAFETY_CONTEXT import controls, kept apart from the VEX ones: VEX defaults the issuer
+// override to VENDOR, while a safety upload defaults to no override (its binding decides).
+const safetyImport = ref({ scope: 'COMPONENT', mode: 'AUTO_ACCEPT', issuer: null as string | null })
+const safetyScopeOptions = [
+    { label: 'Component (default: this release\'s component)', value: 'COMPONENT' },
+    { label: 'Release (only this release)', value: 'RELEASE' },
+    { label: 'Branch (needs Finding Analysis write, otherwise staged)', value: 'BRANCH' },
+    { label: 'Organization (needs Finding Analysis write, otherwise staged)', value: 'ORG' },
+]
+
+const safetyIssuerOptions = [
+    { label: 'Self (my own software)', value: 'SELF' },
+    { label: 'Vendor (vendor-supplied)', value: 'VENDOR' },
+    { label: 'Third party (external or untrusted)', value: 'THIRD_PARTY' },
+]
+
 const issuerClassOptions = [
     { label: 'Vendor — vendor-supplied (default)', value: 'VENDOR' },
     { label: 'Self — my own software', value: 'SELF' },
@@ -365,9 +417,18 @@ const onSubmit = async () => {
     artifact.value.tags = [...coverageTypeTags, ...lifecycleTags, ...otherTags]
     artifact.value.downloadLinks = downloadLinks.value
     artifact.value.file = chosenUploadFile(fileList.value)
+    const isSafetyContext = artifact.value.type === 'SAFETY_CONTEXT'
+    const artifactPayload: any = { ...artifact.value }
+    if (isSafetyContext) {
+        delete artifactPayload.vexScope
+        delete artifactPayload.vexImportMode
+        artifactPayload.importScope = safetyImport.value.scope
+        artifactPayload.importMode = safetyImport.value.mode
+        artifactPayload.userIssuerClassOverride = safetyImport.value.issuer
+    }
     const createArtifactInput: any = {
         release: props.inputRelease,
-        artifact: artifact.value,
+        artifact: artifactPayload,
         belongsTo: props.inputBelongsTo,
     }
 
@@ -387,7 +448,9 @@ const onSubmit = async () => {
     // import summary so we can report matched / unmatched counts.
     const releaseBody = isVex
         ? `uuid artifactDetails { uuid displayIdentifier type vexImportSummary { statementsTotal proposalsCreated proposalsAutoAccepted proposalsAutoRejected attestationsDeferred statementsUnmatched statementsErrored errorMessages } }`
-        : `uuid`
+        : isSafetyContext
+            ? `uuid artifactDetails { uuid displayIdentifier type importSummary { statementsTotal proposalsCreated proposalsAutoAccepted proposalsAutoRejected statementsUnchanged statementsUnmatched statementsErrored errorMessages } }`
+            : `uuid`
 
     isUploading.value = true
     try{
@@ -425,6 +488,8 @@ const onSubmit = async () => {
 
         if (isVex) {
             showVexOutcome(mutationResult?.data?.addArtifactManual, submittedDisplayId)
+        } else if (isSafetyContext) {
+            showSafetyOutcome(mutationResult?.data?.addArtifactManual, submittedDisplayId)
         }
 
     }   catch (err: any) {
@@ -437,6 +502,27 @@ const onSubmit = async () => {
         isUploading.value = false
     }
 };
+
+// Report the SAFETY_CONTEXT import outcome (synchronous, like VEX).
+function showSafetyOutcome(release: any, displayId: string) {
+    const s = (release?.artifactDetails ?? [])
+        .filter((a: any) => a?.type === 'SAFETY_CONTEXT' && a?.displayIdentifier === displayId)
+        .map((a: any) => a?.importSummary).find((x: any) => x)
+    if (!s) {
+        Swal.fire({ icon: 'success', title: 'Safety context uploaded', text: 'Open the Safety Context tab on this release to review.' })
+        return
+    }
+    const parts = [`${s.statementsTotal ?? 0} safety level${s.statementsTotal === 1 ? '' : 's'}:`,
+        `${s.proposalsAutoAccepted ?? 0} auto-accepted, ${s.proposalsCreated ?? 0} staged for review,`,
+        `${s.statementsUnchanged ?? 0} unchanged, ${s.statementsErrored ?? 0} errored.`]
+    if (s.statementsUnmatched) parts.push(`${s.statementsUnmatched} staged level${s.statementsUnmatched === 1 ? '' : 's'} did not match a component in this release's SBOM.`)
+    const messages = (s.errorMessages ?? []).join(' ')
+    Swal.fire({
+        icon: s.statementsErrored ? 'warning' : 'success',
+        title: 'Safety context processed',
+        text: `${parts.join(' ')} ${messages} Open the Safety Context tab on this release to review.`.trim()
+    })
+}
 
 // Report the VEX import outcome. VEX import is synchronous, so the counts are
 // final by the time the mutation returns -- if nothing matched the release's

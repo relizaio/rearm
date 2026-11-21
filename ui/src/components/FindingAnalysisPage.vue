@@ -10,6 +10,11 @@
             <n-tab-pane name="attestations" tab="Mitigation Attestations">
                 <mitigation-attestations-inbox />
             </n-tab-pane>
+            <n-tab-pane name="safety" tab="Safety Context">
+                <n-card title="Safety Context Proposals">
+                    <safety-context-proposals />
+                </n-card>
+            </n-tab-pane>
         </n-tabs>
     </div>
 </template>
@@ -23,19 +28,20 @@ export default {
 <script lang="ts" setup>
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NTabs, NTabPane } from 'naive-ui'
+import { NCard, NTabs, NTabPane } from 'naive-ui'
 import VulnerabilityAnalysis from './VulnerabilityAnalysis.vue'
 import VexProposalsInbox from './VexProposalsInbox.vue'
 import MitigationAttestationsInbox from './MitigationAttestationsInbox.vue'
+import SafetyContextProposals from './SafetyContextProposals.vue'
 
-type TabKey = 'findings' | 'vex' | 'attestations'
+type TabKey = 'findings' | 'vex' | 'attestations' | 'safety'
 
 const route = useRoute()
 const router = useRouter()
 const activeTab = ref<TabKey>('findings')
 
 function parseTab(q: unknown): TabKey {
-    if (q === 'vex' || q === 'attestations' || q === 'findings') return q
+    if (q === 'vex' || q === 'attestations' || q === 'findings' || q === 'safety') return q
     return 'findings'
 }
 
