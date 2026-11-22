@@ -318,8 +318,7 @@ differ from the organization selected in the header. When that setting is off th
 organization admin turns it on in **Organization Settings -> Support disclosure export**. While
 ReARM checks the setting, or when it cannot, the switch is greyed out and the export follows the
 organization setting. A greyed-out switch sends nothing, so the organization setting decides. A
-server that does not offer the option at all (a ReARM CE installation before its next sync) shows
-no switch, and says so.
+server that does not offer the option at all (an older version) shows no switch, and says so.
 
 | Setting | Effect |
 |---|---|
@@ -409,8 +408,9 @@ served document either way. Only the marker is withheld.
 
 ### When a server does not support them
 
-These arguments reach a ReARM CE installation only at its next sync from Pro. Against a backend
-that does not declare them, the export modal falls back to a request without them, tells you once
+ReARM Community Edition and ReARM Pro both have these arguments, the two switches and the
+organization setting. Against a backend that does not declare them (an older version), the export
+modal falls back to a request without them, tells you once
 that the options were ignored, and then says so permanently beside the metadata options rather
 than leaving them looking live. **Omitting the arguments on the API has the same effect and is not an
 error** -- it is the pre-existing contract.

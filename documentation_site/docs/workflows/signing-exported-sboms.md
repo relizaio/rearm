@@ -64,8 +64,9 @@ look up, so anyone who can read the database could recover it. Change them befor
 or import a key (with the Helm chart: `useDefaultSecrets: false` and the `reliza-props` secret's
 `encryption-pass` and `encryption-salt`).
 
-A ReARM CE installation gains SBOM export signing at its next sync; until then the section says
-"This server does not offer SBOM export signing yet."
+SBOM export signing works the same on ReARM Community Edition and ReARM Pro. On a server from
+before SBOM export signing (an older version) the section says "This server does not offer SBOM
+export signing yet."
 
 ## Rotate and revoke
 
