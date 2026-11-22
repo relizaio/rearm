@@ -4,7 +4,7 @@ A regulatory package is what ReARM assembles for one regulator from one release.
 
 **Submissions are never public.** They are never served on the [Transparency Exchange API](../tea/), no external key can read them, and nothing of a submission appears on TEA, whatever the release's TEA publishing settings say.
 
-Regulatory packages and submissions are ReARM Pro only. A ReARM Community Edition installation offers none: its UI shows no package settings and no submissions, and its server serves none. Today it has no such operation; once the shared code reaches it at a sync from Pro, a submission read answers an empty list and a submission act answers `EDITION_UNSUPPORTED`, while package settings stay ReARM Pro. See the [edition differences](../tea/#edition-differences) of the TEA page.
+Regulatory packages and submissions are ReARM Pro only. A ReARM Community Edition installation offers none: its UI shows no package settings and no submissions, and its server serves none (a submission read answers an empty list and a submission act answers `EDITION_UNSUPPORTED`; package settings are ReARM Pro only). See the [edition differences](../tea/#edition-differences) of the TEA page.
 
 ## Package kinds and parts
 
@@ -280,7 +280,7 @@ An act or a preview that cannot go ahead answers one of these `SubmissionRefusal
 | `PART_FAILED` | A part's producer failed, for example a missing prose slot of the statement |
 | `GENERATION_FAILED` | The act lost its lease, or a stored document did not read back as uploaded |
 | `REASON_INVALID` | The reason is longer than 2048 characters or holds a control character other than TAB, LF and CR |
-| `EDITION_UNSUPPORTED` | The server has no submission support (a Community Edition server once the shared code reaches it) |
+| `EDITION_UNSUPPORTED` | The server has no submission support (a ReARM Community Edition server) |
 
 The preview, `submissionPreview(release, kind)`, reports the plan and the first refusal before anything is generated.
 
