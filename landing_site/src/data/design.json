@@ -753,13 +753,61 @@
         },
         {
           "num": "04",
-          "title": "Due-diligence evidence",
-          "body": "Documented release criteria and immutable history, ready when the question comes.",
-          "cap": "Release Policies"
+          "title": "Release evidence retained for the product lifecycle",
+          "body": "SBOMs, VEX records, approvals, attestations, and supporting artifacts remain associated with the release that produced them. Retrieve evidence years after shipment, compare versions, and demonstrate exactly what was known when a release was approved.",
+          "cap": "Audit Evidence"
         }
-      ]
-    }
-  ],
+              ]
+            },
+            {
+              "id": "3j",
+              "href": "#3j",
+              "path": "/use-cases/openchain-cra-mapping",
+              "label": "OpenChain CRA Checklist Mapping",
+              "persona": "FOR PRODUCT SECURITY, COMPLIANCE + ENGINEERING LEADERSHIP",
+              "h1": "From CRA requirements to release evidence.",
+              "pain": "Organizations need to connect CRA readiness activities to the engineering workflows and evidence that support them. The OpenChain CRA Compliance Requirements & Checklist v1.0 provides a structured framework for understanding those requirements.",
+              "a1": "rgba(91,124,250,0.10)",
+              "a2": "rgba(240,138,75,0.10)",
+              "stripLabel": "RELATED STANDARDS AND GUIDANCE",
+              "strip": [
+                "OpenChain",
+                "ISO/IEC 5230",
+                "ISO/IEC 18974",
+                "BSI TR-03183"
+              ],
+              "evidence": "SBOMs · VEX · Findings · Release Policies · Audit History",
+              "publicDemo": false,
+              "shot": false,
+              "note": false,
+              "steps": [
+                {
+                  "num": "01",
+                  "title": "Governance and organization",
+                  "body": "Supports product and component release governance with roles, approvals, policies, and traceable decision records.",
+                  "cap": "Release Policies"
+                },
+                {
+                  "num": "02",
+                  "title": "SBOM generation and lifecycle",
+                  "body": "The OpenChain CRA checklist addresses SBOM generation, quality, provenance, and lifecycle management. ReARM stores SBOMs and XBOMs with each release and tracks component inventories over time.",
+                  "cap": "SBOM/XBOM Management"
+                },
+                {
+                  "num": "03",
+                  "title": "Vulnerability handling and risk management",
+                  "body": "Supports vulnerability monitoring, triage, exploitability assessment (VEX), and risk handling workflows across shipped releases.",
+                  "cap": "Findings Aggregation"
+                },
+                {
+                  "num": "04",
+                  "title": "Technical documentation and evidence",
+                  "body": "Preserves traceable release evidence, including approvals, SBOMs, VEX records, attestations, and supporting documentation for future audits and reviews.",
+                  "cap": "Audit Evidence"
+                }
+              ]
+            }
+            ],
   "tiers": [
     {
       "name": "ReARM CE",
