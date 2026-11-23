@@ -25,6 +25,10 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
  * <p>Channel formatters synthesize deep links from {@code releaseUuid}
  * (and {@code commitUri} when present, since they have no VCS context of
  * their own).
+ *
+ * <p>{@code componentKind} (TPF-158) is the component's
+ * {@code ComponentKind.name()}; null on a payload written before the field
+ * existed, and null reads as "not a board document".
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ReleaseRef(
@@ -40,5 +44,21 @@ public record ReleaseRef(
         String commitUri,
         String commitMessage,
         String updatedByName,
-        String updatedByEmail) {
+        String updatedByEmail,
+        /*
+         * TPF-158: the component's ComponentKind.name(). A string, not the enum, so a payload
+         * written with a kind this reader does not know still reads (an enum would fail the whole
+         * payload). Null on a payload written before the field existed, and null is "not a
+         * document": nothing treats an absent kind as BOARD_DOCUMENT.
+         */
+        String componentKind) {
+
+    /** Back-compat constructor for callers that pre-date componentKind (null = not a document). */
+    public ReleaseRef(UUID releaseUuid, String version, UUID componentUuid, String componentName,
+            ComponentType componentType, UUID branchUuid, String branchName, ReleaseLifecycle lifecycle,
+            String commitHash, String commitUri, String commitMessage, String updatedByName,
+            String updatedByEmail) {
+        this(releaseUuid, version, componentUuid, componentName, componentType, branchUuid, branchName,
+                lifecycle, commitHash, commitUri, commitMessage, updatedByName, updatedByEmail, null);
+    }
 }

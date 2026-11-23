@@ -6,6 +6,7 @@ package io.reliza.ws;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -226,6 +227,38 @@ public class NulInputGraphQlTest extends InputConversionGraphQlTestBase {
 		NotificationSubscription stored = subscriptionRepo.findById(UUID.fromString(uuid)).orElseThrow();
 		NotificationSubscriptionData d = Utils.OM.convertValue(stored.getRecordData(), NotificationSubscriptionData.class);
 		assertEquals("ok", d.filter().presetConfig().get("k"));
+	}
+
+	// TPF-158 row 24: includeBoardDocuments round-trips through the real schema and persists; absent stores null
+	@Test
+	@SuppressWarnings("unchecked")
+	void includeBoardDocumentsRoundTrips() {
+		UUID org = testInitializer.obtainOrganization().getUuid();
+		String upsertSelectingTheFlag = "mutation s($in: NotificationSubscriptionInput!) "
+				+ "{ upsertNotificationSubscription(input: $in) { uuid includeBoardDocuments } }";
+
+		Map<String, Object> optedIn = new LinkedHashMap<>(subscriptionInput(org, "{\"k\":\"ok\"}"));
+		optedIn.put("includeBoardDocuments", true);
+		ExecutionResult r = dgsQueryExecutor.execute(upsertSelectingTheFlag, map("in", optedIn));
+		assertTrue(r.getErrors().isEmpty(), "no errors: " + r.getErrors());
+		Map<String, Object> result = (Map<String, Object>) ((Map<String, Object>) r.getData())
+				.get("upsertNotificationSubscription");
+		assertEquals(Boolean.TRUE, result.get("includeBoardDocuments"));
+		NotificationSubscription stored = subscriptionRepo.findById(UUID.fromString((String) result.get("uuid")))
+				.orElseThrow();
+		assertEquals(Boolean.TRUE, Utils.OM.convertValue(stored.getRecordData(), NotificationSubscriptionData.class)
+				.includeBoardDocuments());
+
+		ExecutionResult without = dgsQueryExecutor.execute(upsertSelectingTheFlag,
+				map("in", subscriptionInput(org, "{\"k\":\"ok\"}")));
+		assertTrue(without.getErrors().isEmpty(), "no errors: " + without.getErrors());
+		Map<String, Object> withoutResult = (Map<String, Object>) ((Map<String, Object>) without.getData())
+				.get("upsertNotificationSubscription");
+		assertNull(withoutResult.get("includeBoardDocuments"));
+		NotificationSubscription storedWithout = subscriptionRepo
+				.findById(UUID.fromString((String) withoutResult.get("uuid"))).orElseThrow();
+		assertNull(Utils.OM.convertValue(storedWithout.getRecordData(), NotificationSubscriptionData.class)
+				.includeBoardDocuments());
 	}
 
 	private static final String IMPORT = "mutation i($o: ID!, $j: String!) "

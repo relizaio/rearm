@@ -94,6 +94,34 @@ public class AgentSplitRequestReturnFetcherTest extends AgentSelfHoldTestBase {
 		assertEquals("too big", sr.get("description"));
 	}
 
+	/** T-16 of task TPF-161: a proposed child's designFromParent is stored and read back; nothing is carried yet. */
+	@Test
+	public void aProposedChildsDesignFromParentIsAnAccountOnly() throws Exception {
+		Board b = board();
+		Caller holder = caller(b.org(), PermissionFunction.AGENT, PermissionFunction.BOARD_AGENT);
+		AgentTaskData t = assignedTo(b, holder);
+		String query = RETURN.replace("proposedChildren { title dependsOnSiblingIndexes }",
+				"proposedChildren { title dependsOnSiblingIndexes designFromParent }");
+		ExecutionResult er = asKey(holder.key(), query, Map.of("t", t.getUuid().toString(),
+				"s", holder.session().getUuid().toString(), "r", "SPLIT", "d", "too big",
+				"p", List.of(Map.of("title", "backend", "designFromParent", true), Map.of("title", "ui"))));
+		assertTrue(er.getErrors().isEmpty(), er.getErrors().toString());
+		AgentTaskData after = task(t);
+		assertEquals(Boolean.TRUE, after.getSplitRequest().proposedChildren().get(0).designFromParent());
+		assertNull(after.getSplitRequest().proposedChildren().get(1).designFromParent());
+		assertNull(after.getCarriedDesign(), "a proposal carries nothing");
+		assertNull(after.getDesignCheckpoint(), "and settles no checkpoint");
+		assertTrue(after.getChildTasks().isEmpty());
+		Map<String, Object> data = er.getData();
+		@SuppressWarnings("unchecked")
+		Map<String, Object> sr = (Map<String, Object>) ((Map<String, Object>) data.get("agentTaskReturnProgrammatic"))
+				.get("splitRequest");
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> proposed = (List<Map<String, Object>>) sr.get("proposedChildren");
+		assertEquals(Boolean.TRUE, proposed.get(0).get("designFromParent"));
+		assertNull(proposed.get(1).get("designFromParent"));
+	}
+
 	@Test
 	public void aSplitReturnWithoutADescriptionIsRefused() throws Exception {
 		Board b = board();

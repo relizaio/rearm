@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -80,6 +81,7 @@ public class AgentHumanAnswerIntegrationTest {
 	@Autowired private AgentSessionService agentSessionService;
 	@Autowired private ComponentService componentService;
 	@Autowired private SharedReleaseService sharedReleaseService;
+	@Autowired private AgentRoutingService routingService;
 	@Autowired private io.reliza.service.oss.OssReleaseService ossReleaseService;
 
 	/** A board with NO sources: the board is the only record these tasks have. */
@@ -204,6 +206,49 @@ public class AgentHumanAnswerIntegrationTest {
 				t.getUuid(), HoldLevel.OPERATOR, HUMAN, "no test plan needed", "coder", WU));
 		assertTrue(e.getMessage().contains("Answer without a role, or lift it without words to name one"), e.getMessage());
 		assertEquals(TaskStatus.ON_HOLD, reload(t).getStatus());
+	}
+
+	/**
+	 * Task TPF-171 (D11, T-13): a person's answer stays on its own path. It goes back to the asker with the answer
+	 * pinned, asks for no confirmation, and the board-cut round stales no reviewer's pass.
+	 */
+	@Test
+	public void aPersonsAnswerGoesBackToTheAskerAndTheReviewersPassStands() throws RelizaException {
+		Rig r = rig();
+		AgentTaskRoleConfigData reviewer = agentBoardService.upsertRoleConfig(board(r),
+				new AgentBoardService.RoleConfigSpec("reviewer", "review it", 15, null, false, true, null, null, null, null,
+						List.of(new RequiredInput(InputKind.DOCUMENT, RearmSpecificationType.ARCHITECTURE, InputScope.TASK,
+								null, null, InputResolution.STRICT_LATEST)),
+						List.of()),
+				true, WU);
+		AgentTaskData t = agentTaskService.register(board(r), null, "a reviewed design, then a person's answer", null,
+				null, null, null, null, null, WU);
+		agentTaskService.authorize(t.getUuid(), board(r), "designer", 10, null, null, null, null, COORD, WU);
+		agentTaskService.assign(t.getUuid(), board(r), r.workerB().getUuid(), r.sessB().getUuid(), WU);
+		ReleaseData design = agentDocumentService.publish(r.sessB(), new PublishRequest(t.getUuid(),
+				RearmSpecificationType.ARCHITECTURE, null, "design/" + UUID.randomUUID() + ".md", "d-" + UUID.randomUUID(),
+				"text/markdown", null, null, null, "c1", DOCS, "design", ZonedDateTime.now(), null), WU);
+		assertEquals("reviewer", agentTaskService.signOff(t.getUuid(), r.sessB().getUuid(), SignOffOutcome.PASSED,
+				"designed", List.of(design.getUuid()), WU).getRole());
+		agentTaskService.assign(t.getUuid(), board(r), r.workerA().getUuid(), r.sessA().getUuid(), WU);
+		assertEquals("coder", agentTaskService.signOff(t.getUuid(), r.sessA().getUuid(), SignOffOutcome.PASSED,
+				"fine", List.of(), WU).getRole());
+		agentTaskService.assign(t.getUuid(), board(r), r.workerA().getUuid(), r.sessA().getUuid(), WU);
+		ReleaseData q = publishQuestions(r.sessA(), reload(t),
+				questions(RearmSpecificationType.TEST_PLAN, item("q1", "OPEN")));
+		assertEquals(TaskStatus.AWAITING_COORDINATOR, agentTaskService.signOff(t.getUuid(), r.sessA().getUuid(),
+				SignOffOutcome.REJECTED, "who owns the test plan?", List.of(q.getUuid()), WU).getStatus());
+		agentTaskService.escalateQuestion(t.getUuid(), HoldLevel.OPERATOR, "nobody here makes a test plan", COORD, WU);
+
+		AgentTaskData answered = agentTaskService.answer(t.getUuid(),
+				List.of(new Answer("q1", BoardReviewItemStatus.RESOLVED, "no test plan for this one")), HUMAN, true, WU);
+
+		assertEquals(TaskStatus.QUEUED, answered.getStatus());
+		assertEquals("coder", answered.getRole());
+		assertEquals("question answered; back to coder",
+				answered.getStatusHistory().get(answered.getStatusHistory().size() - 1).note());
+		assertTrue(answered.getAnswerConfirmations().isEmpty(), "no confirmation record");
+		assertTrue(routingService.hasCurrentPass(answered, board(r), reviewer), "the reviewer's pass stands");
 	}
 
 	// ---------- D1: a board with no tracker ----------

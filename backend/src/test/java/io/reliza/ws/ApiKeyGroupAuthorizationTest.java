@@ -190,13 +190,18 @@ public class ApiKeyGroupAuthorizationTest extends ApiKeyGroupTestBase {
 		assertTrue(added.getErrors().isEmpty(), added.getErrors().toString());
 		assertTrue(stored(g).getApiKeys().contains(r.getUuid()));
 
-		// The secret rule: a key with no secret has no token to present.
+		// A REQUESTED key holds nothing. Once approved it is ACTIVE and held by its requester, an active member
+		// who can sign in with it through a CLI login, so it counts with no secret (TPF-174); with no holder,
+		// no secret and no bound rule nobody can use it.
 		assertFalse(authorizationService.boardPermission(apiKeyService.getApiKey(r.getUuid()).orElseThrow(), org.getUuid(),
 				a.getUuid(), PermissionFunction.BOARD_READ, CallType.READ));
 		apiKeyService.resolveApiKeyRequest(r.getUuid(), true, null, WU);
-		assertFalse(authorizationService.boardPermission(apiKeyService.getApiKey(r.getUuid()).orElseThrow(), org.getUuid(),
+		assertTrue(authorizationService.boardPermission(apiKeyService.getApiKey(r.getUuid()).orElseThrow(), org.getUuid(),
 				a.getUuid(), PermissionFunction.BOARD_READ, CallType.READ));
 		assertTrue(reads(as(apiKeyService.getApiKey(r.getUuid()).orElseThrow()), org, a), "the group grant holds once approved");
+		apiKeyService.setApiKeyHolder(r.getUuid(), null, WU);
+		assertFalse(authorizationService.boardPermission(apiKeyService.getApiKey(r.getUuid()).orElseThrow(), org.getUuid(),
+				a.getUuid(), PermissionFunction.BOARD_READ, CallType.READ));
 	}
 
 	// ---------- row 7: deactivation revokes, restore regrants ----------

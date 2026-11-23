@@ -298,7 +298,7 @@ class SyntheticEventServiceTest {
                         INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED,
                         AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE,
                         AGENT_SESSION_IDLE_WARNING, RELEASE_TEA_PUBLISHED, RELEASE_TEA_HIDDEN,
-                        RELEASE_SUBMISSION_CREATED, RELEASE_SUBMISSION_WITHDRAWN ->
+                        RELEASE_SUBMISSION_CREATED, RELEASE_SUBMISSION_WITHDRAWN, LICENSE_SEAT_EVENT ->
                         throw new IllegalStateException(
                                 "No synthetic template maps " + SyntheticEventTemplates.eventTypeOf(t));
             };

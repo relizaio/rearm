@@ -1,4 +1,4 @@
-<!-- orientation section: final-report · core 2026-10-25 -->
+<!-- orientation section: final-report · core 2026-11-10 -->
 ### 2.6 Final session report
 
 A FINAL-phase `AGENTIC_REPORT` summarises the session for the

@@ -90,6 +90,8 @@ public class EventActivationMapBuilder {
                 // event.board, event.kind, event.holdKind ... so a subscription narrows by board or kind
                 case AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE, AGENT_SESSION_IDLE_WARNING ->
                         AgentBoardRenderSupport.populate(eventMap, AgentBoardRenderSupport.payload(event));
+                // event.kind, event.email, event.group, event.message (TPF-167)
+                case LICENSE_SEAT_EVENT -> LicenseSeatRenderSupport.populate(eventMap, LicenseSeatRenderSupport.payload(event));
             }
         }
 
@@ -313,6 +315,10 @@ public class EventActivationMapBuilder {
      * {@code lifecycle} key here is the release's current lifecycle; for
      * {@code RELEASE_LIFECYCLE_CHANGED} the transition is additionally
      * exposed as {@code oldLifecycle} / {@code newLifecycle}.
+     * {@code componentKind} (TPF-158) is the component's kind name
+     * ({@code GENERIC}, {@code HELM}, {@code BOARD_DOCUMENT}), the empty
+     * string on a payload written before the kind was stamped; never
+     * omitted, so naming it in CEL never raises "no such key".
      */
     private void populateReleaseRef(Map<String, Object> eventMap, ReleaseRef r) {
         if (r == null) return;
@@ -321,6 +327,7 @@ public class EventActivationMapBuilder {
         eventMap.put("componentUuid", r.componentUuid() != null ? r.componentUuid().toString() : "");
         eventMap.put("componentName", StringUtils.defaultString(r.componentName()));
         eventMap.put("componentType", r.componentType() != null ? r.componentType().name() : "");
+        eventMap.put("componentKind", StringUtils.defaultString(r.componentKind()));
         eventMap.put("branchUuid", r.branchUuid() != null ? r.branchUuid().toString() : "");
         eventMap.put("branch", StringUtils.defaultString(r.branchName()));
         eventMap.put("lifecycle", r.lifecycle() != null ? r.lifecycle().name() : "");

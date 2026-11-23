@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -194,8 +195,23 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 			@JsonInclude(JsonInclude.Include.NON_NULL) Boolean noChange,
 			@JsonInclude(JsonInclude.Include.NON_NULL) UUID answered,
 			@JsonInclude(JsonInclude.Include.NON_NULL) Boolean noCode,
-			@JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, BaseHead> baseHeads)
+			@JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String, BaseHead> baseHeads,
+			@JsonInclude(JsonInclude.Include.NON_NULL) Boolean noSplit)
 			implements Serializable {
+
+		/**
+		 * Without the design-checkpoint waiver mark (task TPF-152): every sign-off recorded before it, and
+		 * every hop that did not say its design fits one coder pass.
+		 */
+		public SignOff(String role, UUID roleUuid, UUID agent, UUID session, ZonedDateTime assignedAt,
+				ZonedDateTime signedOffAt, SignOffOutcome outcome, String note, String promptVersion,
+				AgentActor reviewedBy, HopUsage usage, List<UUID> outputs, List<UUID> reviewedInputs,
+				List<Promotion> promotions, Boolean noChange, UUID answered, Boolean noCode,
+				Map<String, BaseHead> baseHeads) {
+			this(role, roleUuid, agent, session, assignedAt, signedOffAt, outcome, note, promptVersion,
+					reviewedBy, usage, outputs, reviewedInputs, promotions, noChange, answered, noCode, baseHeads,
+					null);
+		}
 
 		/**
 		 * Without the head marks (task RD4-2): every sign-off recorded before them, and every hop that neither
@@ -274,7 +290,7 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		public SignOff withUsage(HopUsage filled) {
 			return new SignOff(role, roleUuid, agent, session, assignedAt, signedOffAt, outcome, note,
 					promptVersion, reviewedBy, filled, outputs, reviewedInputs, promotions, noChange, answered, noCode,
-					baseHeads);
+					baseHeads, noSplit);
 		}
 
 		/**
@@ -285,7 +301,7 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		public SignOff withAnswered(UUID reviewItems) {
 			return new SignOff(role, roleUuid, agent, session, assignedAt, signedOffAt, outcome, note,
 					promptVersion, reviewedBy, usage, outputs, reviewedInputs, promotions, noChange, reviewItems, noCode,
-					baseHeads);
+					baseHeads, noSplit);
 		}
 
 		/** Whether the hop said its round changes nothing downstream (task RD4-13). */
@@ -293,11 +309,25 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 			return Boolean.TRUE.equals(noChange);
 		}
 
+		/**
+		 * What the hop said its answer does to the work (task TPF-171, D1): NO_CHANGE only when {@code noChange} is
+		 * true; absent, null and false all read CHANGE.
+		 */
+		public AnswerEffect answerEffect() {
+			return Boolean.TRUE.equals(noChange) ? AnswerEffect.NO_CHANGE : AnswerEffect.CHANGE;
+		}
+
+		/** Whether the hop said its design fits one coder pass (sign-off noSplit, task TPF-152). */
+		public boolean saysNoSplit() {
+			return Boolean.TRUE.equals(noSplit);
+		}
+
 		/** The same sign-off with what its review promoted, or a guard kept from promotion (task fda2c9f1). */
 		public SignOff withPromotions(List<Promotion> made) {
 			return new SignOff(role, roleUuid, agent, session, assignedAt, signedOffAt, outcome, note,
 					promptVersion, reviewedBy, usage, outputs, reviewedInputs,
-					null == made || made.isEmpty() ? null : List.copyOf(made), noChange, answered, noCode, baseHeads);
+					null == made || made.isEmpty() ? null : List.copyOf(made), noChange, answered, noCode, baseHeads,
+					noSplit);
 		}
 	}
 
@@ -618,7 +648,17 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		/** A linked PR was closed without merging: to the coordinator. System-generated. */
 		PR_CLOSED,
 		/** A declaration said a delivery unit was abandoned: to the coordinator (task 18c5c293). */
-		DELIVERY_ABANDONED
+		DELIVERY_ABANDONED,
+		/**
+		 * The coordinator confirmed an answer marked no change (task TPF-171, D6); the task may still wait on the
+		 * coordinator after it.
+		 */
+		ANSWER_CONFIRMED,
+		/**
+		 * The coordinator refused an answer marked no change: it is reviewed as a change (task TPF-171, D6); the task
+		 * may still wait on the coordinator after it.
+		 */
+		ANSWER_REFUSED
 	}
 
 	/** What a declaration says of a delivery unit (task 18c5c293). */
@@ -948,9 +988,19 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		private static final long serialVersionUID = 20260925L;
 
 		boolean isFor(SignOff so) {
-			if (null != roleUuid && null != so.roleUuid()) return roleUuid.equals(so.roleUuid());
-			return null != role && role.equalsIgnoreCase(so.role());
+			return isFor(so.roleUuid(), so.role());
 		}
+
+		/** Whether this reopen went to the named role: by uuid when both sides carry one, else by name. */
+		public boolean isFor(UUID otherUuid, String otherRole) {
+			return sameRole(roleUuid, role, otherUuid, otherRole);
+		}
+	}
+
+	/** One role identity against another: the uuid when both carry one, else the name, case-insensitively. */
+	static boolean sameRole(UUID uuid, String name, UUID otherUuid, String otherName) {
+		if (null != uuid && null != otherUuid) return uuid.equals(otherUuid);
+		return null != name && name.equalsIgnoreCase(otherName);
 	}
 
 	/** Every reopen of this task, oldest first. */
@@ -1009,6 +1059,150 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 	 */
 	@JsonProperty
 	private List<String> requiredRolesSkipped = new ArrayList<>();
+
+	/** One pass-over of an OPTIONAL role by routing's own choice because its runWhen was not met (task TPF-155). */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record ConditionSkip(String role, UUID roleUuid, String reason, ZonedDateTime at, AgentActor by,
+			List<RearmSpecificationType> waives) implements Serializable {
+		private static final long serialVersionUID = 20261105L;
+
+		public ConditionSkip {
+			if (null == waives) waives = List.of();
+		}
+
+		boolean isFor(UUID otherUuid, String otherRole) {
+			return sameRole(roleUuid, role, otherUuid, otherRole);
+		}
+	}
+
+	/**
+	 * Every pass-over of a conditional role by routing (task TPF-155), oldest first; never a REQUIRED role; never
+	 * cleared (a reopen adds a Reopen row, which ends the entry's currency).
+	 */
+	@JsonProperty
+	private List<ConditionSkip> rolesSkippedByCondition = new ArrayList<>();
+
+	/** Appends one pass-over (task TPF-155). */
+	public void addConditionSkip(ConditionSkip cs) {
+		if (null == rolesSkippedByCondition) rolesSkippedByCondition = new ArrayList<>();
+		rolesSkippedByCondition.add(cs);
+	}
+
+	/**
+	 * The newest entry for the role that is still current: no sign-off of the role and no reopen to the role since
+	 * its at (task TPF-155, C7). Null when none.
+	 */
+	@JsonIgnore
+	public ConditionSkip liveConditionSkip(UUID roleUuid, String role) {
+		if (null == rolesSkippedByCondition) return null;
+		for (int i = rolesSkippedByCondition.size() - 1; i >= 0; i--) {
+			ConditionSkip cs = rolesSkippedByCondition.get(i);
+			if (null == cs || !cs.isFor(roleUuid, role)) continue;
+			return isLive(cs) ? cs : null;
+		}
+		return null;
+	}
+
+	private boolean isLive(ConditionSkip cs) {
+		if (null == cs.at()) return false;
+		SignOff last = lastSignOffForRole(cs.roleUuid(), cs.role());
+		if (null != last && null != last.signedOffAt() && last.signedOffAt().isAfter(cs.at())) return false;
+		return null == reopens || reopens.stream()
+				.noneMatch(r -> r.isFor(cs.roleUuid(), cs.role()) && null != r.at() && r.at().isAfter(cs.at()));
+	}
+
+	/** The waived document types of every live entry (task TPF-155, C8), read by the input check. */
+	@JsonIgnore
+	public Set<RearmSpecificationType> waivedByConditionSkips() {
+		Set<RearmSpecificationType> out = EnumSet.noneOf(RearmSpecificationType.class);
+		if (null == rolesSkippedByCondition) return out;
+		for (ConditionSkip cs : rolesSkippedByCondition) {
+			if (null != cs && cs == liveConditionSkip(cs.roleUuid(), cs.role())) out.addAll(cs.waives());
+		}
+		return out;
+	}
+
+	/** The live entry whose waives holds the type (task TPF-155), or null; names the role in the waived verdict. */
+	@JsonIgnore
+	public ConditionSkip conditionSkipWaiving(RearmSpecificationType spec) {
+		if (null == rolesSkippedByCondition || null == spec) return null;
+		for (ConditionSkip cs : rolesSkippedByCondition) {
+			if (null != cs && cs.waives().contains(spec) && cs == liveConditionSkip(cs.roleUuid(), cs.role())) return cs;
+		}
+		return null;
+	}
+
+	/** One parent round a split child carries as its design (task TPF-161, D3): what the child's pin names. */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record CarriedRound(RearmSpecificationType specification, UUID release, Integer round, String path)
+			implements Serializable {
+		private static final long serialVersionUID = 20261106L;
+	}
+
+	/**
+	 * One design-stage role a split child counts as passed through the carried rounds (task TPF-161, D3), with the
+	 * parent sign-off the carry rests on, copied at the split.
+	 *
+	 * @param session the signing session; null for a person's sign-off and on a blind read. A person is marked by
+	 *        {@code reviewedBy} only
+	 * @param reviewedBy the person, as {@link SignOff#reviewedBy()}
+	 * @param decidedOver whether that sign-off was REJECTED and a person decided over its items
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record CarriedRole(String role, UUID roleUuid, ZonedDateTime signedOffAt, UUID session,
+			AgentActor reviewedBy, boolean decidedOver) implements Serializable {
+		private static final long serialVersionUID = 20261106L;
+
+		boolean isFor(UUID otherUuid, String otherRole) {
+			return sameRole(roleUuid, role, otherUuid, otherRole);
+		}
+	}
+
+	/**
+	 * The parent's reviewed design a split child marked {@code designFromParent} builds from (task TPF-161, D3): the
+	 * rounds, the design-stage roles whose passes the carry rests on, when and by whom. Written once by the split and
+	 * never rewritten; whether each role's carry still holds is computed from it (routing's {@code carryLive}).
+	 *
+	 * @param parentTask the split parent
+	 * @param parentKey its key at the split
+	 * @param rounds the carried rounds, the same releases as the child's pinned inputs, in role order
+	 * @param roles the design-stage roles counted as passed, in role order
+	 * @param at the split instant
+	 * @param by the seat that split
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record CarriedDesign(UUID parentTask, String parentKey, List<CarriedRound> rounds,
+			List<CarriedRole> roles, ZonedDateTime at, AgentActor by) implements Serializable {
+		private static final long serialVersionUID = 20261106L;
+
+		public CarriedDesign {
+			if (null == rounds) rounds = List.of();
+			if (null == roles) roles = List.of();
+		}
+
+		/** The carried role naming this role: by uuid when both carry one, else by name; null when none does. */
+		public CarriedRole roleFor(UUID roleUuid, String role) {
+			return roles.stream().filter(cr -> null != cr && cr.isFor(roleUuid, role)).findFirst().orElse(null);
+		}
+	}
+
+	/** The parent's design this split child carries (task TPF-161); null on every other task. */
+	@JsonProperty
+	private CarriedDesign carriedDesign;
+
+	/** Whether this task is a split child carrying its parent's reviewed design (task TPF-161). */
+	@JsonIgnore
+	public boolean isDesignCarried() {
+		return null != carriedDesign;
+	}
+
+	/** The carried round of {@code spec} (task TPF-161, D5); null when the task carries no design or none of it. */
+	@JsonIgnore
+	public CarriedRound carriedRoundOf(RearmSpecificationType spec) {
+		if (null == carriedDesign || null == spec) return null;
+		return carriedDesign.rounds().stream().filter(cr -> null != cr && spec == cr.specification()).findFirst()
+				.orElse(null);
+	}
 
 	/**
 	 * Rounds counted per pair of roles, keyed "askingRole>answeringRole".
@@ -1284,6 +1478,174 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		return null != splitRequest && splitRequest.requested();
 	}
 
+	/**
+	 * What an answering hop said its answer does to the work (task TPF-171, D1), read from the sign-off's
+	 * {@code noChange}: NO_CHANGE only when it is true, so an absent mark, and every sign-off stored before the
+	 * task, reads CHANGE and takes the safe path.
+	 */
+	public enum AnswerEffect { CHANGE, NO_CHANGE }
+
+	/** Where the coordinator's confirmation of an answer marked no change stands (task TPF-171, D4). */
+	public enum AnswerConfirmationState {
+		/** Waiting on the coordinator's verdict. */
+		PENDING,
+		/** The coordinator confirmed the rounds change nothing: they make no pass stale. */
+		CONFIRMED,
+		/** The coordinator refused: the rounds are reviewed as a change. */
+		REFUSED,
+		/** The task left the coordinator by another verb (the note names it); the rounds count as a change. */
+		LAPSED
+	}
+
+	/** The coordinator's verdict on an answer marked no change (task TPF-171, D6), parsed once at the boundary. */
+	public enum AnswerVerdict {
+		CONFIRMED,
+		REFUSED;
+
+		/** The verdict as the schema spells it, coerced enum or string; null for anything else. */
+		public static AnswerVerdict parse(Object raw) {
+			if (raw instanceof AnswerVerdict v) return v;
+			if (null == raw) return null;
+			String s = raw instanceof Enum<?> e ? e.name() : String.valueOf(raw);
+			for (AnswerVerdict v : values()) {
+				if (v.name().equalsIgnoreCase(s.strip())) return v;
+			}
+			return null;
+		}
+	}
+
+	/**
+	 * One round an answering hop handed over, and the round it is compared against (task TPF-171, D2, D4): the last
+	 * round of the same document handed over before the hop began, else the round carried from the split parent.
+	 * {@code previous} and its details are never null on a stored record.
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record AnswerRound(UUID release, RearmSpecificationType specification, Integer round, String version,
+			String path, UUID previous, Integer previousRound, String previousVersion, String previousPath)
+			implements Serializable {
+		private static final long serialVersionUID = 20261110L;
+	}
+
+	/**
+	 * An answer to a question signed off {@code --no-change}, and the coordinator's verdict on it (task TPF-171, D4).
+	 * Appended to {@link #answerConfirmations} when the answer stops at the coordinator; settled CONFIRMED or
+	 * REFUSED by the verdict, LAPSED by the status funnel when the task leaves the coordinator another way. Only the
+	 * server writes it.
+	 *
+	 * @param answeredAt the answering sign-off's time
+	 * @param role the answering hop's role
+	 * @param session the answering session; null on a blind read
+	 * @param agent the answering agent; null on a blind read
+	 * @param askingRole the role whose question the answer closed
+	 * @param questionsRelease the questions round the answer closed
+	 * @param rounds what the hop handed over, one entry per document, each with its base
+	 * @param settledBy who confirmed, refused or lapsed it; null while PENDING
+	 * @param note the coordinator's note, or the verb that lapsed it
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record AnswerConfirmation(ZonedDateTime answeredAt, String role, UUID roleUuid, UUID session,
+			UUID agent, UUID askingRole, UUID questionsRelease, List<AnswerRound> rounds, AnswerConfirmationState state,
+			AgentActor settledBy, ZonedDateTime settledAt, String note) implements Serializable {
+		private static final long serialVersionUID = 20261110L;
+
+		public AnswerConfirmation {
+			rounds = null == rounds ? List.of() : List.copyOf(rounds);
+		}
+
+		/** A new entry waiting on the coordinator, for the answering sign-off and the frame it popped. */
+		public static AnswerConfirmation pending(SignOff answer, QuestionFrame frame, List<AnswerRound> rounds) {
+			return new AnswerConfirmation(answer.signedOffAt(), answer.role(), answer.roleUuid(), answer.session(),
+					answer.agent(), null == frame ? null : frame.askingRole(),
+					null == frame ? null : frame.questionsRelease(), rounds, AnswerConfirmationState.PENDING, null, null,
+					null);
+		}
+
+		/** Whether it still waits on the coordinator. */
+		public boolean pending() {
+			return AnswerConfirmationState.PENDING == state;
+		}
+
+		/** The same record, settled by {@code by} now. */
+		public AnswerConfirmation withSettled(AnswerConfirmationState settled, AgentActor by, String why) {
+			return new AnswerConfirmation(answeredAt, role, roleUuid, session, agent, askingRole, questionsRelease,
+					rounds, settled, by, ZonedDateTime.now(), why);
+		}
+	}
+
+	/**
+	 * Every answer signed off {@code --no-change} that stopped at the coordinator (task TPF-171, D4), oldest first.
+	 * Append-only: a CONFIRMED entry keeps its rounds out of the staleness reads for the life of the task. At most one
+	 * entry is PENDING, and it is the last.
+	 */
+	@JsonProperty
+	private List<AnswerConfirmation> answerConfirmations = new ArrayList<>();
+
+	/** Never null: a task stored before task TPF-171 reads as the empty list. */
+	public List<AnswerConfirmation> getAnswerConfirmations() {
+		if (null == answerConfirmations) answerConfirmations = new ArrayList<>();
+		return answerConfirmations;
+	}
+
+	/** Appends one entry (task TPF-171, D3). */
+	public void addAnswerConfirmation(AnswerConfirmation ac) {
+		getAnswerConfirmations().add(ac);
+	}
+
+	/** The last entry when it is PENDING, else null (task TPF-171, D4). */
+	@JsonIgnore
+	public AnswerConfirmation pendingAnswerConfirmation() {
+		List<AnswerConfirmation> all = getAnswerConfirmations();
+		if (all.isEmpty()) return null;
+		AnswerConfirmation last = all.get(all.size() - 1);
+		return null != last && last.pending() ? last : null;
+	}
+
+	/** Settles the PENDING last entry; nothing when there is none (task TPF-171, D6 step 4, D9). */
+	public void settleAnswerConfirmation(AnswerConfirmationState settled, AgentActor by, String why) {
+		AnswerConfirmation pending = pendingAnswerConfirmation();
+		if (null == pending) return;
+		List<AnswerConfirmation> all = getAnswerConfirmations();
+		all.set(all.size() - 1, pending.withSettled(settled, by, why));
+	}
+
+	/** The release of every round of every CONFIRMED entry: what the staleness reads leave out (task TPF-171, D8). */
+	@JsonIgnore
+	public Set<UUID> confirmedNoChangeRounds() {
+		Set<UUID> out = new LinkedHashSet<>();
+		for (AnswerConfirmation ac : getAnswerConfirmations()) {
+			if (null == ac || AnswerConfirmationState.CONFIRMED != ac.state()) continue;
+			for (AnswerRound r : ac.rounds()) {
+				if (null != r && null != r.release()) out.add(r.release());
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * The design author's waiver of the design checkpoint for one ARCHITECTURE round (task TPF-152, W3): the role
+	 * that produced the round signed it off PASSED with {@code noSplit}, saying the design fits one coder pass.
+	 * Written by the sign-off only; cleared by a reopen to a role ordered before the flagged one and by a PASSED
+	 * sign-off that declares a new ARCHITECTURE round without the flag. Routing honours it while
+	 * {@code designRound} is the task's newest agent-published ARCHITECTURE round at or above ASSEMBLED.
+	 *
+	 * @param bySession the session that signed the waiver off; null on a blind reader's copy
+	 * @param byAgent the agent of that session; null on a blind reader's copy
+	 * @param role the signing hop's role name
+	 * @param roleUuid the signing hop's role config, when known
+	 * @param at when the sign-off recorded it
+	 * @param designRound the ARCHITECTURE release the waiver names
+	 * @param note the sign-off note; null on a blind reader's copy
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record DesignCheckpointWaiver(UUID bySession, UUID byAgent, String role, UUID roleUuid,
+			ZonedDateTime at, UUID designRound, String note) implements Serializable {
+		private static final long serialVersionUID = 20261105L;
+	}
+
+	/** The waiver on the task's newest design round (task TPF-152); null when none. */
+	@JsonProperty
+	private DesignCheckpointWaiver designCheckpointWaiver;
+
 	/** Every session that ever held the assignment (accumulates; boards link to sessions through this). */
 	@JsonProperty
 	private List<UUID> sessions = new ArrayList<>();
@@ -1366,9 +1728,13 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 	 * <ul>
 	 * <li>SPLIT: a task split while it already waits on the coordinator -- the natural state of one returned as
 	 * too big -- keeps the split in its history, beside the children it now has.</li>
+	 * <li>ANSWER_CONFIRMED and ANSWER_REFUSED (task TPF-171, D6 step 5): a verdict on an answer marked no change is
+	 * given while the task waits on the coordinator and may leave it waiting there; the row keeps who decided, when
+	 * and on which releases.</li>
 	 * </ul>
 	 */
-	public static final Set<StatusTrigger> RECORDING_TRIGGERS = EnumSet.of(StatusTrigger.SPLIT);
+	public static final Set<StatusTrigger> RECORDING_TRIGGERS = EnumSet.of(StatusTrigger.SPLIT,
+			StatusTrigger.ANSWER_CONFIRMED, StatusTrigger.ANSWER_REFUSED);
 
 	/** As above, recording why (operator-actions D20). */
 	public void transitionStatus(TaskStatus to, StatusTrigger trigger, AgentActor actor, String note) {
@@ -1385,6 +1751,11 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		// The verbs that decide (authorize or a lift naming a role, split) settle it before they transition.
 		if (splitRequested() && TaskStatus.AWAITING_COORDINATOR != to && TaskStatus.ON_HOLD != to) {
 			splitRequest = splitRequest.withSettled(SplitRequestState.LAPSED, actor, lapseNote(to, note));
+		}
+		// An answer awaiting confirmation lapses the same way (task TPF-171, D9): the task left the coordinator without a
+		// verdict, so its rounds count as a change. The verdict settles the entry before it transitions.
+		if (null != pendingAnswerConfirmation() && TaskStatus.AWAITING_COORDINATOR != to && TaskStatus.ON_HOLD != to) {
+			settleAnswerConfirmation(AnswerConfirmationState.LAPSED, actor, lapseNote(to, note));
 		}
 		if (this.statusHistory == null) this.statusHistory = new ArrayList<>();
 		// The row leaving a hold keeps the PRs linked under it (task RD4-19): every release clears the hold after

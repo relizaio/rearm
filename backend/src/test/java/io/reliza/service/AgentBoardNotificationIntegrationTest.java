@@ -58,6 +58,9 @@ import io.reliza.model.Organization;
 import io.reliza.model.RearmSpecificationType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.ReleaseData.ReleaseStatus;
+import io.reliza.model.dto.ReleaseDto;
+import io.reliza.service.oss.OssReleaseService;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ComponentDto;
 import io.reliza.service.AgentDocumentService.BoardReviewItemDecision;
@@ -95,6 +98,8 @@ public class AgentBoardNotificationIntegrationTest {
 	@Autowired private ComponentService componentService;
 	@Autowired private NotificationOutboxEventRepository outbox;
 	@Autowired private BoardQueueAgeService boardQueueAgeService;
+	@Autowired private OssReleaseService ossReleaseService;
+	@Autowired private BranchService branchService;
 
 	private record Rig(Organization org, AgentBoardData board, AgentData a, AgentSessionData sa,
 			AgentData b, AgentSessionData sb) {}
@@ -205,6 +210,53 @@ public class AgentBoardNotificationIntegrationTest {
 		AgentTaskData again = agentTaskService.getTaskData(other.getUuid()).orElseThrow();
 		agentTaskService.saveData(again, WU);
 		assertEquals(before, rows(r, NotificationEventType.AGENT_TASK_NEEDS_PERSON).size());
+	}
+
+	/** TPF-158 row 27: a document round's RELEASE_CREATED row carries BOARD_DOCUMENT, read by the gate. */
+	@Test
+	public void aDocumentRoundCarriesItsKindIntoTheOutbox() throws RelizaException {
+		Rig r = rig();
+		AgentTaskData t = task(r, "reviewer");
+		agentTaskService.assign(t.getUuid(), board(r), r.a().getUuid(), r.sa().getUuid(), WU);
+		ReleaseData round = agentDocumentService.publish(r.sa(), new PublishRequest(t.getUuid(),
+				RearmSpecificationType.BOARD_REVIEW_ITEMS, null, null, null, null, null, null,
+				Map.of("kind", "BOARD_REVIEW_ITEMS", "verdict", "PASSED", "reviewItems", List.of()), null, null, null,
+				null, null), WU);
+
+		NotificationOutboxEvent created = releaseCreatedRow(r.org().getUuid(), round.getUuid());
+		assertEquals("BOARD_DOCUMENT", releaseBlock(created).get("componentKind"));
+		assertTrue(NotificationFanOutService.isBoardDocumentRelease(created));
+	}
+
+	/** TPF-158 row 28: a software release on the same org carries GENERIC and is not gated. */
+	@Test
+	public void aSoftwareReleaseCarriesGenericIntoTheOutbox() throws RelizaException {
+		Organization org = testInitializer.obtainOrganization();
+		Component software = componentService.createComponent("tpf158-sw-" + UUID.randomUUID(), org.getUuid(),
+				ComponentType.COMPONENT, "semver", "Branch.Micro", null, WU);
+		var branch = branchService.getBaseBranchOfComponent(software.getUuid()).orElseThrow();
+		UUID release = ossReleaseService.createRelease(ReleaseDto.builder().component(software.getUuid())
+				.org(org.getUuid()).branch(branch.getUuid()).version("2.0.1").status(ReleaseStatus.ACTIVE)
+				.lifecycle(ReleaseLifecycle.ASSEMBLED).build(), WU).getUuid();
+
+		NotificationOutboxEvent created = releaseCreatedRow(org.getUuid(), release);
+		assertEquals("GENERIC", releaseBlock(created).get("componentKind"));
+		assertFalse(NotificationFanOutService.isBoardDocumentRelease(created));
+	}
+
+	private NotificationOutboxEvent releaseCreatedRow(UUID org, UUID releaseUuid) {
+		List<NotificationOutboxEvent> created = outbox.findRecentByOrg(org, 5000).stream()
+				.filter(e -> e.getEventType() == NotificationEventType.RELEASE_CREATED)
+				.filter(e -> String.valueOf(releaseUuid).equals(String.valueOf(releaseBlock(e).get("releaseUuid"))))
+				.toList();
+		assertEquals(1, created.size(), "one RELEASE_CREATED row for release " + releaseUuid);
+		return created.get(0);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> releaseBlock(NotificationOutboxEvent e) {
+		Object release = e.getRecordData().get("release");
+		return release instanceof Map<?, ?> ? (Map<String, Object>) release : Map.of();
 	}
 
 	@Test

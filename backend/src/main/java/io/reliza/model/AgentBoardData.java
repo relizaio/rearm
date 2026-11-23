@@ -147,6 +147,20 @@ public class AgentBoardData extends RelizaDataParent implements RelizaObject {
 	}
 
 	/**
+	 * Whether an architect's {@code --no-split} sign-off waives the design checkpoint on this board (task TPF-152).
+	 * Null is the default, on; false keeps every design at the coordinator and records the flag without acting on
+	 * it. Operator-only.
+	 */
+	@JsonProperty
+	private Boolean architectCheckpointWaiver;
+
+	/** {@link #architectCheckpointWaiver} with its default resolved. */
+	@JsonIgnore
+	public boolean getEffectiveArchitectCheckpointWaiver() {
+		return !Boolean.FALSE.equals(architectCheckpointWaiver);
+	}
+
+	/**
 	 * Days the board's event log keeps an event (task 04dedcc5): a daily sweep deletes older ones so
 	 * the log cannot hog the database. Null is {@link #DEFAULT_EVENT_RETENTION_DAYS}; 0 keeps
 	 * everything.

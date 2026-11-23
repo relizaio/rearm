@@ -469,6 +469,8 @@ type Settings {
 	manufacturer's own commitments.
 	"""
 	fdaAssessmentNarrative: String
+	"""SSO users whose groups claim matches no SSO-connected group of this (default) organization and who hold no pending invitation (TPF-167). Absent = REFUSE."""
+	ssoUsersWithoutRole: SsoUsersWithoutRole
 	"""
 	Whether this org's exports carry its support attestations.
 
@@ -539,6 +541,28 @@ enum SidPurlMode {
 	DISABLED
 	ENABLED_STRICT
 	ENABLED_FLEXIBLE
+}
+
+"""What a first SSO sign-in does when its groups claim matches no SSO-connected user group of the default organization and no invitation is pending (TPF-167)."""
+enum SsoUsersWithoutRole {
+	"""No account is created; the person sees NO_ROLE. The default."""
+	REFUSE
+	"""The account is created with no role; it holds no seat."""
+	CREATE_WITHOUT_ROLE
+}
+
+"""The license seat an email holds (TPF-167)."""
+enum SeatType {
+	WRITE
+	READ
+	NONE
+}
+
+"""Admission by creation date against the licensed limits (TPF-167)."""
+enum SeatAdmission {
+	INSIDE
+	OUTSIDE
+	NOT_COUNTED
 }
 
 """
@@ -4634,6 +4658,8 @@ type BoardSettingsSpec {
 	completionPriority: Int
 	"""Whether a no-progress or cycle-cap stop parks for the coordinator first; null means the default, on."""
 	coordinatorStopLift: Boolean
+	"""Whether an architect's --no-split waives the design checkpoint (task TPF-152); null is the default, on. Operator-only: a declarative apply changes it only from a person."""
+	architectCheckpointWaiver: Boolean
 	"""Days the event log keeps an event; null means the default, 15, and 0 keeps everything."""
 	eventRetentionDays: Int
 	"""Staleness thresholds that post ALERTs (task RD3-4); null when every rule is off."""
@@ -4812,6 +4838,8 @@ input BoardSettingsSpecInput {
 	completionPriority: Int
 	"""Whether a no-progress or cycle-cap stop parks for the coordinator first; null restores the default, on."""
 	coordinatorStopLift: Boolean
+	"""Whether an architect's --no-split waives the design checkpoint (task TPF-152); null is the default, on. Operator-only: a declarative apply changes it only from a person."""
+	architectCheckpointWaiver: Boolean
 	"""Days the event log keeps an event; null restores the default, 15, 0 keeps everything, and a negative number is refused."""
 	eventRetentionDays: Int
 	"""The staleness block (task RD3-4): given, it replaces the board's whole block; null turns every rule off."""
@@ -4830,7 +4858,7 @@ input BoardRoleSpecInput {
 	requireDistinctAgent: Boolean
 	"""Operator-only. The role reads its task without earlier hops' notes, sessions and agents (task 0192a587)."""
 	blindReview: Boolean
-	"""Operator-only: changed only from a person's apply (the UI, or a personal key). Before this role is queued on a task's design the task stops at the coordinator (task SPLIT-5). Absent: unchanged; null: false. Not on a preset."""
+	"""Changed by a declarative apply under CONFIGURATION_WRITE and BOARD_WRITE on the board; refused on the coordinator-seat path. Before this role is queued on a task's design the task stops at the coordinator (task SPLIT-5). Absent: unchanged; null: false. Not on a preset."""
 	coordinatorCheckpoint: Boolean
 	"""Absent: true -- declaring a role is what reactivates it."""
 	active: Boolean
@@ -4844,6 +4872,8 @@ input BoardRoleSpecInput {
 	hopBudgetMicros: Long
 	"""Who the role may commission for a report (task RD4-12); null commissions nobody."""
 	commissions: AgentRoleCommissionsInput
+	"""When routing's own walk queues the role, by task tag (task TPF-155). Absent: unchanged; null: cleared (D15)."""
+	runWhen: AgentRoleRunWhenInput
 	strength: BoardStrengthSpecInput
 }
 
@@ -4902,6 +4932,8 @@ type BoardRoleSpec {
 	hopBudgetMicros: Long
 	"""Who the role may commission for a report (task RD4-12); null commissions nobody."""
 	commissions: AgentRoleCommissions
+	"""When routing's own walk queues the role, by task tag (task TPF-155). Absent: unchanged; null: cleared (D15)."""
+	runWhen: AgentRoleRunWhen
 	strength: BoardStrengthSpec
 }
 
@@ -5085,6 +5117,13 @@ type AgentBoard {
 	"""coordinatorStopLift with its default resolved."""
 	effectiveCoordinatorStopLift: Boolean
 	"""
+	Whether an architect's --no-split sign-off waives the design checkpoint on this board (task TPF-152). As set:
+	null is the default, on; false keeps every design at the coordinator. Operator-only.
+	"""
+	architectCheckpointWaiver: Boolean
+	"""architectCheckpointWaiver with its default resolved."""
+	effectiveArchitectCheckpointWaiver: Boolean
+	"""
 	Days the event log keeps an event before the daily sweep deletes it (task 04dedcc5). As set: null
 	is the default, 15; 0 keeps everything.
 	"""
@@ -5246,6 +5285,24 @@ type AgentTaskRoleConfig {
 	producesOutputs: [AgentProducedOutput]
 	"""Who this role may commission for a report (task RD4-12); null when it commissions nobody. Operator-only."""
 	commissions: AgentRoleCommissions
+	"""
+	When routing's own walk queues this role (task TPF-155): on a task carrying any key of taggedAny (when it names any)
+	and none of taggedNone (when it names any). Tag keys, values never read. OPTIONAL roles only; null runs it on every task.
+	An explicit authorize, liftHold or reopen naming the role runs it whatever the tags. Settable by the coordinator seat.
+	"""
+	runWhen: AgentRoleRunWhen
+}
+
+"""A role's tag condition (task TPF-155): both lists are tag keys; an empty list is no condition on that side."""
+type AgentRoleRunWhen {
+	taggedAny: [String!]!
+	taggedNone: [String!]!
+}
+
+"""A role's tag condition as input (task TPF-155). Left out: unchanged. Sent as null, or naming no key: the role runs on every task."""
+input AgentRoleRunWhenInput {
+	taggedAny: [String!]
+	taggedNone: [String!]
 }
 
 """How a commission from a role enters the board (task RD4-12)."""
@@ -5437,6 +5494,8 @@ type AgentTaskSignOff {
 	answered: ID
 	"""True when the hop said its round changed no code (sign-off noCode, task RD4-2); null otherwise."""
 	noCode: Boolean
+	"""True when the hop said the design fits one coder pass (sign-off noSplit, task TPF-152); null otherwise."""
+	noSplit: Boolean
 }
 
 """One document a sign-off reviewed."""
@@ -5502,6 +5561,10 @@ enum AgentStatusTrigger {
 	PR_CLOSED
 	"""A delivery unit was declared abandoned: to the coordinator (task 18c5c293)."""
 	DELIVERY_ABANDONED
+	"""The coordinator confirmed an answer marked no change (task TPF-171); the task may still wait on the coordinator after it."""
+	ANSWER_CONFIRMED
+	"""The coordinator refused an answer marked no change, so it is reviewed as a change (task TPF-171); the task may still wait on the coordinator after it."""
+	ANSWER_REFUSED
 }
 
 """
@@ -5619,6 +5682,51 @@ type AgentTaskDesignCheckpoint {
 	note: String
 }
 
+"""Where the coordinator's confirmation of a no-change answer stands (task TPF-171)."""
+enum AgentTaskAnswerConfirmationState { PENDING CONFIRMED REFUSED LAPSED }
+
+"""The coordinator's verdict on an answer signed off --no-change (task TPF-171)."""
+enum AgentTaskAnswerVerdict { CONFIRMED REFUSED }
+
+"""One round an answering hop published, and the round before it (task TPF-171)."""
+type AgentTaskAnswerRound {
+	release: ID!
+	specification: String!
+	round: Int
+	version: String
+	path: String
+	"""The round it is compared against: the task's newest round of the document handed over before the answering hop began (at or above ASSEMBLED and the readers' floor; never a release of the answering hop), else the round carried from the split parent."""
+	previous: ID
+	previousRound: Int
+	previousVersion: String
+	previousPath: String
+}
+
+"""
+An answer to a question signed off --no-change, and what the coordinator said about it (task TPF-171). CONFIRMED: the
+rounds do not make any pass stale and the task went on to the first role without a current pass (the asker, unless
+something else moved). REFUSED: reviewed as a change. LAPSED: the task
+left the coordinator by another verb (the note names it); the rounds count as a change. Only the server writes it.
+"""
+type AgentTaskAnswerConfirmation {
+	answeredAt: DateTime!
+	role: String!
+	roleUuid: ID
+	"""The answering session; null on a blind read."""
+	session: ID
+	"""The answering agent; null on a blind read."""
+	agent: ID
+	askingRole: ID
+	questionsRelease: ID
+	rounds: [AgentTaskAnswerRound!]!
+	state: AgentTaskAnswerConfirmationState!
+	"""Who confirmed, refused or lapsed it; null while PENDING."""
+	settledBy: AgentActor
+	settledAt: DateTime
+	"""The coordinator's note, or the verb that lapsed it."""
+	note: String
+}
+
 """Where a task's split request stands (task SPLIT-9): waiting on the coordinator, split, declined with a note, or lapsed."""
 enum AgentTaskSplitRequestState { REQUESTED SPLIT DECLINED LAPSED }
 
@@ -5633,6 +5741,8 @@ type AgentTaskSplitChild {
 	workLevel: Int
 	group: String
 	tags: [TagRecord]
+	"""The proposer marked this child to build from the parent's reviewed design (task TPF-161); the coordinator decides."""
+	designFromParent: Boolean
 }
 
 """
@@ -5657,6 +5767,29 @@ type AgentTaskSplitRequest {
 	settledAt: DateTime
 	"""The coordinator's note, the split's "n children: keys", or the verb that lapsed it."""
 	note: String
+}
+
+"""
+The architect's --no-split on a design round (task TPF-152): the task does not stop at a coordinatorCheckpoint while
+this round is the newest ARCHITECTURE round and the board's architectCheckpointWaiver is on. Written by the sign-off
+only; cleared by a reopen to a design role or by a new round without the flag. For a role marked blindReview,
+bySession, byAgent and note read null: the reviewer reads the work, not the worker's account of it.
+"""
+type AgentTaskDesignCheckpointWaiver {
+	bySession: ID
+	byAgent: ID
+	role: String!
+	roleUuid: ID
+	at: DateTime!
+	"""The ARCHITECTURE release the waiver names."""
+	designRound: ID!
+	note: String
+	"""
+	Whether routing would honour the waiver now (task TPF-152, W5): the board's architectCheckpointWaiver is on,
+	designRound is the task's newest agent-published ARCHITECTURE round at or above ASSEMBLED, and no reopen to a
+	design role is newer than the waiver. Resolved by the server on read; the CLI and the UI print it as is.
+	"""
+	standing: Boolean!
 }
 
 type AgentTaskReturn {
@@ -6063,6 +6196,56 @@ type TestCounts {
 	skipped: Int
 }
 
+"""One pass-over of a conditional role by routing (task TPF-155)."""
+type AgentTaskConditionSkip {
+	role: String!
+	roleUuid: ID
+	"""Why: 'runWhen not met: no mutation tag', or 'runWhen not met: tagged <key>'."""
+	reason: String!
+	at: DateTime!
+	"""Always routing."""
+	by: AgentActor
+	"""Document types a later role may start without, because only this role produces them."""
+	waives: [SpecificationType!]!
+	"""Whether this entry is the role's current one: no sign-off of the role and no reopen to it since at. Resolved by the server; clients print it and derive nothing."""
+	live: Boolean!
+}
+
+"""One parent round a split child carries as its design (task TPF-161)."""
+type AgentTaskCarriedRound {
+	specification: SpecificationType!
+	release: ID!
+	round: Int
+	path: String
+}
+
+"""One design-stage role a split child counts as passed through the carried rounds (task TPF-161)."""
+type AgentTaskCarriedRole {
+	role: String!
+	roleUuid: ID
+	"""The parent sign-off this carry rests on: when it was signed, by which session, or by which person."""
+	signedOffAt: DateTime
+	"""The signing session; null for a person's sign-off and on a blind read. A person is marked by reviewedBy only."""
+	session: ID
+	reviewedBy: AgentActor
+	"""True when that sign-off was REJECTED and a person decided over its items (the board's existing pass rule)."""
+	decidedOver: Boolean!
+	"""Server-resolved: the carried pass still rests on the carried rounds (no reopen to this role and no round of its inputs published by this task since the split)."""
+	live: Boolean!
+}
+
+"""The parent's reviewed design a split child marked designFromParent builds from (task TPF-161). Written once by the split."""
+type AgentTaskCarriedDesign {
+	parentTask: ID!
+	parentKey: String!
+	rounds: [AgentTaskCarriedRound!]!
+	roles: [AgentTaskCarriedRole!]!
+	at: DateTime!
+	by: AgentActor
+	"""Server-resolved: every carried role is live."""
+	standing: Boolean!
+}
+
 type AgentTask {
 	uuid: ID
 	org: ID
@@ -6161,6 +6344,11 @@ type AgentTask {
 	orderSetAt: DateTime
 	"""Required roles a person completed the task without, having said why in the completing status change."""
 	requiredRolesSkipped: [String]
+	"""
+	OPTIONAL roles routing's own walk passed over because their runWhen was not met (task TPF-155), oldest first; a role runs
+	later only when the coordinator names it or a later walk finds its condition met. Never a REQUIRED role.
+	"""
+	rolesSkippedByCondition: [AgentTaskConditionSkip]
 	"""Tasks that must be COMPLETED before this one is assignable (coordinator-declared, gate-enforced)."""
 	dependsOn: [ID]
 	"""Hold state while ON_HOLD; null otherwise."""
@@ -6183,6 +6371,12 @@ type AgentTask {
 	designCheckpoint: AgentTaskDesignCheckpoint
 	"""The newest split request a hop made on the task (task SPLIT-9); null when none was ever made."""
 	splitRequest: AgentTaskSplitRequest
+	"""Answers signed off --no-change and the coordinator's verdicts (task TPF-171), oldest first; empty when no answer was ever signed off --no-change."""
+	answerConfirmations: [AgentTaskAnswerConfirmation!]!
+	"""The waiver the design's author put on its newest round (task TPF-152); null when none."""
+	designCheckpointWaiver: AgentTaskDesignCheckpointWaiver
+	"""Present on a split child marked designFromParent: the parent's reviewed rounds that stand as this task's design."""
+	carriedDesign: AgentTaskCarriedDesign
 	"""Assignments a person ended by unassigning the task, oldest first (task RD3-4)."""
 	unassignments: [AgentTaskUnassignment]
 	parentTask: ID
@@ -6479,6 +6673,8 @@ input AgentTaskSplitChildInput {
 	group: String
 	"""Omitted children inherit the parent's tags (D9)."""
 	tags: [TagRecordInput]
+	"""Build this child from the parent's reviewed design: its design-stage roles are recorded as passed through the carried rounds and it goes to the build role. Default false."""
+	designFromParent: Boolean
 }
 
 input AgentTaskRoleConfigInput {
@@ -6505,6 +6701,8 @@ input AgentTaskRoleConfigInput {
 	producesOutputs: [AgentProducedOutputInput]
 	"""Operator-only (task RD4-12). Left out, unchanged; sent as null, or naming no role, the role commissions nobody."""
 	commissions: AgentRoleCommissionsInput
+	"""Settable by the coordinator seat on an existing OPTIONAL role; refused on a REQUIRED role. Left out, unchanged; sent as null, or naming no key, cleared (task TPF-155)."""
+	runWhen: AgentRoleRunWhenInput
 	"""
 	Operator-only. The floor a model must meet for this role, at most two decimal places. Left
 	out, unchanged; sent as null, the floor is removed.

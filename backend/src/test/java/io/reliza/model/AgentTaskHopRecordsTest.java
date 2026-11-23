@@ -23,10 +23,10 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
  */
 public class AgentTaskHopRecordsTest {
 
-	/** SignOff's components in declaration order (AgentTaskData 183-191); extend together with withUsage and the fixture. */
+	/** SignOff's components in declaration order (AgentTaskData 183-192); extend together with withUsage and the fixture. */
 	static final List<String> SIGN_OFF = List.of("role", "roleUuid", "agent", "session", "assignedAt", "signedOffAt",
 			"outcome", "note", "promptVersion", "reviewedBy", "usage", "outputs", "reviewedInputs", "promotions",
-			"noChange", "answered", "noCode", "baseHeads");
+			"noChange", "answered", "noCode", "baseHeads", "noSplit");
 
 	/** TaskReturn's components in declaration order (AgentTaskData 462-464). */
 	static final List<String> TASK_RETURN = List.of("role", "roleUuid", "agent", "session", "reason", "description",
@@ -43,7 +43,7 @@ public class AgentTaskHopRecordsTest {
 				List.of(UUID.randomUUID()), List.of(UUID.randomUUID()),
 				List.of(new Promotion(UUID.randomUUID(), ReleaseLifecycle.ASSEMBLED, null)),
 				Boolean.TRUE, UUID.randomUUID(), Boolean.FALSE,
-				Map.of("rearm-saas", new BaseHead(UUID.randomUUID(), "main", "0123abcd", at)));
+				Map.of("rearm-saas", new BaseHead(UUID.randomUUID(), "main", "0123abcd", at)), Boolean.TRUE);
 		assertEveryComponentSet(full);
 		HopUsage filled = new HopUsage(10, 20, 30, 40, 2, 2, 2, 50L, List.of(UUID.randomUUID()), false, 7L, at.plusMinutes(1));
 		assertOnlyUsageReplaced(full, full.withUsage(filled), filled);

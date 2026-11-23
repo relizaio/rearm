@@ -475,7 +475,9 @@ public class ComponentService {
 			LogSafe.text(cpd.getFeatureBranchVersioning()), cpd.getVersionType());
 		
 		// The factory cannot refuse, so the declared licence and supplier are validated here,
-		// before anything is written, the VCS repository below included (SCORE-39 ADR-1).
+		// before anything this method writes, the inline VCS repository below included
+		// (SCORE-39 ADR-1). A repository named by cpd.getVcs() may already be committed:
+		// createComponentFromVcsUri provisions it in its own transaction before calling here.
 		DeclaredComponentFields declared = DeclaredComponentFields.patch(null, cpd.getLicenseExpression(),
 				cpd.getLicenseUrl(), cpd.getSupplierName());
 
@@ -1556,10 +1558,12 @@ public class ComponentService {
 		// lesser form leaked '.git' into names (e.g. 'repo.git-alpha').
 		String cleanVcsUri = Utils.cleanVcsUri(Utils.normalizeVcsUri(vcsUri));
 
-		// Find or create VCS repository
+		// Find or create the VCS repository, committed in its own transaction: the
+		// source code entry the caller records next is created in a REQUIRES_NEW
+		// transaction that validates the repository and cannot see a row still
+		// uncommitted in the caller's (PFA-1). The display name names a new row only.
 		VcsType effectiveVcsType = (vcsType != null) ? vcsType : VcsType.GIT;
-		Optional<VcsRepository> vcsRepo = vcsRepositoryService.getVcsRepositoryByUri(orgUuid, cleanVcsUri, vcsDisplayName, effectiveVcsType, true, wu);
-		UUID vcsUuid = vcsRepo.get().getUuid();
+		UUID vcsUuid = vcsRepositoryService.provisionVcsRepository(orgUuid, cleanVcsUri, vcsDisplayName, effectiveVcsType, wu);
 
 		// Create component (use override name if provided, otherwise resolve from VCS URI)
 		String componentName = StringUtils.isNotEmpty(componentNameOverride)

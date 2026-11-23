@@ -27,8 +27,16 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentActor;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.AgentTaskData;
+import io.reliza.model.AgentTaskData.AnswerConfirmation;
+import io.reliza.model.AgentTaskData.AnswerEffect;
+import io.reliza.model.AgentTaskData.AnswerRound;
+import io.reliza.model.AgentTaskData.CarriedDesign;
+import io.reliza.model.AgentTaskData.CarriedRole;
+import io.reliza.model.AgentTaskData.CarriedRound;
+import io.reliza.model.AgentTaskData.ConditionSkip;
 import io.reliza.model.AgentTaskData.DesignCheckpoint;
 import io.reliza.model.AgentTaskData.DesignCheckpointState;
+import io.reliza.model.AgentTaskData.DesignCheckpointWaiver;
 import io.reliza.model.AgentTaskData.QuestionFrame;
 import io.reliza.model.AgentTaskData.Reopen;
 import io.reliza.model.AgentTaskData.SignOff;
@@ -184,7 +192,7 @@ public class AgentRoutingService {
 			}
 			List<AgentTaskRoleConfigData> roles = activeRoles(board);
 			Optional<AgentTaskRoleConfigData> producer = null != maker ? Optional.of(maker.role())
-					: roles.stream().filter(rc -> produces(rc, about)).findFirst();
+					: producersFor(td, roles, about).stream().findFirst();
 			if (producer.isEmpty()) {
 				toCoordinator(td, "a person's review item decisions left blocking items about " + about
 						+ ", which no active role on this board produces", effects);
@@ -341,14 +349,23 @@ public class AgentRoutingService {
 		}
 		// Nothing open: if this hop answered a question, the asker gets its answer back.
 		if (!td.getQuestionStack().isEmpty() && answers(td, closing)) {
-			return popToAsker(td, board, roles, closing, effects);
+			return popToAsker(td, board, roles, closing, refused, effects);
 		}
 		return forward(td, board, roles, closing, refused, effects);
 	}
 
-	/** Forward from a clean close: an investigation's own path, else the work pipeline (task RD4-12). */
+	/**
+	 * Forward from a clean close: an investigation's own path, else the work pipeline (task RD4-12). An answer still
+	 * awaiting the coordinator's confirmation (task TPF-171, D9) keeps the task there: a hold lifted while it waits
+	 * replays the stop, without a second record.
+	 */
 	private AgentTaskData forward(AgentTaskData td, AgentBoardData board, List<AgentTaskRoleConfigData> roles,
 			SignOff closing, List<AgentDocumentService.RefusedPromotion> refused, BoardEffects effects) {
+		AnswerConfirmation pending = td.pendingAnswerConfirmation();
+		if (null != pending) {
+			toCoordinator(td, confirmationReason(td, roles, pending), effects);
+			return td;
+		}
 		return td.isInvestigation() ? investigationForward(td, board, roles, closing, effects)
 				: routeForward(td, board, roles, closing, refused, effects);
 	}
@@ -416,11 +433,24 @@ public class AgentRoutingService {
 	private AgentTaskData routeForward(AgentTaskData td, AgentBoardData board,
 			List<AgentTaskRoleConfigData> roles, SignOff closing,
 			List<AgentDocumentService.RefusedPromotion> refused, BoardEffects effects) {
-		Optional<AgentTaskRoleConfigData> next = roles.stream()
-				.filter(rc -> !investigatesOnly(rc))
-				.filter(rc -> !hasCurrentPass(td, board, rc))
-				.filter(rc -> agentTaskInputService.satisfied(board, rc, td))
-				.findFirst();
+		// A loop, not a stream: a skip is recorded on the task before the next role's inputs are read, because the
+		// waiver of a skipped role's outputs is read off that record (task TPF-155, C5 and C8).
+		List<String> passedOver = new ArrayList<>();
+		Optional<AgentTaskRoleConfigData> next = Optional.empty();
+		for (AgentTaskRoleConfigData rc : roles) {
+			if (investigatesOnly(rc)) continue;
+			if (hasCurrentPass(td, board, rc)) continue;
+			String unmet = unmetCondition(td, rc);
+			if (null != unmet) {
+				recordSkip(td, roles, rc, unmet);
+				passedOver.add(rc.getName() + " (" + unmet + ")");
+				continue;
+			}
+			if (!agentTaskInputService.satisfied(board, rc, td)) continue;
+			next = Optional.of(rc);
+			break;
+		}
+		String passedOverClause = passedOver.isEmpty() ? "" : "; passed over " + String.join(", ", passedOver);
 		if (next.isPresent()) {
 			// The forward path pays for a hop exactly as the upstream path does. Checking only
 			// the upstream one would mean a task budget never stops normal progress, which is
@@ -429,7 +459,7 @@ public class AgentRoutingService {
 			if (null != budget) return holdStopped(td, budget, List.of(), effects);
 			return queueFor(td, board, roles, next.get(), StatusTrigger.AUTHORIZE, null, effects,
 					(null == closing ? "" : closing.role() + " " + closing.outcome().name().toLowerCase() + "; ")
-							+ "next " + next.get().getName(), null);
+							+ "next " + next.get().getName() + passedOverClause, null);
 		}
 		List<String> missing = requiredWithoutCurrentPass(td, board, roles);
 		if (missing.isEmpty()) {
@@ -439,7 +469,7 @@ public class AgentRoutingService {
 		// run produces them. That is a board configured with a gap, not a task in trouble, and a
 		// human has to see it -- so it goes to the coordinator rather than parking as exhausted.
 		toCoordinator(td, "no role can run and required role(s) have not passed: " + missing
-				+ waitingOn(td, board, roles, missing, refused), effects);
+				+ waitingOn(td, board, roles, missing, refused) + passedOverClause, effects);
 		return td;
 	}
 
@@ -542,7 +572,7 @@ public class AgentRoutingService {
 		// A role the person named at a release replaces the one routing would pick; the frame, the
 		// cycle count and the pinned round follow it exactly as they would the computed producer.
 		List<AgentTaskRoleConfigData> producers = null != named ? List.of(named)
-				: null != about ? roles.stream().filter(rc -> produces(rc, about)).toList()
+				: null != about ? producersFor(td, roles, about)
 				: null != maker && null != maker.role() ? List.of(maker.role()) : List.of();
 		if (producers.isEmpty()) {
 			// Nobody on this board makes the thing being asked about. The coordinator names a role
@@ -576,7 +606,8 @@ public class AgentRoutingService {
 	// ---------- 2.2.3 the answer comes back ----------
 
 	private AgentTaskData popToAsker(AgentTaskData td, AgentBoardData board,
-			List<AgentTaskRoleConfigData> roles, SignOff closing, BoardEffects effects) {
+			List<AgentTaskRoleConfigData> roles, SignOff closing, List<AgentDocumentService.RefusedPromotion> refused,
+			BoardEffects effects) {
 		QuestionFrame frame = td.getQuestionStack().get(td.getQuestionStack().size() - 1);
 		td.getQuestionStack().remove(td.getQuestionStack().size() - 1);
 		// The answer was a new round of a PROSE document, which carries no index and so closed
@@ -622,7 +653,7 @@ public class AgentRoutingService {
 								closing.role() + " passed, nothing to build; back to " + reviewer, effects);
 					}
 					DocumentRef round = newRoundOf(closing, about);
-					AgentTaskRoleConfigData builder = null == round ? null : builderAfter(roles, answering, about);
+					AgentTaskRoleConfigData builder = null == round ? null : builderAfter(td, roles, answering, about);
 					if (null != builder && !builder.getUuid().equals(frame.askingRole())) {
 						return toBuilder(td, board, roles, closing, builder, reviewer, ids, round, effects);
 					}
@@ -635,7 +666,231 @@ public class AgentRoutingService {
 				return back;
 			}
 		}
-		return backToAsker(td, board, roles, frame, null, effects);
+		return afterAnswer(td, board, roles, closing, frame, refused, effects);
+	}
+
+	// ---------- an answer to a question (task TPF-171) ----------
+
+	/**
+	 * What follows a pass that answered a question, the frame popped and the asked ids queued to close (D3). An answer
+	 * marked no change that handed over rounds each with a base stops at the coordinator for confirmation (O3); any
+	 * other answer runs the forward walk (O2), so every role whose pass the answer made stale goes before the asker,
+	 * whose REJECTED sign-off is not a pass. An investigation keeps its own path (D11).
+	 */
+	private AgentTaskData afterAnswer(AgentTaskData td, AgentBoardData board, List<AgentTaskRoleConfigData> roles,
+			SignOff closing, QuestionFrame frame, List<AgentDocumentService.RefusedPromotion> refused,
+			BoardEffects effects) {
+		if (td.isInvestigation()) return backToAsker(td, board, roles, frame, null, effects);
+		List<AnswerRound> rounds = answerRounds(td, roles, closing);
+		boolean comparable = !rounds.isEmpty() && rounds.stream().allMatch(r -> null != r.previous());
+		boolean claimed = AnswerEffect.NO_CHANGE == closing.answerEffect();
+		if (claimed && comparable) {
+			td.addAnswerConfirmation(AnswerConfirmation.pending(closing, frame, rounds));
+			toCoordinator(td, confirmationReason(td, roles, td.pendingAnswerConfirmation()), effects);
+			return td;
+		}
+		effects.info("Task " + label(td) + ": " + closing.role() + " answered"
+				+ (rounds.isEmpty() ? " without a new round" : " with " + roundsText(rounds))
+				+ (claimed && !rounds.isEmpty()
+						? "; --no-change not taken: no round handed over before this hop to compare with" : "")
+				+ "; every role whose pass no longer stands goes before " + roleName(roles, frame.askingRole()));
+		return forward(td, board, roles, closing, refused, effects);
+	}
+
+	/**
+	 * The rounds an answering hop handed over (D2): every declared output that is a document of this task published
+	 * by an agent, in the order declared, each with the round it is compared against ({@link #reviewedBase}).
+	 */
+	private List<AnswerRound> answerRounds(AgentTaskData td, List<AgentTaskRoleConfigData> roles, SignOff closing) {
+		List<AnswerRound> out = new ArrayList<>();
+		if (null == closing) return out;
+		for (UUID r : closing.outputs()) {
+			ReleaseData rd = sharedReleaseService.getReleaseData(r).orElse(null);
+			DocumentRef doc = null == rd ? null : rd.getDocument();
+			if (null == doc || !td.getUuid().equals(doc.task()) || null == doc.session()) continue;
+			Base base = reviewedBase(td, roles, doc.specification(), closing.assignedAt());
+			out.add(new AnswerRound(rd.getUuid(), doc.specification(), doc.round(), rd.getVersion(), doc.path(),
+					null == base ? null : base.release(), null == base ? null : base.round(),
+					null == base ? null : base.version(), null == base ? null : base.path()));
+		}
+		return out;
+	}
+
+	/** The round an answer round is compared against (D2). */
+	private record Base(UUID release, Integer round, String version, String path) {}
+
+	/**
+	 * The round the passes that would go stale were bound to (D2, F-1): the task's newest release of {@code spec} with
+	 * a session, created strictly before the answering hop's assignment, at or above the readers' floor (never below
+	 * ASSEMBLED); a superseded one is not skipped. Else the round carried from the split parent; else null.
+	 */
+	private Base reviewedBase(AgentTaskData td, List<AgentTaskRoleConfigData> roles, RearmSpecificationType spec,
+			ZonedDateTime assignedAt) {
+		int floor = baseFloor(roles, spec);
+		List<UUID> linked = null == td.getReleases() ? List.of() : td.getReleases();
+		for (int i = linked.size() - 1; i >= 0 && null != assignedAt; i--) {
+			ReleaseData rd = sharedReleaseService.getReleaseData(linked.get(i)).orElse(null);
+			DocumentRef doc = null == rd ? null : rd.getDocument();
+			if (null == doc || doc.specification() != spec || !td.getUuid().equals(doc.task()) || null == doc.session()) {
+				continue;
+			}
+			if (null == rd.getCreatedDate() || !rd.getCreatedDate().isBefore(assignedAt)) continue;
+			if (AgentTaskInputService.maturity(rd.getLifecycle()) < floor) continue;
+			return new Base(rd.getUuid(), doc.round(), rd.getVersion(), doc.path());
+		}
+		CarriedRound carried = td.carriedRoundOf(spec);
+		if (null == carried || null == carried.release()) return null;
+		ReleaseData rd = sharedReleaseService.getReleaseData(carried.release()).orElse(null);
+		return new Base(carried.release(), carried.round(), null == rd ? null : rd.getVersion(),
+				null != carried.path() ? carried.path() : null == rd || null == rd.getDocument() ? null
+						: rd.getDocument().path());
+	}
+
+	/**
+	 * The lowest floor among the active roles that read {@code spec} as a required document input, each role's floor
+	 * computed as {@link #inputsMovedSince} computes it; never below ASSEMBLED, which is what a sign-off hands over
+	 * (D2).
+	 */
+	private static int baseFloor(List<AgentTaskRoleConfigData> roles, RearmSpecificationType spec) {
+		int assembled = AgentTaskInputService.maturity(ReleaseLifecycle.ASSEMBLED);
+		Integer lowest = null;
+		for (AgentTaskRoleConfigData rc : roles) {
+			if (!rc.isActive() || null == rc.getRequiredInputs()) continue;
+			Integer roleFloor = null;
+			for (RequiredInput ri : rc.getRequiredInputs()) {
+				if (null == ri || InputKind.DOCUMENT != ri.kind() || spec != ri.specification()) continue;
+				int f = Math.max(AgentTaskInputService.maturity(ri.minLifecycle()),
+						AgentTaskInputService.maturity(ReleaseLifecycle.DRAFT));
+				roleFloor = null == roleFloor ? f : Math.max(roleFloor, f);
+			}
+			if (null != roleFloor) lowest = null == lowest ? roleFloor : Math.min(lowest, roleFloor);
+		}
+		return null == lowest ? assembled : Math.max(assembled, lowest);
+	}
+
+	/** "ARCHITECTURE round 3 (release ...)": the INFO's account of what an answer handed over. */
+	private static String roundsText(List<AnswerRound> rounds) {
+		List<String> parts = new ArrayList<>();
+		for (AnswerRound r : rounds) {
+			parts.add(r.specification() + (null == r.round() ? "" : " round " + r.round()) + " (release " + r.release()
+					+ ")");
+		}
+		return String.join(", ", parts);
+	}
+
+	/** The newest entry of each specification of the record, in first-appearance order (D5). */
+	private static List<AnswerRound> newestPerSpec(List<AnswerRound> rounds) {
+		Map<RearmSpecificationType, AnswerRound> newest = new LinkedHashMap<>();
+		for (AnswerRound r : rounds) newest.put(r.specification(), r);
+		return new ArrayList<>(newest.values());
+	}
+
+	/**
+	 * The stop reason of an answer marked no change (D5), built from the record only: each answer round and the round
+	 * it is compared against, by round, version, release and path, and the verb. No worker-written text.
+	 */
+	String confirmationReason(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AnswerConfirmation ac) {
+		List<String> parts = new ArrayList<>();
+		for (AnswerRound r : newestPerSpec(ac.rounds())) {
+			boolean carried = null != td.getCarriedDesign() && null != td.carriedRoundOf(r.specification())
+					&& r.previous().equals(td.carriedRoundOf(r.specification()).release());
+			parts.add(r.specification() + roundClause(r.round()) + " (" + details(r.version(), r.release(), r.path())
+					+ ") against " + (carried ? "the round carried from " + td.getCarriedDesign().parentKey()
+							+ roundClause(r.previousRound()) : "round " + nullable(r.previousRound()))
+					+ " (" + details(r.previousVersion(), r.previous(), r.previousPath()) + ")");
+		}
+		return ac.role() + " answered " + questionsLabel(ac.questionsRelease()) + " with --no-change: "
+				+ String.join("; ", parts)
+				+ "; compare them, then confirm it changes nothing (back to " + roleName(roles, ac.askingRole())
+				+ ") or refuse it (reviewed as a change): rearm agent task confirm-answer " + td.keyOrUuid()
+				+ " --session <seat> --verdict CONFIRMED|REFUSED";
+	}
+
+	private static String roundClause(Integer round) {
+		return null == round ? "" : " round " + round;
+	}
+
+	private static String nullable(Object o) {
+		return null == o ? "?" : String.valueOf(o);
+	}
+
+	private static String details(String version, UUID release, String path) {
+		return (null == version ? "" : "version " + version + ", ") + "release " + release
+				+ (null == path ? "" : ", " + path);
+	}
+
+	/** "BOARD_QUESTIONS round 2" for the questions round the answer closed; "the question" when it cannot be read. */
+	private String questionsLabel(UUID questions) {
+		if (null == questions) return "the question";
+		return sharedReleaseService.getReleaseData(questions).map(AgentRoutingService::roundLabel).orElse("the question");
+	}
+
+	/** The name of an active role by uuid, else "the asking role". */
+	private static String roleName(List<AgentTaskRoleConfigData> roles, UUID role) {
+		return roles.stream().filter(rc -> rc.getUuid().equals(role)).map(AgentTaskRoleConfigData::getName).findFirst()
+				.orElse("the asking role");
+	}
+
+	/**
+	 * The verdict's account of the rounds (D6 step 5): "ARCHITECTURE round 3 (release a) against round 2 (release
+	 * b)", one clause per document, joined by "; ".
+	 */
+	public static String verdictRounds(AnswerConfirmation ac) {
+		List<String> parts = new ArrayList<>();
+		for (AnswerRound r : newestPerSpec(ac.rounds())) {
+			parts.add(r.specification() + roundClause(r.round()) + " (release " + r.release() + ") against round "
+					+ nullable(r.previousRound()) + " (release " + r.previous() + ")");
+		}
+		return String.join("; ", parts);
+	}
+
+	/**
+	 * Route a task after the coordinator confirmed an answer marked no change (D7): the entry is CONFIRMED already, so
+	 * the staleness reads leave its rounds out, and the forward walk from the answering sign-off queues the first role
+	 * without a current pass -- the asker, unless another pass is stale, which goes first. No chooser: the confirmation
+	 * settles no design checkpoint.
+	 */
+	public Routed routeAnswerConfirmed(AgentTaskData td, AgentBoardData board, AnswerConfirmation confirmation,
+			String verdictLine) {
+		return routeAfterVerdict(td, board, confirmation, verdictLine);
+	}
+
+	/** Route a task after the coordinator refused an answer marked no change (D7): the forward walk, as a change. */
+	public Routed routeAnswerRefused(AgentTaskData td, AgentBoardData board, AnswerConfirmation confirmation,
+			String verdictLine) {
+		return routeAfterVerdict(td, board, confirmation, verdictLine);
+	}
+
+	private Routed routeAfterVerdict(AgentTaskData td, AgentBoardData board, AnswerConfirmation confirmation,
+			String verdictLine) {
+		BoardEffects effects = new BoardEffects(board.getUuid());
+		try {
+			SignOff answer = answeringSignOff(td, confirmation);
+			if (null == answer) {
+				toCoordinator(td, "the answering sign-off of the confirmed answer is not the task's last hop; nothing"
+						+ " was routed", effects);
+				return new Routed(td, effects);
+			}
+			effects.info("Task " + label(td) + ": " + verdictLine);
+			return new Routed(forward(td, board, activeRoles(board), answer, List.of(), effects), effects);
+		} catch (RuntimeException e) {
+			log.error("Routing an answer verdict failed for task {} on board {}; leaving it to the coordinator",
+					td.getUuid(), board.getUuid(), e);
+			toCoordinator(td, "routing the answer verdict failed: " + e.getMessage(), effects);
+			return new Routed(td, effects);
+		}
+	}
+
+	/** The task's last sign-off when it is the record's answering hop (same time and role); null otherwise. */
+	private static SignOff answeringSignOff(AgentTaskData td, AnswerConfirmation ac) {
+		List<SignOff> hops = td.getSignOffs();
+		if (null == hops || hops.isEmpty() || null == ac) return null;
+		SignOff last = hops.get(hops.size() - 1);
+		boolean sameTime = null != last.signedOffAt() && null != ac.answeredAt()
+				&& last.signedOffAt().toInstant().equals(ac.answeredAt().toInstant());
+		boolean sameRole = null != ac.roleUuid() && null != last.roleUuid() ? ac.roleUuid().equals(last.roleUuid())
+				: null != ac.role() && ac.role().equals(last.role());
+		return sameTime && sameRole ? last : null;
 	}
 
 	/**
@@ -688,16 +943,72 @@ public class AgentRoutingService {
 	 * one in the board's order whose required inputs include {@code spec}. A role that declares no
 	 * required inputs is not skipped, so a board that declares none falls back to the next role in
 	 * order. Null when no role after it qualifies; the caller then returns the task to the filer, as it
-	 * does when the first to qualify is the filer itself.
+	 * does when the first to qualify is the filer itself. This is routing's own choice, so a role whose
+	 * runWhen the task's tags do not meet is passed over and the skip recorded (task TPF-155, C4).
 	 */
-	private AgentTaskRoleConfigData builderAfter(List<AgentTaskRoleConfigData> roles,
+	private AgentTaskRoleConfigData builderAfter(AgentTaskData td, List<AgentTaskRoleConfigData> roles,
 			AgentTaskRoleConfigData answering, RearmSpecificationType spec) {
 		for (AgentTaskRoleConfigData rc : roles) {
 			if (rc.getOrderIndex() <= answering.getOrderIndex() || rc.getUuid().equals(answering.getUuid())) continue;
 			List<RequiredInput> ins = rc.getRequiredInputs();
-			if (null == ins || ins.isEmpty() || ins.stream().anyMatch(ri -> ri.specification() == spec)) return rc;
+			if (null != ins && !ins.isEmpty() && ins.stream().noneMatch(ri -> ri.specification() == spec)) continue;
+			String unmet = unmetCondition(td, rc);
+			if (null != unmet) {
+				recordSkip(td, roles, rc, unmet);
+				continue;
+			}
+			return rc;
 		}
 		return null;
+	}
+
+	/**
+	 * The active roles producing {@code about}, in order (task TPF-155, C4): when more than one does, those whose
+	 * runWhen the task's tags do not meet are dropped and the skip recorded; a sole producer, or a set the drop
+	 * would empty, stands whatever its condition, because the item names that type and only they make it.
+	 */
+	private List<AgentTaskRoleConfigData> producersFor(AgentTaskData td, List<AgentTaskRoleConfigData> roles,
+			RearmSpecificationType about) {
+		List<AgentTaskRoleConfigData> all = roles.stream().filter(rc -> produces(rc, about)).toList();
+		if (all.size() < 2) return all;
+		List<AgentTaskRoleConfigData> met = all.stream().filter(rc -> null == unmetCondition(td, rc)).toList();
+		if (met.isEmpty()) return all;
+		for (AgentTaskRoleConfigData rc : all) {
+			String unmet = unmetCondition(td, rc);
+			if (null != unmet) recordSkip(td, roles, rc, unmet);
+		}
+		return met;
+	}
+
+	/**
+	 * Why the task's tags fail the role's runWhen, read now (task TPF-155, C10); null when it has none or it is met.
+	 * Package-visible for the split's design-stage check (task TPF-161, R-3).
+	 */
+	static String unmetCondition(AgentTaskData td, AgentTaskRoleConfigData rc) {
+		return null == rc.getRunWhen() ? null : rc.getRunWhen().unmet(td.getTags());
+	}
+
+	/**
+	 * Records that routing passed a conditional role over (task TPF-155, 5.2): nothing while the role already has a
+	 * live entry (C7); else a new entry whose waives are the role's outputs no other active role produces (C8).
+	 */
+	private static void recordSkip(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AgentTaskRoleConfigData rc,
+			String reason) {
+		if (RoleNecessity.REQUIRED == rc.getNecessity()) {
+			throw new IllegalStateException("Role " + rc.getName() + " is REQUIRED and carries runWhen; no write path"
+					+ " allows that");
+		}
+		if (null != td.liveConditionSkip(rc.getUuid(), rc.getName())) return;
+		List<RearmSpecificationType> waives = new ArrayList<>();
+		for (ProducedOutput po : null == rc.getProducesOutputs() ? List.<ProducedOutput>of() : rc.getProducesOutputs()) {
+			RearmSpecificationType spec = null == po ? null : po.specification();
+			// A report is never a role's required input, so there is nothing to waive.
+			if (null == spec || RearmSpecificationType.BOARD_INVESTIGATION_REPORT == spec || waives.contains(spec)) continue;
+			boolean other = roles.stream().anyMatch(r -> !r.getUuid().equals(rc.getUuid()) && produces(r, spec));
+			if (!other) waives.add(spec);
+		}
+		td.addConditionSkip(new ConditionSkip(rc.getName(), rc.getUuid(), reason, ZonedDateTime.now(),
+				AgentActor.system("routing"), waives));
 	}
 
 	/**
@@ -1066,7 +1377,7 @@ public class AgentRoutingService {
 				.toList();
 	}
 
-	private boolean produces(AgentTaskRoleConfigData rc, RearmSpecificationType spec) {
+	static boolean produces(AgentTaskRoleConfigData rc, RearmSpecificationType spec) {
 		return null != rc.getProducesOutputs() && rc.getProducesOutputs().stream()
 				.anyMatch(o -> o.specification() == spec);
 	}
@@ -1084,7 +1395,9 @@ public class AgentRoutingService {
 	 */
 	boolean hasCurrentPass(AgentTaskData td, AgentBoardData board, AgentTaskRoleConfigData rc) {
 		SignOff last = td.lastSignOffForRole(rc.getUuid(), rc.getName());
-		if (null == last) return false;
+		// A split child carrying its parent's reviewed design (task TPF-161, D4): the role's carried pass stands until
+		// the role signs off on the child itself, or the carry ends.
+		if (null == last) return carryLive(td, rc);
 		// Reopened to this role since: it was sent back to redo its part and must pass again.
 		if (td.reopenedSince(last)) return false;
 		if (SignOffOutcome.PASSED != last.outcome()
@@ -1138,7 +1451,10 @@ public class AgentRoutingService {
 	 */
 	private boolean publishedSince(AgentTaskData td, Map<RearmSpecificationType, Integer> floors, ZonedDateTime since) {
 		if (floors.isEmpty() || null == since || null == td.getReleases()) return false;
+		// A round the coordinator confirmed changes nothing (task TPF-171, D8): it stales no pass, carry or checkpoint.
+		Set<UUID> confirmed = td.confirmedNoChangeRounds();
 		for (UUID r : td.getReleases()) {
+			if (confirmed.contains(r)) continue;
 			Optional<ReleaseData> rd = sharedReleaseService.getReleaseData(r);
 			if (rd.isEmpty()) continue;
 			DocumentRef doc = rd.get().getDocument();
@@ -1148,6 +1464,81 @@ public class AgentRoutingService {
 			}
 			ZonedDateTime created = rd.get().getCreatedDate();
 			if (null != created && created.isAfter(since)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Whether a split child's carried pass for {@code rc} still rests on the carried rounds (task TPF-161, D4): the
+	 * child's {@link CarriedDesign} names the role, and since the split there has been
+	 * <ul>
+	 * <li>no reopen to the role (only a completed or delivering child is reopened);</li>
+	 * <li>no agent-published, not superseded round of this task, at any lifecycle, of a carried design document the
+	 * role produces: the role has started the child's own round and is its author of record, even when the hop that
+	 * published it returned. Restricted to the carried documents, so a review item or test report round (which the
+	 * reviewers produce too) ends no carry;</li>
+	 * <li>no agent-published round of this task of the role's TASK-scope document inputs at or above their floor, as
+	 * {@link #publishedSince} reads it: a consumer's carry ends on a reviewable round.</li>
+	 * </ul>
+	 * Computed, never stored, like a condition skip's liveness; false on a task carrying no design.
+	 */
+	public boolean carryLive(AgentTaskData td, AgentTaskRoleConfigData rc) {
+		CarriedDesign carried = null == td ? null : td.getCarriedDesign();
+		if (null == carried || null == carried.at() || null == rc) return false;
+		if (null == carried.roleFor(rc.getUuid(), rc.getName())) return false;
+		ZonedDateTime at = carried.at();
+		if (null != td.getReopens() && td.getReopens().stream()
+				.anyMatch(ro -> null != ro.at() && ro.at().isAfter(at) && ro.isFor(rc.getUuid(), rc.getName()))) {
+			return false;
+		}
+		if (startedOwnRound(td, rc, carried, at)) return false;
+		Map<RearmSpecificationType, Integer> floors = new LinkedHashMap<>();
+		for (RequiredInput ri : null == rc.getRequiredInputs() ? List.<RequiredInput>of() : rc.getRequiredInputs()) {
+			if (null == ri || InputKind.DOCUMENT != ri.kind() || InputScope.TASK != ri.scope() || null != ri.release()
+					|| null == ri.specification()) {
+				continue;
+			}
+			floors.merge(ri.specification(), Math.max(AgentTaskInputService.maturity(ri.minLifecycle()),
+					AgentTaskInputService.maturity(ReleaseLifecycle.DRAFT)), Math::max);
+		}
+		return !publishedSince(td, floors, at);
+	}
+
+	/** As {@link #carryLive}, for a carried role as the child's record names it; false when the board no longer has it. */
+	public boolean carryLive(AgentTaskData td, CarriedRole cr) {
+		if (null == td || null == cr) return false;
+		return agentBoardService.listRoleConfigs(td.getBoard()).stream()
+				.filter(rc -> null != cr.roleUuid() && null != rc.getUuid() ? cr.roleUuid().equals(rc.getUuid())
+						: null != cr.role() && cr.role().equalsIgnoreCase(rc.getName()))
+				.findFirst().map(rc -> carryLive(td, rc)).orElse(false);
+	}
+
+	/** Whether every role the child's carried design names still has its carry (task TPF-161, D9: {@code standing}). */
+	public boolean carryStanding(AgentTaskData td) {
+		CarriedDesign carried = null == td ? null : td.getCarriedDesign();
+		if (null == carried) return false;
+		return carried.roles().stream().allMatch(cr -> carryLive(td, cr));
+	}
+
+	/** D4's second bullet: an agent's own round of a carried document {@code rc} produces, since {@code at}. */
+	private boolean startedOwnRound(AgentTaskData td, AgentTaskRoleConfigData rc, CarriedDesign carried,
+			ZonedDateTime at) {
+		if (null == td.getReleases() || null == rc.getProducesOutputs()) return false;
+		Set<RearmSpecificationType> specs = new LinkedHashSet<>();
+		for (CarriedRound round : carried.rounds()) {
+			if (null != round && produces(rc, round.specification())) specs.add(round.specification());
+		}
+		if (specs.isEmpty()) return false;
+		for (UUID r : td.getReleases()) {
+			Optional<ReleaseData> rd = sharedReleaseService.getReleaseData(r);
+			if (rd.isEmpty()) continue;
+			DocumentRef doc = rd.get().getDocument();
+			if (null == doc || null == doc.session() || !specs.contains(doc.specification())
+					|| !td.getUuid().equals(doc.task()) || doc.superseded()) {
+				continue;
+			}
+			ZonedDateTime created = rd.get().getCreatedDate();
+			if (null == created || created.isAfter(at)) return true;
 		}
 		return false;
 	}
@@ -1371,14 +1762,32 @@ public class AgentRoutingService {
 			if (null != by && null != by.actor()) {
 				settle(td, roles, rc, by.actor(), by.note(), effects);
 			} else if (!checkpointStands(td, roles, rc)) {
-				// F-7: always the current design; a PENDING record reached again keeps only its reachedAt.
-				DesignCheckpoint reached = reached(td, roles, rc, td.getDesignCheckpoint());
-				td.setDesignCheckpoint(reached);
-				toCoordinator(td, "design checkpoint before " + rc.getName() + " \u2014 " + roundsLine(reached.design())
-						+ architectNote(td, reached.design()) + "; read the design, then split it or send it on"
-						+ " (rearm agent task authorize " + td.keyOrUuid() + " --role " + rc.getName()
-						+ " --session <seat>)", effects);
-				return td;
+				// TPF-152 W4/W5: the design author's standing waiver lets routing's own choice pass, never silently.
+				ReleaseData waivedRound = standingWaiverRound(td, board, roles, rc);
+				// F-14: no worker-written text in the feed (or the status row) of a board with an active blind role.
+				boolean quoteNotes = !boardHasBlindRole(roles);
+				if (null != waivedRound) {
+					DesignCheckpointWaiver w = td.getDesignCheckpointWaiver();
+					String cut = StringUtils.left(w.note(), CHECKPOINT_NOTE_CHARS);
+					td.setDesignCheckpoint(reached(td, roles, rc, td.getDesignCheckpoint())
+							.withSettled(DesignCheckpointState.SENT_ON, AgentActor.ofSession(w.bySession()),
+									WAIVED_NOTE_PREFIX + w.role() + ": " + cut));
+					effects.info("Task " + label(td) + ": design checkpoint before " + rc.getName() + " waived by "
+							+ w.role() + " on " + roundLabel(waivedRound) + " (" + waivedRound.getLifecycle() + ")"
+							+ (quoteNotes ? ": \"" + cut + "\"" : "") + "; queued for " + rc.getName());
+					// falls through: the role is queued
+				} else {
+					// F-7: always the current design; a PENDING record reached again keeps only its reachedAt.
+					DesignCheckpoint reached = reached(td, roles, rc, td.getDesignCheckpoint());
+					td.setDesignCheckpoint(reached);
+					toCoordinator(td, "design checkpoint before " + rc.getName() + " \u2014 " + roundsLine(reached.design())
+							+ (quoteNotes ? architectNote(td, reached.design()) : "")
+							+ ignoredWaiver(td, board, reached.design())
+							+ "; read the design, then split it or send it on"
+							+ " (rearm agent task authorize " + td.keyOrUuid() + " --role " + rc.getName()
+							+ " --session <seat>)", effects);
+					return td;
+				}
 			}
 		}
 		noteBoardSpend(td, board, effects);
@@ -1480,14 +1889,23 @@ public class AgentRoutingService {
 	/**
 	 * The newest live round of every design document the active roles before {@code rc} produce -- every produced
 	 * type but the indexes and the investigation report -- de-duplicated, in role order. The task's own releases
-	 * only: a child's pinned inputs are not its rounds.
+	 * only: a child's pinned inputs are not its rounds, except that a carried round stands in for a design document
+	 * the child carrying its parent's design has not produced itself (task TPF-161, D8).
 	 */
 	private List<UUID> designBefore(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AgentTaskRoleConfigData rc) {
 		List<UUID> design = new ArrayList<>();
 		for (RearmSpecificationType spec : designSpecsBefore(roles, rc.getOrderIndex()).keySet()) {
-			newestRoundOf(td, spec).map(ReleaseData::getUuid).filter(u -> !design.contains(u)).ifPresent(design::add);
+			Optional<UUID> own = newestRoundOf(td, spec).map(ReleaseData::getUuid);
+			orCarried(td, spec, own).filter(u -> !design.contains(u)).ifPresent(design::add);
 		}
 		return design;
+	}
+
+	/** {@code own}, else the round of {@code spec} the task carries from its split parent (task TPF-161, D8). */
+	private static Optional<UUID> orCarried(AgentTaskData td, RearmSpecificationType spec, Optional<UUID> own) {
+		if (own.isPresent()) return own;
+		CarriedRound carried = td.carriedRoundOf(spec);
+		return null == carried ? Optional.empty() : Optional.ofNullable(carried.release());
 	}
 
 	/**
@@ -1495,24 +1913,40 @@ public class AgentRoutingService {
 	 * the build boundary produce, the task's newest round at or above ASSEMBLED, not superseded, published by one of
 	 * those roles. The boundary is the role carrying {@code coordinatorCheckpoint}, else the first active role holding
 	 * {@code CODE_PUSH}, else none (every active role's prose counts). A round some other role published, or one with
-	 * no {@code publishedByRole}, is skipped for the previous round of its spec (F-9). Empty when nothing qualifies.
+	 * no {@code publishedByRole}, is skipped for the previous round of its spec (F-9). A split child carrying its
+	 * parent's design falls back, per document, to the carried round of a document it has not produced itself (task
+	 * TPF-161, D8). Empty when nothing qualifies.
 	 */
 	public List<UUID> reviewedDesign(AgentTaskData td, List<AgentTaskRoleConfigData> roles) {
-		List<AgentTaskRoleConfigData> active = roles.stream().filter(AgentTaskRoleConfigData::isActive)
-				.sorted(Comparator.comparingInt(AgentTaskRoleConfigData::getOrderIndex)).toList();
-		AgentTaskRoleConfigData boundary = active.stream().filter(AgentTaskRoleConfigData::isCoordinatorCheckpoint)
-				.findFirst()
-				.orElseGet(() -> active.stream().filter(r -> null != r.getRequiredCapabilities()
-						&& r.getRequiredCapabilities().contains(AgentCapability.CODE_PUSH))
-						.findFirst().orElse(null));
+		List<AgentTaskRoleConfigData> active = activeInOrder(roles);
+		AgentTaskRoleConfigData boundary = buildBoundary(active);
 		int floor = AgentTaskInputService.maturity(ReleaseLifecycle.ASSEMBLED);
 		List<UUID> design = new ArrayList<>();
 		for (Map.Entry<RearmSpecificationType, Set<String>> e
 				: designSpecsBefore(active, null == boundary ? null : boundary.getOrderIndex()).entrySet()) {
-			newestRoundOf(td, e.getKey(), floor, e.getValue()).map(ReleaseData::getUuid)
-					.filter(u -> !design.contains(u)).ifPresent(design::add);
+			Optional<UUID> own = newestRoundOf(td, e.getKey(), floor, e.getValue()).map(ReleaseData::getUuid);
+			orCarried(td, e.getKey(), own).filter(u -> !design.contains(u)).ifPresent(design::add);
 		}
 		return design;
+	}
+
+	/**
+	 * The build boundary of a board (task SPLIT-9, D2; task TPF-161, R-2): the first active role carrying
+	 * {@code coordinatorCheckpoint}, else the first active role holding {@code CODE_PUSH}, in role order; null when
+	 * neither exists.
+	 */
+	public static AgentTaskRoleConfigData buildBoundary(List<AgentTaskRoleConfigData> roles) {
+		List<AgentTaskRoleConfigData> active = activeInOrder(roles);
+		return active.stream().filter(AgentTaskRoleConfigData::isCoordinatorCheckpoint)
+				.findFirst()
+				.orElseGet(() -> active.stream().filter(r -> null != r.getRequiredCapabilities()
+						&& r.getRequiredCapabilities().contains(AgentCapability.CODE_PUSH))
+						.findFirst().orElse(null));
+	}
+
+	private static List<AgentTaskRoleConfigData> activeInOrder(List<AgentTaskRoleConfigData> roles) {
+		return roles.stream().filter(AgentTaskRoleConfigData::isActive)
+				.sorted(Comparator.comparingInt(AgentTaskRoleConfigData::getOrderIndex)).toList();
 	}
 
 	/**
@@ -1603,20 +2037,112 @@ public class AgentRoutingService {
 	 * reopen since names a role ordered before {@code rc}, and no agent-published ARCHITECTURE round at or above
 	 * ASSEMBLED -- an advisory round included -- was created since. A new THREAT_MODEL round alone does not unsettle it.
 	 */
-	private boolean checkpointStands(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AgentTaskRoleConfigData rc) {
+	boolean checkpointStands(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AgentTaskRoleConfigData rc) {
 		DesignCheckpoint cp = td.getDesignCheckpoint();
 		if (null == cp || cp.pending() || null == cp.settledAt()) return false;
-		if (null != td.getReopens()) {
-			for (Reopen ro : td.getReopens()) {
-				if (null == ro.at() || !ro.at().isAfter(cp.settledAt())) continue;
-				boolean designRole = roles.stream()
-						.filter(r -> null != ro.roleUuid() ? ro.roleUuid().equals(r.getUuid()) : r.getName().equalsIgnoreCase(ro.role()))
-						.anyMatch(r -> r.getOrderIndex() < rc.getOrderIndex());
-				if (designRole) return false;
-			}
-		}
+		if (reopenedToDesignRoleSince(td, roles, rc, cp.settledAt())) return false;
 		return !publishedSince(td, Map.of(RearmSpecificationType.ARCHITECTURE,
 				AgentTaskInputService.maturity(ReleaseLifecycle.ASSEMBLED)), cp.settledAt());
+	}
+
+	/** Whether a reopen after {@code since} names a role ordered before {@code rc}: the design runs again. */
+	private static boolean reopenedToDesignRoleSince(AgentTaskData td, List<AgentTaskRoleConfigData> roles,
+			AgentTaskRoleConfigData rc, ZonedDateTime since) {
+		if (null == td.getReopens()) return false;
+		for (Reopen ro : td.getReopens()) {
+			if (null == ro.at() || !ro.at().isAfter(since)) continue;
+			boolean designRole = roles.stream()
+					.filter(r -> null != ro.roleUuid() ? ro.roleUuid().equals(r.getUuid()) : r.getName().equalsIgnoreCase(ro.role()))
+					.anyMatch(r -> r.getOrderIndex() < rc.getOrderIndex());
+			if (designRole) return true;
+		}
+		return false;
+	}
+
+	// ---------- the architect's waiver of the design checkpoint (task TPF-152) ----------
+
+	/** The start of the checkpoint record's note when a waiver settled it: {@code waived by <role>: <note>}. */
+	public static final String WAIVED_NOTE_PREFIX = "waived by ";
+
+	/**
+	 * The task's newest agent-published ARCHITECTURE round at or above ASSEMBLED (W5, F-3): a newest-first walk over
+	 * the task's releases that skips what is not this task's live ARCHITECTURE document, a round the board cut (no
+	 * session) and a round below ASSEMBLED, so a newer DRAFT or a person-published round hides nothing.
+	 */
+	public Optional<ReleaseData> newestLiveArchitecture(AgentTaskData td) {
+		List<UUID> linked = null == td.getReleases() ? List.of() : td.getReleases();
+		int assembled = AgentTaskInputService.maturity(ReleaseLifecycle.ASSEMBLED);
+		for (int i = linked.size() - 1; i >= 0; i--) {
+			Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(linked.get(i));
+			if (ord.isEmpty()) continue;
+			DocumentRef doc = ord.get().getDocument();
+			if (null == doc || RearmSpecificationType.ARCHITECTURE != doc.specification()
+					|| !td.getUuid().equals(doc.task()) || doc.superseded() || null == doc.session()) {
+				continue;
+			}
+			int maturity = AgentTaskInputService.maturity(ord.get().getLifecycle());
+			if (maturity < 0 || maturity < assembled) continue;
+			return ord;
+		}
+		return Optional.empty();
+	}
+
+	/**
+	 * The round of the task's waiver when routing would honour it before {@code rc} now (W5): the board's switch is
+	 * on, the waiver names the newest live ARCHITECTURE round and no reopen to a role before {@code rc} is newer than
+	 * it. Null when no waiver stands.
+	 */
+	private ReleaseData standingWaiverRound(AgentTaskData td, AgentBoardData board, List<AgentTaskRoleConfigData> roles,
+			AgentTaskRoleConfigData rc) {
+		DesignCheckpointWaiver w = td.getDesignCheckpointWaiver();
+		if (null == w || null == w.designRound() || !board.getEffectiveArchitectCheckpointWaiver()) return null;
+		Optional<ReleaseData> newest = newestLiveArchitecture(td);
+		if (newest.isEmpty() || !w.designRound().equals(newest.get().getUuid())) return null;
+		if (null != w.at() && reopenedToDesignRoleSince(td, roles, rc, w.at())) return null;
+		return newest.get();
+	}
+
+	/**
+	 * Whether routing would honour the task's waiver now (W5), before the board's active flagged role: what
+	 * {@code designCheckpointWaiver.standing} reads. False without a waiver or without a flagged role.
+	 */
+	public boolean waiverStands(AgentTaskData td, AgentBoardData board) {
+		if (null == td.getDesignCheckpointWaiver() || null == board) return false;
+		List<AgentTaskRoleConfigData> roles = activeRoles(board);
+		AgentTaskRoleConfigData flagged = roles.stream().filter(AgentTaskRoleConfigData::isCoordinatorCheckpoint)
+				.findFirst().orElse(null);
+		return null != flagged && null != standingWaiverRound(td, board, roles, flagged);
+	}
+
+	/**
+	 * Clear the task's waiver when a reopen names {@code rc}, a role ordered before the board's active flagged role
+	 * (4.4): the design runs again. A reopen to the flagged role or a later one, or a board without one, leaves it.
+	 */
+	public void clearWaiverOnReopen(AgentTaskData td, AgentBoardData board, AgentTaskRoleConfigData rc) {
+		if (null == td.getDesignCheckpointWaiver()) return;
+		boolean beforeFlagged = activeRoles(board).stream().filter(AgentTaskRoleConfigData::isCoordinatorCheckpoint)
+				.anyMatch(f -> f.getOrderIndex() > rc.getOrderIndex());
+		if (beforeFlagged) td.setDesignCheckpointWaiver(null);
+	}
+
+	/**
+	 * {@code ; --no-split by <role> on <round> ignored: architectCheckpointWaiver is off on this board} when the board's
+	 * switch is off and the task's waiver names the ARCHITECTURE round in {@code design}; empty otherwise.
+	 */
+	private String ignoredWaiver(AgentTaskData td, AgentBoardData board, List<UUID> design) {
+		DesignCheckpointWaiver w = td.getDesignCheckpointWaiver();
+		if (null == w || null == w.designRound() || board.getEffectiveArchitectCheckpointWaiver()
+				|| !design.contains(w.designRound())) {
+			return "";
+		}
+		String round = sharedReleaseService.getReleaseData(w.designRound()).map(AgentRoutingService::roundLabel)
+				.orElse("release " + w.designRound());
+		return "; --no-split by " + w.role() + " on " + round + " ignored: architectCheckpointWaiver is off on this board";
+	}
+
+	/** Whether an active role of the board is marked blindReview (F-14), over the roles routing already holds. */
+	static boolean boardHasBlindRole(List<AgentTaskRoleConfigData> roles) {
+		return null != roles && roles.stream().anyMatch(r -> r.isActive() && r.isBlindReview());
 	}
 
 	private void toCoordinator(AgentTaskData td, String why, BoardEffects effects) {

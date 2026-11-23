@@ -1,4 +1,4 @@
-<!-- orientation section: taking-a-task · core 2026-10-25 -->
+<!-- orientation section: taking-a-task · core 2026-11-10 -->
 ### 2.5 Taking a task (task boards)
 
 Ask for work with `rearm agent task next --session <session-uuid>`,
@@ -16,7 +16,7 @@ next` declared, so a board that enforces strict priority ranks you
 only against work you could take. The server also answers each offer's
 served prompt by version (`promptByVersion`, 2.5d): a client that sends
 the version it holds in `heldVersions` is answered `UNCHANGED` without
-the text when nothing changed. With rearm CLI `26.10.17` or later,
+the text when nothing changed. With rearm CLI `26.11.5` or later,
 `wait` and `task next` print the text only when you do not pass the
 version you hold with `--prompt-version`; `--full-prompt` prints it
 anyway (2.5d).
@@ -85,7 +85,8 @@ board; read the tasks that moved.
 
 **The design checkpoint.** A board may put a coordinator checkpoint before a
 role, usually the coder: once the design is reviewed, the task stops at the
-coordinator with an ALERT instead of going to that role, and its
+coordinator with an ALERT instead of going to that role, unless the architect
+signed its newest design round off `--no-split` (below), and its
 `designCheckpoint` reads `PENDING`. The ALERT names the design rounds and the
 architect's sign-off note; `task show <key>` has the rounds. Read the design,
 then split the task (each child carries the design as pinned inputs) or send it
@@ -97,10 +98,41 @@ rearm agent task split <key> --session <seat-session-uuid> \
 rearm agent task authorize <key> --session <seat-session-uuid> --role coder
 ```
 
-Either is recorded on the task as the decision. Authorizing a design role
+Either is recorded on the task as the decision. An architect whose design fits
+one coder pass signs it off with `--no-split`: the task does not stop, the
+coder is queued with the INFO `design checkpoint before coder waived by
+architect on ARCHITECTURE round <n>`, and `designCheckpoint` reads `SENT_ON`
+with the note `waived by architect: <note>`. The waiver is per design round: a
+new ARCHITECTURE round without the flag stops the task here as before, a reopen
+to the architect clears it, and a board whose
+`settings.architectCheckpointWaiver` is off records the flag and stops the task
+anyway (the ALERT says so). You keep `task hold`, `task reopen` and `task split`
+on a waived task. Authorizing a design role
 instead sends the task round again, and it comes back to the checkpoint. A new
 ARCHITECTURE round after the task was sent on, an advisory one included, stops
 it here again before the role's next hop.
+
+**An answer marked no change.** A hop that answers a question with a new round
+and signs off `--no-change` does not go straight back to the asker: the task
+stops at the coordinator with an ALERT, and its `answerConfirmations` holds the
+entry PENDING. The ALERT names each answer round and the round before it
+(release, version, path); compare them, then
+`rearm agent task confirm-answer <key> --session <seat-session-uuid> --verdict CONFIRMED`
+(the earlier passes stand and the task goes on to the first role without a current pass, which is
+the asker unless something else moved) or `--verdict REFUSED` (every role whose
+pass no longer stands reviews the round first). Sending the task on with
+`authorize` instead confirms nothing: the round counts as a change. You cannot
+confirm an answer your own agent gave, as the seat or with a personal key of the
+user whose key that agent runs on.
+
+A child marked `designFromParent` at the split (`"designFromParent":true` on
+the child in `--children-json`) carries the parent's reviewed rounds as its
+design, lists them under `carried from <parent key>`, and goes to the build
+role: its design-stage roles count as passed on the parent's passes, which its
+`carriedDesign` names, until it publishes a round of its own or is reopened to
+one of them. It stops here only once it publishes its own round. On a carried
+child, work that the child's description asks for and the carried design does
+not cover is a review item about ARCHITECTURE, not something to build.
 
 **A split request.** A task in AWAITING_COORDINATOR whose
 `splitRequest.state` is `REQUESTED` was returned with `--reason SPLIT`; the
@@ -114,9 +146,30 @@ ALERT names (on a board with a blind role it names only their count) and
 pass it with `--children-json`; an older CLI's `task show` does not print
 the request, the UI does once SPLIT-9c is deployed. Or authorize without a
 note (the request is then declined with `authorized for <role>`). Either is
-recorded on the request. Every split pins the parent's newest handed-over
+recorded on the request. A proposed child may say `designFromParent`; the
+coordinator decides: `--from-request` keeps it, your own `--children-json`
+may drop it. Every split pins the parent's newest handed-over
 design on the children, with or without a checkpoint; a parent with no
 design round pins nothing and the split's INFO says so.
+
+**Conditional roles.** A board may make an OPTIONAL role run only on tasks
+with, or without, a tag: `runWhen` on the role config (`taggedAny`,
+`taggedNone`; tag keys, values ignored). When the task's tags do not meet it,
+routing passes the role over with no hop and no event; the task's
+`rolesSkippedByCondition` names the role, the reason (`runWhen not met: no
+mutation tag`) and when, and the QUEUED row of that walk reads `passed over
+<role> (...)`. The condition is read when routing reaches the role and never
+again on its own: a tag added later changes nothing until routing next reaches
+the role. To run it now, the coordinator names it with the verb the task's
+state admits: while QUEUED, `rearm agent task hold <key> --session
+<seat-session-uuid> --reason '<why>'` then `rearm agent task lifthold <key>
+--session <seat-session-uuid> --role <role>`; once back with the coordinator,
+`rearm agent task authorize <key> --session <seat-session-uuid> --role
+<role>`; once completed, `rearm agent task reopen <key> --session
+<seat-session-uuid> --role <role> --reason '<why>'`. Each runs the role
+whatever the tags, for that round. A REQUIRED role never carries a condition.
+If you hold a task in a conditional role and its tags do not meet the
+condition, the coordinator named you on it: do the role's work.
 
 A board's events are a log with a cursor (`seq`). Read what happened since
 your last poll with

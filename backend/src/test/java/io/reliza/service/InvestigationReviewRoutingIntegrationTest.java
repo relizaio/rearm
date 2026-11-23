@@ -7,7 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +23,7 @@ import io.reliza.model.AgentTaskData.SignOffOutcome;
 import io.reliza.model.AgentTaskData.TaskStatus;
 import io.reliza.model.RearmSpecificationType;
 import io.reliza.model.ReleaseData;
+import io.reliza.service.AgentDocumentService.PublishRequest;
 import io.reliza.ws.App;
 
 /**
@@ -76,6 +80,87 @@ public class InvestigationReviewRoutingIntegrationTest extends InvestigationTest
 		assertEquals("coder", next.getRole(), "the researcher (order 5) only investigates; the coder is next");
 		assertTrue(AgentRoutingService.investigatesOnly(roleNamed(r, "researcher")));
 		assertFalse(AgentRoutingService.investigatesOnly(roleNamed(r, "tester")));
+	}
+
+	/**
+	 * Task TPF-171 (D11, T-21): an investigation keeps its own path when a question is answered --no-change with an
+	 * output: back to the investigating role, no confirmation record.
+	 */
+	@Test
+	public void anAnswerOnAnInvestigationGoesBackToTheInvestigator() throws RelizaException {
+		Rig r = rig();
+		AgentTaskData from = held(r, "architect", r.architect());
+		AgentTaskData inv = commissionedFrom(r, from, ask("tester", from.getUuid()));
+		agentTaskService.assign(inv.getUuid(), board(r), r.tester().agentUuid(), r.tester().sessionUuid(), WU);
+		Map<String, Object> item = new LinkedHashMap<>();
+		item.put("id", "q1");
+		item.put("priority", 1);
+		item.put("status", "OPEN");
+		item.put("title", "which screen?");
+		Map<String, Object> index = new LinkedHashMap<>();
+		index.put("kind", "BOARD_QUESTIONS");
+		index.put("verdict", "REJECTED");
+		index.put("reviewItems", new ArrayList<>(List.of(item)));
+		index.put("about", Map.of("specification", "ARCHITECTURE"));
+		ReleaseData q = agentDocumentService.publish(r.tester().session(), new PublishRequest(inv.getUuid(),
+				RearmSpecificationType.BOARD_QUESTIONS, null, null, null, null, null, null, index, null, null, null, null,
+				null), WU);
+		AgentTaskData asked = agentTaskService.signOff(inv.getUuid(), r.tester().sessionUuid(), SignOffOutcome.REJECTED,
+				"asking", List.of(q.getUuid()), WU);
+		assertEquals(TaskStatus.QUEUED, asked.getStatus(), asked.getStatusHistory().toString());
+		assertEquals("architect", asked.getRole());
+
+		Worker architect = worker(r.org(), "architect-again");
+		agentTaskService.assign(inv.getUuid(), board(r), architect.agentUuid(), architect.sessionUuid(), WU);
+		ReleaseData design = publish(architect, reload(inv), RearmSpecificationType.ARCHITECTURE);
+		AgentTaskData answered = agentTaskService.signOff(inv.getUuid(), architect.sessionUuid(), SignOffOutcome.PASSED,
+				"as it was", List.of(design.getUuid()), null, Boolean.TRUE, WU);
+
+		assertEquals(TaskStatus.QUEUED, answered.getStatus(), answered.getStatusHistory().toString());
+		assertEquals("tester", answered.getRole(), "back to the investigating role");
+		assertTrue(answered.getAnswerConfirmations().isEmpty(), "no confirmation record");
+	}
+
+	/**
+	 * TPF-172 mutation round (D11): a second --no-change answer on an investigation, with a round before it to compare
+	 * with, still goes back to the investigating role: the investigation guard, not the lack of a base, keeps it from
+	 * stopping at the coordinator.
+	 */
+	@Test
+	public void aSecondNoChangeAnswerWithABaseOnAnInvestigationStillGoesBack() throws RelizaException {
+		Rig r = rig();
+		AgentTaskData from = held(r, "architect", r.architect());
+		AgentTaskData inv = commissionedFrom(r, from, ask("tester", from.getUuid()));
+		AgentTaskData answered = null;
+		for (int i = 1; i <= 2; i++) {
+			agentTaskService.assign(inv.getUuid(), board(r), r.tester().agentUuid(), r.tester().sessionUuid(), WU);
+			Map<String, Object> item = new LinkedHashMap<>();
+			item.put("id", "q" + i);
+			item.put("priority", 1);
+			item.put("status", "OPEN");
+			item.put("title", "which screen " + i + "?");
+			Map<String, Object> index = new LinkedHashMap<>();
+			index.put("kind", "BOARD_QUESTIONS");
+			index.put("verdict", "REJECTED");
+			index.put("reviewItems", new ArrayList<>(List.of(item)));
+			index.put("about", Map.of("specification", "ARCHITECTURE"));
+			ReleaseData q = agentDocumentService.publish(r.tester().session(), new PublishRequest(inv.getUuid(),
+					RearmSpecificationType.BOARD_QUESTIONS, null, null, null, null, null, null, index, null, null, null, null,
+					null), WU);
+			AgentTaskData asked = agentTaskService.signOff(inv.getUuid(), r.tester().sessionUuid(), SignOffOutcome.REJECTED,
+					"asking " + i, List.of(q.getUuid()), WU);
+			assertEquals("architect", asked.getRole(), asked.getStatusHistory().toString());
+
+			Worker architect = worker(r.org(), "architect-" + i);
+			agentTaskService.assign(inv.getUuid(), board(r), architect.agentUuid(), architect.sessionUuid(), WU);
+			ReleaseData design = publish(architect, reload(inv), RearmSpecificationType.ARCHITECTURE);
+			answered = agentTaskService.signOff(inv.getUuid(), architect.sessionUuid(), SignOffOutcome.PASSED, "as it was " + i,
+					List.of(design.getUuid()), null, Boolean.TRUE, WU);
+		}
+
+		assertEquals(TaskStatus.QUEUED, answered.getStatus(), answered.getStatusHistory().toString());
+		assertEquals("tester", answered.getRole(), "back to the investigating role, as the first answer was");
+		assertTrue(answered.getAnswerConfirmations().isEmpty(), "no confirmation record, though round 1 is there to compare with");
 	}
 
 	@Test

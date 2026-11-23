@@ -1,4 +1,4 @@
-<!-- orientation section: asking · core 2026-10-25 -->
+<!-- orientation section: asking · core 2026-11-10 -->
 ### 2.5b Asking a question (task boards)
 
 When you cannot finish because something you were given is wrong, unclear or
@@ -50,6 +50,17 @@ dealt with, which is why a design document — carrying no index, and unable to
 close an id — can still answer one. If you cannot answer, do not pass: reject,
 or ask upward, and the question stays where it is rather than going back to
 someone who will find it still open.
+
+**When your answer changes what is built**, just pass: the board sends your new
+round to every role whose pass no longer stands (the design's reviewers) before
+the asker gets the task back, so nobody builds on a round nobody reviewed.
+**When it changes nothing** (the document already said it and you only made it
+plainer, or you answered without changing the design), sign off with
+`--no-change`: the task stops at the coordinator, who compares your round with
+the previous one and either confirms it (the earlier reviews stand and the task
+returns to the asker, unless another pass is stale, which is reviewed first) or
+refuses it (it is reviewed as a change). Say `--no-change` only when a reviewer
+would have nothing to re-check; when in doubt, leave it out.
 
 If you cannot answer either, ask upward the same way: publish your own
 `BOARD_QUESTIONS` index, with the same ids, about one of your inputs. The board

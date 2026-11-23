@@ -6,6 +6,7 @@ package io.reliza.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.ZonedDateTime;
@@ -26,6 +27,8 @@ import io.reliza.model.dto.notifications.InstanceRef;
 import io.reliza.model.dto.UpdateStatus;
 import io.reliza.model.dto.notifications.AffectedRelease;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
+import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
+import io.reliza.model.dto.notifications.ReleaseRef;
 import io.reliza.model.NotificationEventType;
 import io.reliza.model.NotificationOutboxEvent;
 import io.reliza.model.NotificationSeverity;
@@ -182,6 +185,58 @@ class EventActivationMapBuilderTest {
         // the populator early-returned).
         assertFalse(event.containsKey("affectedComponent"));
         assertFalse(event.containsKey("affectedReleases"));
+    }
+
+    /** TPF-158 row 6: event.componentKind is on the CEL surface of every release-shaped type. */
+    @Test
+    void releaseEventsExposeComponentKind() {
+        for (NotificationEventType type : ReleaseShapedEvents.TYPES) {
+            Object payload = ReleaseShapedEvents.payload(type, ReleaseShapedEvents.ref("BOARD_DOCUMENT"));
+            Map<String, Object> event = castEvent(builder.buildForEvent(eventOf(type, payload)));
+            assertEquals("BOARD_DOCUMENT", event.get("componentKind"), "componentKind on " + type);
+        }
+    }
+
+    /** TPF-158 row 7: an absent kind is the empty string, never an omitted key. */
+    @Test
+    void componentKindIsEmptyWhenAbsent() {
+        Map<String, Object> fromRecord = castEvent(builder.buildForEvent(eventOf(
+                NotificationEventType.RELEASE_CREATED,
+                new ReleaseCreatedPayload(ReleaseShapedEvents.ref(null), false))));
+        assertEquals("", fromRecord.get("componentKind"));
+
+        Map<String, Object> olderRelease = new HashMap<>();
+        olderRelease.put("releaseUuid", UUID.randomUUID().toString());
+        olderRelease.put("version", "v2.0");
+        Map<String, Object> olderPayload = new HashMap<>();
+        olderPayload.put("release", olderRelease);
+        olderPayload.put("scheduled", false);
+        NotificationOutboxEvent ev = new NotificationOutboxEvent();
+        ev.setOrg(UUID.randomUUID());
+        ev.setEventType(NotificationEventType.RELEASE_CREATED);
+        ev.setOccurredAt(ZonedDateTime.now());
+        ev.setRecordData(olderPayload);
+        Map<String, Object> fromOlderRow = castEvent(builder.buildForEvent(ev));
+        assertTrue(fromOlderRow.containsKey("componentKind"), "the key is present even on an older payload");
+        assertEquals("", fromOlderRow.get("componentKind"));
+        assertEquals("v2.0", fromOlderRow.get("version"));
+    }
+
+    /** TPF-158 row 5: the back-compat constructor yields null; Jackson binds the canonical one. */
+    @Test
+    void releaseRefBackCompatConstructorAndJacksonBinding() {
+        assertNull(ReleaseShapedEvents.ref(null).componentKind());
+
+        Map<String, Object> map = new HashMap<>();
+        map.put("releaseUuid", UUID.randomUUID().toString());
+        map.put("version", "v1.0");
+        map.put("componentKind", "BOARD_DOCUMENT");
+        ReleaseRef read = Utils.OM.convertValue(map, ReleaseRef.class);
+        assertEquals("BOARD_DOCUMENT", read.componentKind());
+        assertEquals("v1.0", read.version());
+
+        map.remove("componentKind");
+        assertNull(Utils.OM.convertValue(map, ReleaseRef.class).componentKind());
     }
 
     // ---------- helpers ----------

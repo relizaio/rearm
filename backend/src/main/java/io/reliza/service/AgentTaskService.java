@@ -36,6 +36,9 @@ import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentActor;
 import io.reliza.model.AgentBoardData;
+import io.reliza.model.AgentData;
+import io.reliza.model.AgentIdentityCredential;
+import io.reliza.model.ApiKey;
 import io.reliza.model.ComponentData;
 import io.reliza.model.AgentTaskData.QuestionFrame;
 import io.reliza.model.AgentTaskInput.InputKind;
@@ -49,6 +52,11 @@ import io.reliza.model.AgentTask;
 import io.reliza.model.AgentSessionData;
 import io.reliza.model.AgentTaskData;
 import io.reliza.model.AgentTaskData.StatusTrigger;
+import io.reliza.model.AgentTaskData.CarriedDesign;
+import io.reliza.model.AgentTaskData.CarriedRole;
+import io.reliza.model.AgentTaskData.CarriedRound;
+import io.reliza.model.AgentTaskData.DesignCheckpoint;
+import io.reliza.model.AgentTaskData.DesignCheckpointWaiver;
 import io.reliza.model.AgentTaskInput.RequiredInput;
 import io.reliza.model.AgentTaskInput.SplitChild;
 import io.reliza.model.AgentTaskInput.ResolvedInput;
@@ -142,6 +150,16 @@ public class AgentTaskService {
 
 	@Autowired
 	private AuditService auditService;
+
+	// Lazy: read only by the answer verdict's self-confirmation check (task TPF-171, D10).
+	@Autowired @Lazy
+	private AgentService agentService;
+
+	@Autowired @Lazy
+	private AgentIdentityService agentIdentityService;
+
+	@Autowired @Lazy
+	private ApiKeyService apiKeyService;
 
 	/**
 	 * What a polling or assigned worker receives: the task, its role and the served prompt.
@@ -274,7 +292,7 @@ public class AgentTaskService {
 				}
 			}
 			out.add(new SplitChild(title, ref, c.sourceUrl(), c.workLevel(), c.producesComponent(),
-					c.dependsOnSiblingIndexes(), c.description(), group, tags));
+					c.dependsOnSiblingIndexes(), c.description(), group, tags, c.designFromParent()));
 		}
 		return out;
 	}
@@ -1015,6 +1033,99 @@ public class AgentTaskService {
 		return saved;
 	}
 
+	/**
+	 * Who gives a verdict on an answer marked no change (task TPF-171, D10), as the fetcher knows them: the seat's agent,
+	 * or the owner of the personal key a person called with. Either may be null: a browser person is neither.
+	 */
+	public record Confirmer(UUID agent, UUID keyOwner) {}
+
+	/**
+	 * The coordinator's verdict on an answer signed off {@code --no-change} (task TPF-171, D6). The task waits on the
+	 * coordinator with a PENDING confirmation; CONFIRMED keeps the earlier passes (the rounds stale nothing) and the
+	 * forward walk goes on to the first role without a current pass, REFUSED runs the same walk with the rounds counted
+	 * as a change. The verdict is written to the record and as a status-history row before anything is routed, so the
+	 * history holds who, when and which releases however the walk ends.
+	 *
+	 * <p>CONFIRMED is refused for the agent that answered, by agent on the seat and by key owner with a personal key
+	 * (D10), and when the asker could not read its inputs. REFUSED is never refused on those grounds: it only adds
+	 * review. The budget is not checked here: the walk's own stop parks the task (D12).
+	 */
+	@Transactional(rollbackFor = RelizaException.class)
+	public AgentTaskData confirmAnswer(UUID taskUuid, AgentBoardData board, AgentTaskData.AnswerVerdict verdict,
+			String note, AgentActor actor, Confirmer caller, WhoUpdated wu) throws RelizaException {
+		note = checkedNote(note);
+		if (null == verdict) throw new RelizaException("verdict is CONFIRMED or REFUSED");
+		AgentTaskData td = lockedTask(taskUuid);
+		requireStatus(td, taskUuid, TaskStatus.AWAITING_COORDINATOR);
+		AgentTaskData.AnswerConfirmation pending = td.pendingAnswerConfirmation();
+		if (null == pending) throw new RelizaException("Task " + label(td) + " has no answer awaiting confirmation");
+		boolean confirmed = AgentTaskData.AnswerVerdict.CONFIRMED == verdict;
+		if (confirmed) {
+			if (answeredItself(caller, pending)) {
+				throw new RelizaException("The agent that answered cannot confirm its own answer on task " + label(td)
+						+ "; refuse it, or leave it to the coordinator");
+			}
+			AgentTaskRoleConfigData asker = agentBoardService.listRoleConfigs(board.getUuid()).stream()
+					.filter(rc -> rc.getUuid().equals(pending.askingRole())).findFirst().orElse(null);
+			if (null == asker || !asker.isActive()) {
+				throw new RelizaException("Confirming would queue the role that asked, which is no longer active on this"
+						+ " board; refuse the answer so it is reviewed");
+			}
+			List<String> unmet = agentTaskInputService.evaluate(board, asker, td).stream().filter(v -> !v.met())
+					.map(AgentTaskInputService.InputVerdict::unmetReason).toList();
+			if (!unmet.isEmpty()) {
+				throw new RelizaException("Confirming would queue " + asker.getName() + " without its inputs ("
+						+ String.join("; ", unmet) + "); refuse the answer so it is reviewed");
+			}
+		}
+		td.settleAnswerConfirmation(confirmed ? AgentTaskData.AnswerConfirmationState.CONFIRMED
+				: AgentTaskData.AnswerConfirmationState.REFUSED, actor, note);
+		AgentTaskData.AnswerConfirmation settled = td.getAnswerConfirmations().get(td.getAnswerConfirmations().size() - 1);
+		String who = null == actor ? "someone" : actor.display();
+		String rounds = AgentRoutingService.verdictRounds(settled);
+		String line = confirmed ? "answer confirmed no change by " + who + ": " + rounds
+				: "no change refused by " + who + ": " + rounds + "; reviewed as a change";
+		td.transitionStatus(TaskStatus.AWAITING_COORDINATOR,
+				confirmed ? StatusTrigger.ANSWER_CONFIRMED : StatusTrigger.ANSWER_REFUSED, actor, line);
+		AgentRoutingService.Routed routed = confirmed ? routingService.routeAnswerConfirmed(td, board, settled, line)
+				: routingService.routeAnswerRefused(td, board, settled, line);
+		AgentTaskData saved = saveData(routed.task(), wu);
+		boardEffectsApplier.applyAfterCommit(routed.effects(), wu);
+		return saved;
+	}
+
+	/**
+	 * Whether the caller is the agent that gave the answer (task TPF-171, D10, F-4): the same agent on the seat, or,
+	 * with a personal key, the owner of a USER key bound to the answering agent's identity.
+	 */
+	private boolean answeredItself(Confirmer caller, AgentTaskData.AnswerConfirmation pending) {
+		if (null == caller) return false;
+		if (null != caller.agent() && caller.agent().equals(pending.agent())) return true;
+		return null != caller.keyOwner() && answererKeyOwners(pending.agent()).contains(caller.keyOwner());
+	}
+
+	/**
+	 * The owners of every USER key among the API-key credentials of the answering agent's identity, read now. An
+	 * unreadable agent, identity or key contributes no owner; a FREEFORM key has none.
+	 */
+	private Set<UUID> answererKeyOwners(UUID agentUuid) {
+		Set<UUID> owners = new LinkedHashSet<>();
+		if (null == agentUuid) return owners;
+		UUID identity = agentService.getAgentData(agentUuid).map(AgentData::getAgentIdentity).orElse(null);
+		for (AgentIdentityCredential c : agentIdentityService.listCredentials(identity)) {
+			if (!AgentIdentityCredential.IdentityType.REARM_API_KEY.name().equals(c.getIdentityType())) continue;
+			UUID keyUuid;
+			try {
+				keyUuid = UUID.fromString(c.getIdentityValue());
+			} catch (IllegalArgumentException e) {
+				continue;
+			}
+			apiKeyService.getApiKey(keyUuid).filter(k -> ApiKey.ApiTypeEnum.USER == k.getObjectType())
+					.map(ApiKey::getObjectUuid).ifPresent(owners::add);
+		}
+		return owners;
+	}
+
 	private void validateDependencies(AgentTaskData td, List<UUID> dependsOn) throws RelizaException {
 		for (UUID dep : dependsOn) {
 			if (dep.equals(td.getUuid())) throw new RelizaException("Task cannot depend on itself");
@@ -1709,8 +1820,16 @@ public class AgentTaskService {
 		// Every split pins the parent's newest handed-over design on every child, whatever the status or the
 		// checkpoint record says (task SPLIT-9, D1, D2); a PENDING checkpoint is still settled below (SPLIT-5, D7).
 		boolean atCheckpoint = td.checkpointPending();
-		List<UUID> design = routingService.reviewedDesign(td, agentBoardService.listRoleConfigs(lockedBoard.getUuid()));
+		List<AgentTaskRoleConfigData> roleConfigs = agentBoardService.listRoleConfigs(lockedBoard.getUuid());
+		List<UUID> design = routingService.reviewedDesign(td, roleConfigs);
 		List<RequiredInput> carried = carriedDesign(design);
+		// A child marked designFromParent builds from this design (task TPF-161, D2): checked on the parent before any
+		// child is registered, so a refusal leaves no child behind.
+		ZonedDateTime splitAt = ZonedDateTime.now();
+		SplitChild firstFlagged = children.stream().filter(SplitChild::carriesDesign).findFirst().orElse(null);
+		CarriedDesign carriedRecord = null == firstFlagged ? null
+				: checkedCarry(td, lockedBoard, roleConfigs, design, carried, firstFlagged.title(), splitAt, actor);
+		AgentTaskRoleConfigData boundary = AgentRoutingService.buildBoundary(roleConfigs);
 		// A child names its own group and tags or inherits the parent's (task-groups-and-tags.md D9).
 		String parentGroup = lockedBoard.groupByUuid(td.getGroup()).map(AgentBoardData.TaskGroup::key).orElse(null);
 		List<AgentTaskData> created = new ArrayList<>();
@@ -1723,6 +1842,7 @@ public class AgentTaskService {
 					null != td.getRegisteredBySession() ? AgentActor.ofSession(td.getRegisteredBySession()) : null,
 					false, StringUtils.isNotBlank(c.group()) ? c.group() : parentGroup,
 					null != c.tags() ? c.tags() : td.getTags(), wu);
+			if (c.carriesDesign()) child = carryDesign(child, carriedRecord, boundary, design, actor, wu);
 			created.add(child);
 			td.addChildTask(child.getUuid());
 		}
@@ -1754,10 +1874,145 @@ public class AgentTaskService {
 		// What the children received, posted after the commit (task SPLIT-9, D3).
 		BoardEffects effects = new BoardEffects(td.getBoard());
 		effects.info("Task " + taskLabel(td) + " split into " + splitNote + "; "
-				+ (null == carried ? "no design round to carry" : "each carries " + routingService.roundsLine(design)));
+				+ (null == carried ? "no design round to carry" : "each carries " + routingService.roundsLine(design))
+				+ buildsFromClause(children, created, boundary));
 		saveData(td, wu);
 		boardEffectsApplier.applyAfterCommit(effects, wu);
 		return created;
+	}
+
+	/**
+	 * The split INFO's clause naming the children marked designFromParent (task TPF-161, D9), from the registered keys:
+	 * {@code ; <keys> build from it and go to <build role>}, {@code ; all build ...} when every child is; empty when
+	 * none is.
+	 */
+	private static String buildsFromClause(List<SplitChild> children, List<AgentTaskData> created,
+			AgentTaskRoleConfigData boundary) {
+		List<String> flagged = new ArrayList<>();
+		for (int i = 0; i < children.size(); i++) {
+			if (children.get(i).carriesDesign()) flagged.add(created.get(i).keyOrUuid());
+		}
+		if (flagged.isEmpty() || null == boundary) return "";
+		return "; " + (flagged.size() == children.size() ? "all" : String.join(", ", flagged)) + " build from it and go to "
+				+ boundary.getName();
+	}
+
+	/**
+	 * The checks a split runs on the parent for a child marked designFromParent (task TPF-161, D2, R-1 to R-5), and the
+	 * record each such child carries (D3). Every message starts with the child's title.
+	 *
+	 * @throws RelizaException R-1: no reviewed design round; R-2: no build role; R-3: a design-stage role with neither a
+	 *         current pass on the parent nor an unmet runWhen; R-4: the build role reads a document the design does not
+	 *         carry; R-5: a carried reviewer's current pass did not bind the carried round of a document it reads
+	 */
+	private CarriedDesign checkedCarry(AgentTaskData td, AgentBoardData board, List<AgentTaskRoleConfigData> roles,
+			List<UUID> design, List<RequiredInput> carried, String title, ZonedDateTime at, AgentActor actor)
+			throws RelizaException {
+		String needs = "child \"" + title + "\": designFromParent needs ";
+		String parent = td.keyOrUuid();
+		// R-1
+		if (null == carried) throw new RelizaException(needs + "a reviewed design round on " + parent + "; it has none");
+		// R-2
+		AgentTaskRoleConfigData boundary = AgentRoutingService.buildBoundary(roles);
+		if (null == boundary) {
+			throw new RelizaException(needs + "a build role on the board (coordinatorCheckpoint or CODE_PUSH)");
+		}
+		List<CarriedRound> rounds = new ArrayList<>();
+		for (UUID release : design) {
+			DocumentRef doc = sharedReleaseService.getReleaseData(release).map(ReleaseData::getDocument).orElse(null);
+			if (null != doc) rounds.add(new CarriedRound(doc.specification(), release, doc.round(), doc.path()));
+		}
+		// R-3: the design stage is complete on the parent. A role routing never runs on a work task is not part of it.
+		List<AgentTaskRoleConfigData> before = roles.stream().filter(AgentTaskRoleConfigData::isActive)
+				.filter(r -> r.getOrderIndex() < boundary.getOrderIndex())
+				.filter(r -> !AgentRoutingService.investigatesOnly(r))
+				.sorted(Comparator.comparingInt(AgentTaskRoleConfigData::getOrderIndex)).toList();
+		List<AgentTaskRoleConfigData> passed = new ArrayList<>();
+		for (AgentTaskRoleConfigData rc : before) {
+			if (routingService.hasCurrentPass(td, board, rc)) {
+				passed.add(rc);
+			} else if (null == AgentRoutingService.unmetCondition(td, rc)) {
+				throw new RelizaException(needs + parent + "'s design stage complete; " + rc.getName()
+						+ " has no current pass on it");
+			}
+		}
+		// R-4
+		List<RearmSpecificationType> specs = rounds.stream().map(CarriedRound::specification).toList();
+		for (RequiredInput ri : taskDocumentInputs(boundary)) {
+			if (!specs.contains(ri.specification())) {
+				throw new RelizaException(needs + ri.specification() + " for " + boundary.getName() + "; " + parent
+						+ "'s design carries only " + specs.stream().map(Enum::name).collect(Collectors.joining(", ")));
+			}
+		}
+		// R-5 and the record: each carried role names the parent sign-off its carry rests on.
+		List<CarriedRole> carriedRoles = new ArrayList<>();
+		for (AgentTaskRoleConfigData rc : passed) {
+			SignOff last = td.lastSignOffForRole(rc.getUuid(), rc.getName());
+			if (null == last) {
+				// The parent is itself a carried child: the role's pass is its live carry, which rests on these very
+				// rounds (any own round of what it reads would have ended it), so its record is copied.
+				CarriedRole own = null == td.getCarriedDesign() ? null
+						: td.getCarriedDesign().roleFor(rc.getUuid(), rc.getName());
+				if (null != own) carriedRoles.add(own);
+				continue;
+			}
+			if (AgentRoutingService.isReviewer(rc)) {
+				for (RequiredInput ri : taskDocumentInputs(rc)) {
+					CarriedRound round = rounds.stream().filter(cr -> cr.specification() == ri.specification())
+							.findFirst().orElse(null);
+					if (null == round || (null != last.reviewedInputs() && last.reviewedInputs().contains(round.release()))) {
+						continue;
+					}
+					Integer reviewed = reviewedRound(last, ri.specification());
+					throw new RelizaException(needs + rc.getName() + "'s pass on " + ri.specification() + " round "
+							+ round.round() + "; its pass reviewed " + (null == reviewed ? "no " + ri.specification() + " round"
+									: ri.specification() + " round " + reviewed));
+				}
+			}
+			boolean decidedOver = SignOffOutcome.PASSED != last.outcome()
+					&& agentDocumentService.rejectionDecidedOver(td, board.getBlockingPriority(), last);
+			carriedRoles.add(new CarriedRole(rc.getName(), rc.getUuid(), last.signedOffAt(), last.session(),
+					last.reviewedBy(), decidedOver));
+		}
+		return new CarriedDesign(td.getUuid(), parent, rounds, carriedRoles, at, actor);
+	}
+
+	/** A role's own TASK-scope document requirements that are not pinned to a release. */
+	private static List<RequiredInput> taskDocumentInputs(AgentTaskRoleConfigData rc) {
+		if (null == rc.getRequiredInputs()) return List.of();
+		return rc.getRequiredInputs().stream().filter(Objects::nonNull)
+				.filter(ri -> InputKind.DOCUMENT == ri.kind() && InputScope.TASK == ri.scope() && null == ri.release()
+						&& null != ri.specification())
+				.toList();
+	}
+
+	/** The round of {@code spec} among the releases a sign-off reviewed; null when it reviewed none. */
+	private Integer reviewedRound(SignOff so, RearmSpecificationType spec) {
+		if (null == so.reviewedInputs()) return null;
+		for (UUID r : so.reviewedInputs()) {
+			DocumentRef doc = sharedReleaseService.getReleaseData(r).map(ReleaseData::getDocument).orElse(null);
+			if (null != doc && spec == doc.specification()) return doc.round();
+		}
+		return null;
+	}
+
+	/**
+	 * A child marked designFromParent, registered: it carries the record (task TPF-161, D3) and, when the build role
+	 * carries the coordinator checkpoint, a checkpoint settled SENT_ON over the carried rounds in the seat's name (D6),
+	 * so the coordinator's authorize sends it to the build role without a stop.
+	 */
+	private AgentTaskData carryDesign(AgentTaskData registered, CarriedDesign record, AgentTaskRoleConfigData boundary,
+			List<UUID> design, AgentActor actor, WhoUpdated wu) throws RelizaException {
+		AgentTaskData child = lockedTask(registered.getUuid());
+		child.setCarriedDesign(record);
+		if (boundary.isCoordinatorCheckpoint()) {
+			String lastRole = record.roles().isEmpty() ? null : record.roles().get(record.roles().size() - 1).role();
+			child.setDesignCheckpoint(new DesignCheckpoint(record.at(), lastRole, boundary.getName(), boundary.getUuid(),
+					design, AgentTaskData.DesignCheckpointState.SENT_ON, actor, record.at(),
+					StringUtils.left("carried from " + record.parentKey() + ": " + routingService.roundsLine(design),
+							AgentRoutingService.CHECKPOINT_NOTE_CHARS)));
+		}
+		return saveData(child, wu);
 	}
 
 	/**
@@ -1988,7 +2243,8 @@ public class AgentTaskService {
 
 	/** At most this many tags on one task. */
 	public static final int MAX_TAGS = 20;
-	private static final java.util.regex.Pattern TAG_KEY = java.util.regex.Pattern.compile("[a-z0-9][a-z0-9._-]{0,39}");
+	/** A tag key after strip and lower-case; also the rule for the keys of a role's runWhen (task TPF-155). */
+	static final java.util.regex.Pattern TAG_KEY = java.util.regex.Pattern.compile("[a-z0-9][a-z0-9._-]{0,39}");
 
 	/**
 	 * Tags as given, normalised (D8): each key lower-cased and checked, no key twice, at most
@@ -2186,6 +2442,8 @@ public class AgentTaskService {
 		for (AgentTaskRoleConfigData rc : agentBoardService.listRoleConfigs(td.getBoard())) {
 			if (!rc.isActive() || rc.getNecessity() != AgentTaskRoleConfigData.RoleNecessity.REQUIRED) continue;
 			SignOff last = td.lastSignOffForRole(rc.getUuid(), rc.getName());
+			// A role a split child carries as passed counts while its carry is live (task TPF-161, D7).
+			if (null == last && routingService.carryLive(td, rc)) continue;
 			// A reopen to this role since its last hop makes that hop no pass at all.
 			if (null != last && td.reopenedSince(last)) last = null;
 			if (null != last && last.outcome() == SignOffOutcome.PASSED) continue;
@@ -2209,7 +2467,9 @@ public class AgentTaskService {
 				.filter(rc -> rc.getNecessity() == AgentTaskRoleConfigData.RoleNecessity.REQUIRED)
 				.filter(rc -> {
 					SignOff last = td.lastSignOffForRole(rc.getUuid(), rc.getName());
-					return last == null || td.reopenedSince(last) || last.outcome() != SignOffOutcome.PASSED;
+					// A role a split child carries as passed counts while its carry is live (task TPF-161, D7).
+					if (last == null) return !routingService.carryLive(td, rc);
+					return td.reopenedSince(last) || last.outcome() != SignOffOutcome.PASSED;
 				})
 				.map(AgentTaskRoleConfigData::getName)
 				.collect(Collectors.toList());
@@ -2634,6 +2894,8 @@ public class AgentTaskService {
 		// After the commit, board row after task row: the order the publish path depends on.
 		BoardEffects effects = new BoardEffects(td.getBoard());
 		effects.info(info);
+		// A reopen to a role before the flagged one runs the design again, so the author's waiver ends (TPF-152, 4.4).
+		routingService.clearWaiverOnReopen(td, board, rc);
 		// A reopen to the checkpoint's role or a later one is the actor's own look at the design (task SPLIT-5,
 		// 3.4); a reopen to a design role writes nothing: the checkpoint reads the Reopen row.
 		routingService.settleCheckpoint(td, board, rc, actor, "reopened to " + rc.getName(), effects);
@@ -2915,7 +3177,11 @@ public class AgentTaskService {
 		String pv = AgentBoardService.promptVersion(board, rc.getPrompt());
 		// the bindings are pinned: the agent is told which versions it works from, and a later
 		// rejection of one of them can be traced to the work that consumed it
-		List<ResolvedInput> bound = verdicts.stream().map(AgentTaskInputService.InputVerdict::resolved).toList();
+		// A waived verdict binds nothing (task TPF-155): it has no release to pin.
+		// Distinct (task TPF-161, D5): on a child carrying its parent's design, the pin and the role's requirement both
+		// resolve to the same parent release and build equal records; one entry per release is pinned.
+		List<ResolvedInput> bound = verdicts.stream().filter(v -> null != v.resolved())
+				.map(AgentTaskInputService.InputVerdict::resolved).distinct().toList();
 		// The heads the hop starts from (task RD4-2): each linked PR in play, at its head and on its base, so the
 		// sign-off can tell whether the hop's commits reached a PR and the task can say how far the base moved.
 		td.setAssignment(new TaskAssignment(sessionUuid, agentUuid, rc.getName(), rc.getUuid(),
@@ -3002,6 +3268,9 @@ public class AgentTaskService {
 	 * without it, a new round goes to the role that builds from it before the filer re-checks; with it,
 	 * the round accepts the state as built and the task goes back to the filer. Whether a round changes
 	 * what is built is the author's statement, so routing reads it rather than guessing from a diff.
+	 * On a PASSED that answers a question (task TPF-171), the answer changes nothing: the task stops at the
+	 * coordinator for confirmation instead of going through the roles whose pass the round would make stale;
+	 * absent, the answer is treated as a change.
 	 * Recorded on the sign-off; refused on a rejection, which hands nothing over.
 	 */
 	@Transactional(rollbackFor = RelizaException.class)
@@ -3023,6 +3292,22 @@ public class AgentTaskService {
 	public AgentTaskData signOff(UUID taskUuid, UUID sessionUuid, SignOffOutcome outcome,
 			String note, List<UUID> outputs, List<UUID> seenInputs, Boolean noChange, Boolean noCode, WhoUpdated wu)
 			throws RelizaException {
+		return signOff(taskUuid, sessionUuid, outcome, note, outputs, seenInputs, noChange, noCode, null, wu);
+	}
+
+	/**
+	 * As above, with the design author's waiver of the design checkpoint (task TPF-152, W1-W3).
+	 *
+	 * <p>{@code noSplit} on a PASSED by the role that produced the design round says the design fits one coder
+	 * pass: a coordinatorCheckpoint before the next building role does not stop the task while that ARCHITECTURE
+	 * round is the newest. Recorded on the sign-off and as the task's {@code designCheckpointWaiver}; refused,
+	 * before any write, on a rejection, without a note, without a design round, from a hop whose role does not
+	 * produce ARCHITECTURE on the board, on an advisory round and on a round another role's hop published.
+	 */
+	@Transactional(rollbackFor = RelizaException.class)
+	public AgentTaskData signOff(UUID taskUuid, UUID sessionUuid, SignOffOutcome outcome,
+			String note, List<UUID> outputs, List<UUID> seenInputs, Boolean noChange, Boolean noCode, Boolean noSplit,
+			WhoUpdated wu) throws RelizaException {
 		if (outcome == null) throw new RelizaException("Sign-off requires an outcome");
 		if (Boolean.TRUE.equals(noChange) && SignOffOutcome.PASSED != outcome) {
 			throw new RelizaException("--no-change says a passed round changes nothing to build; a rejection"
@@ -3032,10 +3317,17 @@ public class AgentTaskService {
 			throw new RelizaException("--no-code says a passed round changed no code; a rejection is not checked"
 					+ " for moved PRs, so sign off REJECTED without it");
 		}
+		boolean waives = Boolean.TRUE.equals(noSplit);
+		if (waives && SignOffOutcome.PASSED != outcome) {
+			throw new RelizaException("--no-split says a passed design fits one coder pass; a rejection hands nothing"
+					+ " over, so sign off REJECTED without it");
+		}
 		AgentTaskData td = lockedTask(taskUuid);
 		TaskAssignment a = requireAssignmentBySession(td, taskUuid, sessionUuid);
 		assertPublishedSinceAssignmentSeen(td, a, sessionUuid, outputs, seenInputs);
 		List<UUID> declared = validateOutputs(td, a, sessionUuid, outputs, outcome);
+		Optional<ReleaseData> declaredDesign = newestArchitectureOf(declared);
+		ReleaseData waivedRound = waives ? waiverRound(td, a, declaredDesign, note) : null;
 		if (SignOffOutcome.PASSED == outcome) assertPassLeavesNothingBlocking(td, declared);
 		// Before the gate as well as before routing: a gated hop hands over at the verdict, but the
 		// agent that can fix a failed check is the one signing off now (elements.md §7).
@@ -3056,7 +3348,14 @@ public class AgentTaskService {
 		td.addSignOff(new SignOff(a.role(), a.roleUuid(), a.agent(), a.session(), a.assignedAt(),
 				ZonedDateTime.now(), outcome, note, a.promptVersion(), null, usage, declared,
 				reviewed.isEmpty() ? null : reviewed, null, Boolean.TRUE.equals(noChange) ? Boolean.TRUE : null, null,
-				Boolean.TRUE.equals(noCode) ? Boolean.TRUE : null, a.baseHeads()));
+				Boolean.TRUE.equals(noCode) ? Boolean.TRUE : null, a.baseHeads(), waives ? Boolean.TRUE : null));
+		// The waiver names one design round (W3): the flag rewrites it; a pass declaring a new round without it clears it.
+		if (null != waivedRound) {
+			td.setDesignCheckpointWaiver(new DesignCheckpointWaiver(sessionUuid, a.agent(), a.role(), a.roleUuid(),
+					ZonedDateTime.now(), waivedRound.getUuid(), note));
+		} else if (SignOffOutcome.PASSED == outcome && declaredDesign.isPresent()) {
+			td.setDesignCheckpointWaiver(null);
+		}
 		td.setAssignment(null);
 		SignOff closing = td.getSignOffs().get(td.getSignOffs().size() - 1);
 		BoardEffects effects = new BoardEffects(td.getBoard());
@@ -3107,6 +3406,75 @@ public class AgentTaskService {
 		AgentTaskData saved = saveData(td, wu);
 		boardEffectsApplier.applyAfterCommit(effects, wu);
 		return saved;
+	}
+
+	/** The newest ARCHITECTURE release, by creation date, among a hop's declared outputs. */
+	private Optional<ReleaseData> newestArchitectureOf(List<UUID> declared) {
+		ReleaseData newest = null;
+		for (UUID r : declared) {
+			ReleaseData rd = sharedReleaseService.getReleaseData(r).orElse(null);
+			if (null == rd || null == rd.getDocument()
+					|| RearmSpecificationType.ARCHITECTURE != rd.getDocument().specification()) {
+				continue;
+			}
+			if (null == newest || (null != rd.getCreatedDate() && null != newest.getCreatedDate()
+					&& rd.getCreatedDate().isAfter(newest.getCreatedDate()))) {
+				newest = rd;
+			}
+		}
+		return Optional.ofNullable(newest);
+	}
+
+	/**
+	 * The design round a {@code --no-split} on this hop waives (task TPF-152, W2, 4.2), or a refusal with no state
+	 * change: the round this hop declares, else the task's newest live ARCHITECTURE round, provided the sign-off
+	 * carries a note, the signing role produces ARCHITECTURE on the board, the round is not advisory and, when not
+	 * declared here, was published by a hop of the signer's role.
+	 */
+	private ReleaseData waiverRound(AgentTaskData td, TaskAssignment a, Optional<ReleaseData> declaredDesign,
+			String note) throws RelizaException {
+		ReleaseData round = declaredDesign.or(() -> routingService.newestLiveArchitecture(td)).orElse(null);
+		if (null == round) {
+			throw new RelizaException("--no-split waives the design checkpoint for an ARCHITECTURE round; this hop"
+					+ " publishes none and the task has none at or above ASSEMBLED");
+		}
+		if (StringUtils.isBlank(note)) {
+			throw new RelizaException("--no-split needs a note: say in one line why the design fits one coder pass"
+					+ " (--note '...')");
+		}
+		AgentTaskRoleConfigData signer = (null != a.roleUuid()
+				? agentBoardService.getRoleConfigData(a.roleUuid())
+				: agentBoardService.getRoleConfig(td.getBoard(), a.role())).orElse(null);
+		if (null == signer || !AgentRoutingService.produces(signer, RearmSpecificationType.ARCHITECTURE)) {
+			throw new RelizaException("--no-split is the design author's: " + a.role()
+					+ " does not produce ARCHITECTURE on this board");
+		}
+		DocumentRef doc = round.getDocument();
+		if (doc.advisoryRound()) {
+			throw new RelizaException("--no-split cannot waive an advisory round: ARCHITECTURE round " + doc.round()
+					+ " was published --advisory, outside a hop; publish the round inside a hop, declare it and sign"
+					+ " off --no-split");
+		}
+		if (declaredDesign.isPresent()) return round;
+		// Not this hop's round: the hop that published it, as the checkpoint ALERT resolves it, must be the signer's role.
+		UUID session = doc.session();
+		ZonedDateTime published = round.getCreatedDate();
+		SignOff hop = null == td.getSignOffs() || null == session ? null : td.getSignOffs().stream()
+				.filter(so -> session.equals(so.session()) && null != so.signedOffAt()
+						&& (null == published || !so.signedOffAt().isBefore(published)))
+				.findFirst().orElse(null);
+		if (null == hop) {
+			throw new RelizaException("--no-split is the design author's: the newest ARCHITECTURE round (round "
+					+ doc.round() + ") was published by session " + session + " outside a hop of this task, not by a "
+					+ a.role() + " hop");
+		}
+		boolean sameRole = null != hop.roleUuid() && null != a.roleUuid() ? hop.roleUuid().equals(a.roleUuid())
+				: null != hop.role() && hop.role().equalsIgnoreCase(a.role());
+		if (!sameRole) {
+			throw new RelizaException("--no-split is the design author's: the newest ARCHITECTURE round (round "
+					+ doc.round() + ") was published by a hop of " + hop.role() + ", not by a " + a.role() + " hop");
+		}
+		return round;
 	}
 
 	/**
@@ -3503,6 +3871,41 @@ public class AgentTaskService {
 		if (null != sr) {
 			td.setSplitRequest(new SplitRequest(sr.requestedAt(), sr.role(), sr.roleUuid(), null, null, List.of(),
 					sr.state(), sr.settledBy(), sr.settledAt(), sr.note()));
+		}
+		// The architect's account copied into the waiver and the checkpoint record it settled (TPF-152, F-13).
+		DesignCheckpointWaiver w = td.getDesignCheckpointWaiver();
+		if (null != w) {
+			td.setDesignCheckpointWaiver(new DesignCheckpointWaiver(null, null, w.role(), w.roleUuid(), w.at(),
+					w.designRound(), null));
+		}
+		// The parent reviewers' sessions copied into a carried design (task TPF-161, D3, F-16): the same value nulled on
+		// every sign-off above. Any later field of the record naming a session, an agent or worker text joins this.
+		CarriedDesign carried = td.getCarriedDesign();
+		if (null != carried) {
+			List<CarriedRole> roles = new ArrayList<>();
+			for (CarriedRole cr : carried.roles()) {
+				roles.add(new CarriedRole(cr.role(), cr.roleUuid(), cr.signedOffAt(), null, cr.reviewedBy(),
+						cr.decidedOver()));
+			}
+			td.setCarriedDesign(new CarriedDesign(carried.parentTask(), carried.parentKey(), carried.rounds(), roles,
+					carried.at(), carried.by()));
+		}
+		// The answering session and agent copied into an answer's confirmation record (task TPF-171, D15); its role,
+		// rounds, state and the coordinator's note stay.
+		List<AgentTaskData.AnswerConfirmation> confirmations = new ArrayList<>();
+		for (AgentTaskData.AnswerConfirmation ac : td.getAnswerConfirmations()) {
+			confirmations.add(new AgentTaskData.AnswerConfirmation(ac.answeredAt(), ac.role(), ac.roleUuid(), null, null,
+					ac.askingRole(), ac.questionsRelease(), ac.rounds(), ac.state(), ac.settledBy(), ac.settledAt(),
+					ac.note()));
+		}
+		td.setAnswerConfirmations(confirmations);
+		DesignCheckpoint cp = td.getDesignCheckpoint();
+		if (null != cp && !cp.pending() && null != cp.note()
+				&& cp.note().startsWith(AgentRoutingService.WAIVED_NOTE_PREFIX)) {
+			int cut = cp.note().indexOf(": ");
+			td.setDesignCheckpoint(new DesignCheckpoint(cp.reachedAt(), cp.afterRole(), cp.beforeRole(),
+					cp.beforeRoleUuid(), cp.design(), cp.state(), null, cp.settledAt(),
+					cut < 0 ? cp.note() : cp.note().substring(0, cut)));
 		}
 		return td;
 	}

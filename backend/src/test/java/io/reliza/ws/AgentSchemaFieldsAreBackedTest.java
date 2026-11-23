@@ -53,6 +53,12 @@ class AgentSchemaFieldsAreBackedTest {
 		m.put("AgentTaskWorkAssignment", AgentTaskData.TaskAssignment.class);
 		m.put("AgentTaskSignOff", AgentTaskData.SignOff.class);
 		m.put("AgentTaskDesignCheckpoint", AgentTaskData.DesignCheckpoint.class);
+		m.put("AgentTaskDesignCheckpointWaiver", AgentTaskData.DesignCheckpointWaiver.class);
+		m.put("AgentTaskConditionSkip", AgentTaskData.ConditionSkip.class);
+		m.put("AgentTaskCarriedDesign", AgentTaskData.CarriedDesign.class);
+		m.put("AgentTaskCarriedRound", AgentTaskData.CarriedRound.class);
+		m.put("AgentTaskCarriedRole", AgentTaskData.CarriedRole.class);
+		m.put("AgentRoleRunWhen", io.reliza.model.AgentTaskRoleConfigData.RunWhen.class);
 		m.put("AgentTaskReturn", AgentTaskData.TaskReturn.class);
 		m.put("AgentTaskSplitRequest", AgentTaskData.SplitRequest.class);
 		m.put("AgentTaskSplitChild", io.reliza.model.AgentTaskInput.SplitChild.class);
@@ -92,16 +98,20 @@ class AgentSchemaFieldsAreBackedTest {
 	 * Fields whose value is computed by a datafetcher rather than read off the object, so the
 	 * backing type has no accessor by design. Each needs the resolver it names to exist.
 	 */
-	private static final Map<String, String> RESOLVED_ELSEWHERE = Map.of(
-			"AgentTaskAssignment.task", "the task is the record's own component, renamed in schema",
-			"AgentTaskSignOff.usage", "HopUsage is a snapshot record on the sign-off",
-			"BoardReviewItem.decidedAt", "AgentTaskDataFetcher.reviewItemDecidedAt, from decidedIn's release",
-			"BoardReviewItem.element", "AgentTaskDataFetcher.reviewItemElement, from location.element and the round's about release",
-			"AgentTaskSignOff.overAllowanceMicros", "AgentTaskDataFetcher.signOffOverAllowance, computed from usage",
-			"AgentTaskReturn.overAllowanceMicros", "AgentTaskDataFetcher.returnOverAllowance, computed from usage",
-			"AgentTaskSignOff.reviewedInputs", "AgentTaskDataFetcher.signOffReviewedInputs, the stored uuids resolved per read",
-			"AgentTaskSignOff.refusedPromotions", "AgentTaskDataFetcher.signOffRefusedPromotions, from the sign-off's promotions",
-			"AgentTaskAssignment.promptByVersion", "AgentTaskDataFetcher.assignmentPromptByVersion, computed from rolePrompt and the heldVersions argument");
+	private static final Map<String, String> RESOLVED_ELSEWHERE = Map.ofEntries(
+			Map.entry("AgentTaskAssignment.task", "the task is the record's own component, renamed in schema"),
+			Map.entry("AgentTaskSignOff.usage", "HopUsage is a snapshot record on the sign-off"),
+			Map.entry("BoardReviewItem.decidedAt", "AgentTaskDataFetcher.reviewItemDecidedAt, from decidedIn's release"),
+			Map.entry("BoardReviewItem.element", "AgentTaskDataFetcher.reviewItemElement, from location.element and the round's about release"),
+			Map.entry("AgentTaskSignOff.overAllowanceMicros", "AgentTaskDataFetcher.signOffOverAllowance, computed from usage"),
+			Map.entry("AgentTaskReturn.overAllowanceMicros", "AgentTaskDataFetcher.returnOverAllowance, computed from usage"),
+			Map.entry("AgentTaskSignOff.reviewedInputs", "AgentTaskDataFetcher.signOffReviewedInputs, the stored uuids resolved per read"),
+			Map.entry("AgentTaskSignOff.refusedPromotions", "AgentTaskDataFetcher.signOffRefusedPromotions, from the sign-off's promotions"),
+			Map.entry("AgentTaskAssignment.promptByVersion", "AgentTaskDataFetcher.assignmentPromptByVersion, computed from rolePrompt and the heldVersions argument"),
+			Map.entry("AgentTaskDesignCheckpointWaiver.standing", "AgentTaskDataFetcher.designCheckpointWaiverStanding, from the parent resolver's local context (TPF-152)"),
+			Map.entry("AgentTaskConditionSkip.live", "AgentTaskDataFetcher.conditionSkipLive, from the task in the parent resolver's localContext (TPF-155)"),
+			Map.entry("AgentTaskCarriedRole.live", "AgentTaskDataFetcher.carriedRoleLive, from the task in the parent resolver's localContext (TPF-161)"),
+			Map.entry("AgentTaskCarriedDesign.standing", "AgentTaskDataFetcher.carriedDesignStanding, from the task in the parent resolver's localContext (TPF-161)"));
 
 	@Test
 	void everyDeclaredFieldHasAnAccessor() {
