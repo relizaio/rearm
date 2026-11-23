@@ -34,6 +34,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.CommonVariables.ProgrammaticType;
+import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisScope;
@@ -473,5 +474,14 @@ class SafetyContextImportIntegrationTest {
 		assertEquals("Class C", onAnother.getLevelNormalized());
 		assertEquals(2, service.recordsApplyingTo(org, release, branch, component, Set.of(PUMP, TLS), false, 100, 0).size(),
 			"one level per package and scheme on a release, not one per scope");
+	}
+
+	@Test
+	void inventoryPurlsMatchTheFormTheImportStores() {
+		String sbomForm = "pkg:maven/org.example/lib@1.0+build.5";
+		Set<String> purls = SafetyContextService.inventoryPurls(List.of(sbomForm));
+		assertTrue(purls.contains(sbomForm));
+		assertTrue(purls.contains(Utils.canonicalizePurl(sbomForm)),
+			"the record stores Utils.canonicalizePurl's form, so the release read must look for it too");
 	}
 }

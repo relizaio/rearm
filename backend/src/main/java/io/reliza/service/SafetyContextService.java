@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.AdvisoryLockKey;
 import io.reliza.common.CommonVariables.TableName;
+import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.ProposalStatus;
@@ -297,7 +298,7 @@ public class SafetyContextService {
 			int limit, int offset) {
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(release, org);
 		if (ord.isEmpty()) return List.of();
-		Set<String> purls = new HashSet<>(sbomComponentService.resolveReleaseComponentPurls(release)
+		Set<String> purls = inventoryPurls(sbomComponentService.resolveReleaseComponentPurls(release)
 			.canonicalByComponent().values());
 		return recordsApplyingTo(org, release, ord.get().getBranch(), ord.get().getComponent(), purls,
 			includeSuperseded, limit, offset);
@@ -305,10 +306,11 @@ public class SafetyContextService {
 
 	List<SafetyContextRecordData> recordsApplyingTo(UUID org, UUID release, UUID branch, UUID component,
 			Set<String> inventoryPurls, boolean includeSuperseded, int limit, int offset) {
+		if (inventoryPurls.isEmpty()) return List.of();
 		List<SafetyContextRecordData> atTargets = recordRepository.findAtReleaseTargets(org.toString(),
-				release.toString(), blank(branch), blank(component), includeSuperseded, RELEASE_TARGET_CAP)
+				release.toString(), blank(branch), blank(component), String.join("\n", inventoryPurls),
+				includeSuperseded, RELEASE_TARGET_CAP)
 			.stream().map(SafetyContextRecordData::dataFromRecord)
-			.filter(r -> inventoryPurls.contains(r.getComponentPurl()))
 			.toList();
 		Map<String, Integer> mostSpecificActive = new HashMap<>();
 		for (SafetyContextRecordData r : atTargets) {
@@ -321,6 +323,25 @@ public class SafetyContextService {
 			.skip(Math.max(0, offset))
 			.limit(page(limit))
 			.toList();
+	}
+
+	/**
+	 * The release inventory's purls in the form the import stores on a record
+	 * ({@link Utils#canonicalizePurl}, which re-encodes some characters the SBOM's own canonical
+	 * form keeps), plus the stored form itself.
+	 */
+	static Set<String> inventoryPurls(Collection<String> sbomPurls) {
+		Set<String> out = new HashSet<>();
+		for (String purl : sbomPurls) {
+			if (purl == null || purl.isBlank()) continue;
+			out.add(purl);
+			try {
+				out.add(Utils.canonicalizePurl(purl));
+			} catch (RuntimeException e) {
+				// Not parseable as a purl: the stored form above is all there is.
+			}
+		}
+		return out;
 	}
 
 	/** Identity of a level without its scope target: the same asset's level for the same package and scheme. */
