@@ -3,8 +3,9 @@
         <h3>Safety integrity levels</h3>
         <n-alert type="info" :show-icon="false" data-testid="safety-context-not-verified">
             {{ DECLARED_NOT_VERIFIED }} Levels come from SAFETY_CONTEXT (CycloneDX 2.0) artifacts uploaded
-            to this release. Where assets declare different levels for one component and scheme, the most
-            stringent is marked.
+            to this release, or to other releases of the same component, branch or organization, for packages
+            this release contains. A level set for this release overrides one set more broadly. Where assets
+            declare different levels for one component and scheme, the most stringent is marked.
         </n-alert>
         <n-checkbox v-model:checked="includeSuperseded">Show superseded levels</n-checkbox>
         <n-data-table
@@ -28,6 +29,7 @@ export default {
 </script>
 <script lang="ts" setup>
 import { h, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { NAlert, NButton, NCheckbox, NDataTable, NIcon, NSpace, NTag, NTooltip } from 'naive-ui'
 import { Code } from '@vicons/tabler'
 import Swal from 'sweetalert2'
@@ -71,13 +73,26 @@ watch([includeSuperseded, () => props.releaseUuid], fetchRecords)
 
 function activeLevelsFor (r: any): number {
     return records.value.filter((x: any) => x.recordStatus === 'ACTIVE' && x.componentPurl === r.componentPurl
-        && x.schemeKey === r.schemeKey && x.scopeUuid === r.scopeUuid).length
+        && x.schemeKey === r.schemeKey).length
 }
 
 const recordColumns = [
     { title: 'Component', key: 'componentPurl', ellipsis: { tooltip: true } },
     { title: 'Asset', key: 'assetRefId', ellipsis: { tooltip: true } },
     { title: 'Scheme', key: 'schemeKey' },
+    {
+        title: 'Applies via',
+        key: 'scope',
+        render: (r: any) => {
+            const where = r.scope === 'RELEASE' ? 'This release' : r.scope === 'BRANCH' ? 'Branch'
+                : r.scope === 'COMPONENT' ? 'Component' : r.scope === 'ORG' ? 'Organization' : r.scope
+            const fromOther = r.releaseUuid && r.releaseUuid !== props.releaseUuid
+            return fromOther
+                ? h('span', {}, [where, h('br'), h(RouterLink, { to: `/release/show/${r.releaseUuid}` },
+                    () => `uploaded on ${r.sourceReleaseVersion || 'another release'}`)])
+                : where
+        }
+    },
     {
         title: 'Level',
         key: 'levelRaw',

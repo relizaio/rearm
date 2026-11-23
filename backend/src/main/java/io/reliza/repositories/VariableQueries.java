@@ -2424,11 +2424,22 @@ class VariableQueries {
 				AND record_data->>'status' = 'ACTIVE'
 			""";
 
-	protected static final String FIND_SAFETY_CONTEXT_RECORDS_BY_ORG_AND_RELEASE = """
+	/**
+	 * Records whose scope target covers a release (the release itself, its branch, its component
+	 * or the org: the targets a Finding Analysis resolves through) for packages in the release's
+	 * inventory. {@code :purls} is one newline-joined string, so a large inventory is one bind
+	 * value. Capped; the caller keeps the most specific record per identity.
+	 */
+	protected static final String FIND_SAFETY_CONTEXT_RECORDS_AT_RELEASE_TARGETS = """
 			SELECT * FROM rearm.safety_context_records
-				WHERE record_data->>'org' = :org AND record_data->>'releaseUuid' = :release
+				WHERE record_data->>'org' = :org
+				AND ((record_data->>'scope' = 'RELEASE' AND record_data->>'scopeUuid' = :release)
+					OR (record_data->>'scope' = 'BRANCH' AND record_data->>'scopeUuid' = :branch)
+					OR (record_data->>'scope' = 'COMPONENT' AND record_data->>'scopeUuid' = :component)
+					OR (record_data->>'scope' = 'ORG' AND record_data->>'scopeUuid' = :org))
+				AND record_data->>'componentPurl' = ANY(string_to_array(:purls, chr(10)))
 				AND (:includeSuperseded OR record_data->>'status' = 'ACTIVE')
-				ORDER BY created_date DESC LIMIT :limit OFFSET :offset
+				ORDER BY created_date DESC, uuid LIMIT :cap
 			""";
 
 	protected static final String FIND_SAFETY_CONTEXT_RECORDS_BY_ORG_AND_SCOPE_TARGET = """

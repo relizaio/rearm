@@ -6,8 +6,12 @@ package io.reliza.service;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 
@@ -17,8 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.AdvisoryLockKey;
 import io.reliza.common.CommonVariables.TableName;
+import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.AnalysisScope;
 import io.reliza.model.ProposalStatus;
+import io.reliza.model.ReleaseData;
 import io.reliza.model.SafetyContextData;
 import io.reliza.model.SafetyContextData.GateRule;
 import io.reliza.model.SafetyContextData.LevelChange;
@@ -51,12 +58,16 @@ public class SafetyContextService {
 
 	static final int MAX_TEXT = 2000;
 
+	/** Records read at a release's scope targets before the inventory filter. */
+	static final int RELEASE_TARGET_CAP = 5000;
+
 	@PersistenceContext private EntityManager entityManager;
 
 	@Autowired private SafetyContextProposalRepository proposalRepository;
 	@Autowired private SafetyContextRecordRepository recordRepository;
 	@Autowired private AuditService auditService;
 	@Autowired private SbomComponentService sbomComponentService;
+	@Autowired private SharedReleaseService sharedReleaseService;
 
 	/** The coarse key: org, scope target, component purl, scheme. Locks and component-wide reads use it. */
 	public static String coarseKey(SafetyContextData d) {
@@ -275,10 +286,81 @@ public class SafetyContextService {
 			.stream().map(SafetyContextProposalData::dataFromRecord).toList();
 	}
 
+	/**
+	 * The safety records that apply to a release, resolved the way a Finding Analysis is: a record
+	 * at the release, its branch, its component or the org applies when its component purl is in
+	 * the release's inventory, and per identity (purl, scheme, blueprint, asset) the most specific
+	 * scope wins. So a level accepted at component scope on one release shows on every release of
+	 * that component that contains the package. With {@code includeSuperseded}, the superseded
+	 * history at those targets is listed too.
+	 */
 	public List<SafetyContextRecordData> listRecordsForRelease(UUID org, UUID release, boolean includeSuperseded,
 			int limit, int offset) {
-		return recordRepository.findByOrgAndRelease(org.toString(), release.toString(), includeSuperseded,
-			page(limit), Math.max(0, offset)).stream().map(SafetyContextRecordData::dataFromRecord).toList();
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(release, org);
+		if (ord.isEmpty()) return List.of();
+		Set<String> purls = inventoryPurls(sbomComponentService.resolveReleaseComponentPurls(release)
+			.canonicalByComponent().values());
+		return recordsApplyingTo(org, release, ord.get().getBranch(), ord.get().getComponent(), purls,
+			includeSuperseded, limit, offset);
+	}
+
+	List<SafetyContextRecordData> recordsApplyingTo(UUID org, UUID release, UUID branch, UUID component,
+			Set<String> inventoryPurls, boolean includeSuperseded, int limit, int offset) {
+		if (inventoryPurls.isEmpty()) return List.of();
+		List<SafetyContextRecordData> atTargets = recordRepository.findAtReleaseTargets(org.toString(),
+				release.toString(), blank(branch), blank(component), String.join("\n", inventoryPurls),
+				includeSuperseded, RELEASE_TARGET_CAP)
+			.stream().map(SafetyContextRecordData::dataFromRecord)
+			.toList();
+		Map<String, Integer> mostSpecificActive = new HashMap<>();
+		for (SafetyContextRecordData r : atTargets) {
+			if (r.getStatus() != RecordStatus.ACTIVE) continue;
+			mostSpecificActive.merge(identityWithinScope(r), specificity(r.getScope()), Math::max);
+		}
+		return atTargets.stream()
+			.filter(r -> r.getStatus() != RecordStatus.ACTIVE
+				|| specificity(r.getScope()) == mostSpecificActive.get(identityWithinScope(r)))
+			.skip(Math.max(0, offset))
+			.limit(page(limit))
+			.toList();
+	}
+
+	/**
+	 * The release inventory's purls in the form the import stores on a record
+	 * ({@link Utils#canonicalizePurl}, which re-encodes some characters the SBOM's own canonical
+	 * form keeps), plus the stored form itself.
+	 */
+	static Set<String> inventoryPurls(Collection<String> sbomPurls) {
+		Set<String> out = new HashSet<>();
+		for (String purl : sbomPurls) {
+			if (purl == null || purl.isBlank()) continue;
+			out.add(purl);
+			try {
+				String canonical = Utils.canonicalizePurl(purl);
+				if (canonical != null) out.add(canonical);
+			} catch (RuntimeException e) {
+				// Not parseable as a purl: the stored form above is all there is.
+			}
+		}
+		return out;
+	}
+
+	/** Identity of a level without its scope target: the same asset's level for the same package and scheme. */
+	private static String identityWithinScope(SafetyContextData d) {
+		return String.join("|", d.getComponentPurl(), d.getSchemeKey(), blank(d.getBlueprintRefId()),
+			blank(d.getAssetRefId()));
+	}
+
+	/** Release over branch over component over org, as Finding Analysis resolves. */
+	private static int specificity(AnalysisScope scope) {
+		if (scope == null) return 0;
+		return switch (scope) {
+			case RELEASE -> 4;
+			case BRANCH -> 3;
+			case COMPONENT -> 2;
+			case ORG -> 1;
+			default -> 0;
+		};
 	}
 
 	public List<SafetyContextRecordData> listRecordsForScopeTarget(UUID org, String scope, UUID scopeUuid,
