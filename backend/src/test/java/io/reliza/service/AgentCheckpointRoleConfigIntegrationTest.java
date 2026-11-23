@@ -61,8 +61,8 @@ public class AgentCheckpointRoleConfigIntegrationTest {
 
 	private record Org(UUID uuid, String target) {}
 
-	// CE: every case runs in the test organization; the preset case needs no fresh one here, its preset
-	// name is unique.
+	// CE: every case gets its own new organization from obtainOrganization(), so the preset case needs no
+	// separate fresh one.
 	private Org org() throws RelizaException {
 		Organization o = testInitializer.obtainOrganization();
 		String target = "cp-node-" + UUID.randomUUID();

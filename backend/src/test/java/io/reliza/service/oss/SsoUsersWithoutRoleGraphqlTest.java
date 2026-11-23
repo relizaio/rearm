@@ -4,6 +4,7 @@
 package io.reliza.service.oss;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
@@ -52,13 +53,17 @@ class SsoUsersWithoutRoleGraphqlTest {
 
 	private static final WhoUpdated WU = WhoUpdated.getTestWhoUpdated();
 
-	/** organizationsQuery's ORGANIZATIONS_CORE, assembled. */
+	private static final String CORE_SETTINGS = "justificationMandatory reviewItemPriorityLevels"
+			+ " agentSessionIdleCloseHours branchSuffixMode vexComplianceFramework sidPurlMode sidAuthoritySegments"
+			+ " fdaAssessmentNarrative fdaPatchesMayCeaseStatement fdaRiskTransferProcessRef fdaRiskIncreasesNotice"
+			+ " ssoUsersWithoutRole";
+	/** organizationsQuery's ORGANIZATIONS_CORE (settings = CORE) and ORGANIZATIONS_FULL (CORE plus supportInjection), assembled. */
 	private static final String ORGANIZATIONS = "query organizations { organizations { uuid name type"
 			+ " approvalRoles { id displayView } terminology { featureSetLabel }"
 			+ " ignoreViolation { licenseViolationRegexIgnore securityViolationRegexIgnore operationalViolationRegexIgnore }"
-			+ " settings { justificationMandatory reviewItemPriorityLevels agentSessionIdleCloseHours branchSuffixMode"
-			+ " vexComplianceFramework sidPurlMode sidAuthoritySegments fdaAssessmentNarrative fdaPatchesMayCeaseStatement"
-			+ " fdaRiskTransferProcessRef fdaRiskIncreasesNotice ssoUsersWithoutRole } } }";
+			+ " settings { %s } } }";
+	private static final String ORGANIZATIONS_CORE = String.format(ORGANIZATIONS, CORE_SETTINGS);
+	private static final String ORGANIZATIONS_FULL = String.format(ORGANIZATIONS, CORE_SETTINGS + " supportInjection");
 	private static final String UPDATE = "mutation updateOrganizationSettings($orgUuid: ID!, $settings: SettingsInput!) {"
 			+ " updateOrganizationSettings(orgUuid: $orgUuid, settings: $settings) { uuid settings { ssoUsersWithoutRole } } }";
 	private static final String TOTALS = "query totalsAnalytics($orgUuid: ID!) { totalsAnalytics(orgUuid: $orgUuid) }";
@@ -89,8 +94,8 @@ class SsoUsersWithoutRoleGraphqlTest {
 	@Test
 	void theSettingIsReadAndPatchedThroughTheUisDocuments() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
-		UserData admin = admin(org);
-		settingOf(admin, org);
+		UserData admin = member(org, PermissionType.ADMIN);
+		assertNull(settingOf(admin, org), "a new organization has no settings yet (the UI reads REFUSE)");
 
 		assertEquals("CREATE_WITHOUT_ROLE", patched(admin, org, "CREATE_WITHOUT_ROLE"));
 		assertEquals("CREATE_WITHOUT_ROLE", settingOf(admin, org), "read back through the organizations query");
@@ -101,14 +106,27 @@ class SsoUsersWithoutRoleGraphqlTest {
 	@Test
 	void theStatisticsTotalsCarryTheUsersWithoutARole() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
-		Map<String, Object> totals = ok(exec(admin(org), TOTALS, "orgUuid", org.getUuid().toString()), "totalsAnalytics");
-		assertTrue(totals.containsKey("users_without_role"), totals.keySet().toString());
+		UserData admin = member(org, PermissionType.ADMIN);
+		member(org, null);
+		Map<String, Object> totals = ok(exec(admin, TOTALS, "orgUuid", org.getUuid().toString()), "totalsAnalytics");
+		assertEquals(1L, ((Number) totals.get("users_without_role")).longValue(), totals.toString());
+		assertEquals(1L, ((Number) totals.get("admin_and_write_users")).longValue(), totals.toString());
+		assertEquals(0L, ((Number) totals.get("read_only_users")).longValue(), totals.toString());
 	}
 
-	/** The organization's setting as the organizations query returns it; null while it has no settings (the UI reads REFUSE). */
-	@SuppressWarnings("unchecked")
+	/**
+	 * The organization's setting as the organizations query returns it, through both documents the UI may send
+	 * (FULL first); null while it has no settings (the UI reads REFUSE).
+	 */
 	private Object settingOf(UserData user, Organization org) {
-		List<Map<String, Object>> orgs = ok(exec(user, ORGANIZATIONS), "organizations");
+		Object full = settingOf(user, org, ORGANIZATIONS_FULL);
+		assertEquals(full, settingOf(user, org, ORGANIZATIONS_CORE), "CORE and FULL agree");
+		return full;
+	}
+
+	@SuppressWarnings("unchecked")
+	private Object settingOf(UserData user, Organization org, String document) {
+		List<Map<String, Object>> orgs = ok(exec(user, document), "organizations");
 		Map<String, Object> mine = orgs.stream().filter(o -> org.getUuid().toString().equals(o.get("uuid"))).findFirst()
 				.orElseThrow();
 		Map<String, Object> settings = (Map<String, Object>) mine.get("settings");
@@ -122,12 +140,15 @@ class SsoUsersWithoutRoleGraphqlTest {
 		return (String) ((Map<String, Object>) o.get("settings")).get("ssoUsersWithoutRole");
 	}
 
-	private UserData admin(Organization org) throws Exception {
+	/** A member of {@code org}, with an organization-wide role of {@code type}, or no role when null. */
+	private UserData member(Organization org, PermissionType type) throws Exception {
 		String tag = UUID.randomUUID().toString().substring(0, 8);
 		User u = userService.createUser("Sso " + tag, "sso-no-role-" + tag + "@example.com", true, List.of(org.getUuid()),
 				"sso-no-role-" + UUID.randomUUID(), OauthType.RELIZA_KEYCLOAK_OWN, WU);
-		userService.setUserPermission(u.getUuid(), org.getUuid(), PermissionScope.ORGANIZATION, org.getUuid(),
-				PermissionType.ADMIN, List.of(), null, WU);
+		if (null != type) {
+			userService.setUserPermission(u.getUuid(), org.getUuid(), PermissionScope.ORGANIZATION, org.getUuid(), type,
+					List.of(), null, WU);
+		}
 		return userService.getUserData(u.getUuid()).orElseThrow();
 	}
 

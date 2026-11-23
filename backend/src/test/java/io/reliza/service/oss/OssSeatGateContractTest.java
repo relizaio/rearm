@@ -18,6 +18,7 @@ import io.reliza.common.CommonVariables.OauthType;
 import io.reliza.exceptions.ActionRefusedException;
 import io.reliza.model.UserData;
 import io.reliza.model.UserGroupData;
+import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.dto.CreateUserGroupDto;
 import io.reliza.service.SeatGate.Change;
@@ -36,11 +37,18 @@ class OssSeatGateContractTest {
 		return UserData.userDataFactory("gate", "gate@example.com", List.of(org), "sub", OauthType.RELIZA_KEYCLOAK_OWN, true);
 	}
 
+	/** A group that grants an organization-wide ADMIN role, so a gate that limits seats would have to judge it. */
+	private UserGroupData adminGroup(String name) {
+		UserGroupData g = UserGroupData.userGroupDataFactory(CreateUserGroupDto.builder().name(name).org(org).build());
+		g.setPermission(PermissionScope.ORGANIZATION, org, PermissionType.ADMIN, List.of());
+		return g;
+	}
+
 	@Test
 	void aSeatChangeHasAHandleAndEveryCheckPasses() {
 		Change change = gate.beginSeatChange();
 		assertNotNull(change);
-		UserGroupData group = UserGroupData.userGroupDataFactory(CreateUserGroupDto.builder().name("g").org(org).build());
+		UserGroupData group = adminGroup("g");
 		assertDoesNotThrow(() -> {
 			gate.assertWouldFit(change, "gate@example.com", PermissionType.ADMIN);
 			gate.assertNewMemberFits(change, "gate@example.com", org, List.of(group));
@@ -55,8 +63,7 @@ class OssSeatGateContractTest {
 	void everySsoAddIsAdmitted() {
 		SsoAdds adds = gate.ssoAdds(gate.beginSeatChange(), user(), org);
 		for (int i = 0; i < 3; i++) {
-			assertTrue(adds.admit(UserGroupData.userGroupDataFactory(
-					CreateUserGroupDto.builder().name("g" + i).org(org).build())));
+			assertTrue(adds.admit(adminGroup("g" + i)));
 		}
 	}
 
