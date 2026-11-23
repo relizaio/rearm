@@ -26,7 +26,6 @@ export const useCaseNav = [
   { label: 'Field Digital Twin', href: '/use-cases/field-digital-twin/' },
   { label: 'Deployment Governance, DevOps, BYOC', href: '/use-cases/deployment-governance/' },
   { label: 'EU CRA Compliance', href: '/use-cases/eu-cra/' },
-  { label: 'OpenChain CRA Checklist Mapping', href: '/use-cases/openchain-cra-mapping/' },
 ];
 
 // page-name -> href used by capability cards / question rows / related links
@@ -54,10 +53,22 @@ export type ProdPage = {
   chain: ChainLevel[]; hasRelated: boolean; related: string[]; blocks: PageBlock[];
 };
 export type UcStep = { num: string; title: string; body: string; cap: string };
+export type UcLink = { text: string; href: string };
+export type UcMappingRow = { items: string; asks: string; coverage: 'Supported' | 'Partial'; how: string };
+export type UcMapping = {
+  label: string; intro: string; introLink?: UcLink;
+  groups: { title: string; section: string; rows: UcMappingRow[] }[];
+  outOfScopeTitle: string; outOfScope: string[]; disclaimer: string;
+  docsText: string; docsHref: string; sourceText: string; sourceHref: string;
+};
+export type UcSeeAlso = { eyebrow: string; title: string; body: string; cta: string; href: string };
 export type UcPage = {
   id: string; path: string; label: string; persona: string; h1: string; pain: string;
   a1: string; a2: string; stripLabel: string; strip: string[]; evidence: string;
   publicDemo: boolean; shot: string | false; note: string | false; steps: UcStep[];
+  // Optional: a checklist-to-feature mapping after the steps, a note under the
+  // standards strip, and a link block to a related page at the bottom.
+  mapping?: UcMapping; stripNote?: string; seeAlso?: UcSeeAlso;
 };
 
 export const levels = design.levels as string[];
