@@ -124,7 +124,7 @@ class SsoUsersWithoutRoleGraphqlTest {
 
 	private UserData admin(Organization org) throws Exception {
 		String tag = UUID.randomUUID().toString().substring(0, 8);
-		User u = userService.createUser("Sso " + tag, "sso-no-role-" + tag + "@sso.io", true, List.of(org.getUuid()),
+		User u = userService.createUser("Sso " + tag, "sso-no-role-" + tag + "@example.com", true, List.of(org.getUuid()),
 				"sso-no-role-" + UUID.randomUUID(), OauthType.RELIZA_KEYCLOAK_OWN, WU);
 		userService.setUserPermission(u.getUuid(), org.getUuid(), PermissionScope.ORGANIZATION, org.getUuid(),
 				PermissionType.ADMIN, List.of(), null, WU);

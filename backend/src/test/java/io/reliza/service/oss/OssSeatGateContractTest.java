@@ -33,7 +33,7 @@ class OssSeatGateContractTest {
 	private final UUID org = UUID.randomUUID();
 
 	private UserData user() {
-		return UserData.userDataFactory("gate", "gate@oss.io", List.of(org), "sub", OauthType.RELIZA_KEYCLOAK_OWN, true);
+		return UserData.userDataFactory("gate", "gate@example.com", List.of(org), "sub", OauthType.RELIZA_KEYCLOAK_OWN, true);
 	}
 
 	@Test
@@ -42,11 +42,11 @@ class OssSeatGateContractTest {
 		assertNotNull(change);
 		UserGroupData group = UserGroupData.userGroupDataFactory(CreateUserGroupDto.builder().name("g").org(org).build());
 		assertDoesNotThrow(() -> {
-			gate.assertWouldFit(change, "gate@oss.io", PermissionType.ADMIN);
-			gate.assertNewMemberFits(change, "gate@oss.io", org, List.of(group));
+			gate.assertWouldFit(change, "gate@example.com", PermissionType.ADMIN);
+			gate.assertNewMemberFits(change, "gate@example.com", org, List.of(group));
 			gate.assertFitsAfterWrite(change);
 			gate.assertAdmitted(user());
-			gate.noRoleRefused(org, "gate@oss.io");
+			gate.noRoleRefused(org, "gate@example.com");
 			gate.forgetSkippedLift(UUID.randomUUID(), UUID.randomUUID());
 		});
 	}
@@ -69,6 +69,6 @@ class OssSeatGateContractTest {
 	@Test
 	void aRefusedNewAccountIsRefusedForItsCause() {
 		ActionRefusedException cause = new ActionRefusedException("no role");
-		assertSame(cause, gate.newAccountRefusal(org, "gate@oss.io", cause));
+		assertSame(cause, gate.newAccountRefusal(org, "gate@example.com", cause));
 	}
 }
