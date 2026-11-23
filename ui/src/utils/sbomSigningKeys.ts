@@ -32,7 +32,7 @@ export const JWKS_VERIFY_COMMAND = 'rearm bomutils verify-signature --key <this 
  */
 export const PUBLIC_KEYS_NOTE = 'Publishing the organization\'s public signing keys at a public URL (JWKS), so consumers can'
     + ' verify signed exports without an account, is upcoming experimental functionality and is not available yet.'
-export const UNSUPPORTED_TEXT = 'This server does not offer SBOM export signing yet. A ReARM CE installation gains it at its next sync.'
+export const UNSUPPORTED_TEXT = 'This server does not offer SBOM export signing yet. The server runs an older version of ReARM, from before this feature. Updating the server adds it.'
 
 /** The confirm before Generate replaces a CURRENT key (Swal.fire options). */
 export const ROTATE_CONFIRM = Object.freeze({
@@ -80,7 +80,7 @@ export function generateLabel (hasCurrent: boolean): string {
     return hasCurrent ? 'Rotate key' : 'Generate key'
 }
 
-/** A list query refused as schema drift: this server has no SBOM signing (a CE mirror before its sync). */
+/** A list query refused as schema drift: this server has no SBOM signing (a server older than the feature). */
 export function isSbomSigningUnsupported (err: unknown): boolean {
     return isSchemaDriftError(err)
 }

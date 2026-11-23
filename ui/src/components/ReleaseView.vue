@@ -228,14 +228,16 @@
                         style="color: #999; font-size: 12px; margin-top: -8px; margin-bottom: 10px; max-width: 620px;">
                         {{ exportSupportHint }}
                     </div>
-                    <!-- The CE SYNC-LAG case, which is NOT the org-disabled one above: a backend
+                    <!-- The older-server case, which is NOT the org-disabled one above: a backend
                          that does not declare the setting at all has nothing the operator can go
                          and change, so the switch is absent and this says why. The two hints
                          never show together. -->
                     <div v-if="!orgSupportInjectionSupported"
                         style="color: #999; font-size: 12px; margin-bottom: 10px; max-width: 620px;">
                         This server does not offer the support-metadata disclosure yet, so that
-                        option is not shown. A ReARM CE installation gains it at its next sync.
+                        option is not shown. The server runs an older version of ReARM, from
+                        before this feature.
+                        Updating the server adds it.
                     </div>
                     <n-form-item>
                         <span style="display: inline-flex; align-items: center;">

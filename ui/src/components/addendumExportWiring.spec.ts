@@ -247,7 +247,9 @@ describe('the export modal states the support gate once, and sends it through th
     // own hint (the org-disabled hint is in releaseViewExportWiring.spec.ts).
     it('explains an absent switch only in the case the operator cannot go and change', () => {
         expect(source).toContain('<div v-if="!orgSupportInjectionSupported"')
-        expect(source).toContain('gains it at its next sync')
+        // TPF-219: the hint says the server is older and updating it adds the option.
+        expect(source).toContain('Updating the server adds it.')
+        expect(source).not.toContain('gains it at its next sync')
     })
 
     // Wording that counts the switches goes wrong the moment one of them is conditional.
