@@ -223,6 +223,10 @@ services:
   rebom-postgres-init:
     image: docker.io/redgate/flyway:11.20.3-alpine@sha256:52cdd559dc8ae38a17b56615e3c7137d9b01470271112525b40373de470bb005
     restart: on-failure
+    # java4shell (CVE-2026-114938) mitigation; remove once the Flyway image
+    # ships a JDK with the fix (Temurin 21.0.13.1+ or 25.0.5.1+).
+    environment:
+     - JAVA_ARGS=-XX:-UseBASE64Intrinsics
     depends_on:
       - rebom-postgresql
     command:
