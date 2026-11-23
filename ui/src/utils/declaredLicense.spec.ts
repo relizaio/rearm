@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
     COMPONENT_DECLARED_LICENSE_QUERY, EFFECTIVE_NONE, ORG_DECLARED_LICENSE_QUERY, ORG_NOT_LISTED, RELEASE_DECLARED_LICENSE_QUERY,
-    SUPPLIER_HINT, SUPPLIER_SENTENCE,
+    SUPPLIER_HINT, SUPPLIER_SENTENCE, UNSUPPORTED_NOTE,
     componentDeclaredLicenseVariables, declaredLicenseDiffers, effectiveLicenseLine, licenseUrlHref,
     loadComponentDeclaredLicense, loadOrgDeclaredLicense, loadReleaseDeclaredLicense, orgDeclaredLicenseVariables,
     releaseDeclaredLicenseVariables,
@@ -200,6 +200,13 @@ describe('the copy', () => {
 
     it('words the missing-organization read as design 3.7 does', () => {
         expect(ORG_NOT_LISTED).toBe('The server\'s list of your organizations does not include this one, so its default licence could not be read.')
+    })
+
+    // T-464 (TPF-219): the server is older than the feature; no edition is named and no sync promised.
+    it('words the older-server note exactly, without the old sync promise', () => {
+        expect(UNSUPPORTED_NOTE).toBe('This server does not offer a declared licence yet.'
+            + ' The server runs an older version of ReARM, from before this feature. Updating the server adds it.')
+        for (const old of ['next sync', 'gains it', 'CE installation']) expect(UNSUPPORTED_NOTE).not.toContain(old)
     })
 
     it('never uses the struck remedies', () => {

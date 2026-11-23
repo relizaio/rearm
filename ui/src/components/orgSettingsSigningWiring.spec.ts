@@ -7,6 +7,7 @@ import { UNSUPPORTED_TEXT } from '@/utils/sbomSigningKeys'
 // NodeTypes of @vue/compiler-core, which compiler-sfc does not re-export.
 const ELEMENT = 1
 const TEXT = 2
+const INTERPOLATION = 5
 const ATTRIBUTE = 6
 const DIRECTIVE = 7
 
@@ -24,6 +25,9 @@ const code = source
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
 const store = readFileSync(fileURLToPath(new URL('../store.ts', import.meta.url)), 'utf8')
 const ast: any = parseSfc(source).descriptor.template?.ast
+
+/** TPF-219: the promise the older-server note made before; none of it may come back. */
+const OLD_PROMISE = ['next sync', 'gains it', 'CE installation']
 
 /** Every element the predicate accepts, with its ancestors (root first). */
 function find (pred: (n: any) => boolean, root: any = ast): any[][] {
@@ -51,6 +55,9 @@ const directive = (n: any, name: string, arg?: string): string | undefined => (n
 const hasDirective = (n: any, name: string): boolean => (n.props || []).some((p: any) => p.type === DIRECTIVE && p.name === name)
 const attribute = (n: any, name: string): string | undefined => (n.props || []).find((p: any) =>
     p.type === ATTRIBUTE && p.name === name)?.value?.content
+/** The expressions interpolated directly in the element ({{ x }}). */
+const interpolations = (n: any): string[] => (n.children || []).filter((c: any) => c.type === INTERPOLATION)
+    .map((c: any) => c.content?.content?.trim())
 /** The element's own text, not its descendants'. */
 const text = (n: any): string => (n.children || []).filter((c: any) => c.type === TEXT).map((c: any) => c.content)
     .join(' ').replace(/\s+/g, ' ').trim()
@@ -117,13 +124,23 @@ describe('OrgSettings: the SBOM export signing section', () => {
         expect(code).toMatch(/import SbomSigningKeysPanel from '\.\/SbomSigningKeysPanel\.vue'/)
     })
 
-    it('shows the sync-lag note instead, right after it', () => {
+    // T-460 (TPF-219): the note renders the constant, not a copy of it.
+    it('shows the older-server note instead, right after it', () => {
         expect(unsupported).toHaveLength(1)
         const note = unsupported[0][unsupported[0].length - 1]
         expect(hasDirective(note, 'else')).toBe(true)
-        expect(text(note)).toBe(UNSUPPORTED_TEXT)
+        expect(interpolations(note)).toEqual(['UNSUPPORTED_TEXT'])
+        expect(text(note)).toBe('')
+        expect(code).toMatch(/import \{ UNSUPPORTED_TEXT \} from '@\/utils\/sbomSigningKeys'/)
         const siblings = elementChildren(block[0][block[0].length - 2])
         expect(siblings[siblings.indexOf(block[0][block[0].length - 1]) + 1]).toBe(note)
+    })
+
+    // T-461 (TPF-219): the server is older than the feature; no edition is named and no sync promised.
+    it('words the older-server note exactly, without the old sync promise', () => {
+        expect(UNSUPPORTED_TEXT).toBe('This server does not offer SBOM export signing yet.'
+            + ' The server runs an older version of ReARM, from before this feature. Updating the server adds it.')
+        for (const old of OLD_PROMISE) expect(UNSUPPORTED_TEXT).not.toContain(old)
     })
 
     it('reads the flag from the store and latches it false on unsupported', () => {
