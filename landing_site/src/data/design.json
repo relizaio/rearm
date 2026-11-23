@@ -770,7 +770,7 @@
       "id": "3j",
       "href": "#3j",
       "path": "/use-cases/openchain-cra-mapping",
-      "label": "OpenChain CRA Checklist Mapping",
+      "label": "OpenChain CRA Checklist",
       "persona": "FOR PRODUCT SECURITY + COMPLIANCE TEAMS WORKING FROM THE OPENCHAIN CRA CHECKLIST",
       "h1": "The OpenChain CRA checklist, mapped to ReARM.",
       "pain": "The OpenChain CRA Compliance Requirements & Checklist v1.0, published by the OpenChain Project, breaks CRA readiness into numbered items. This page maps those items to what ReARM provides today, so you can see which ones your release evidence already answers.",

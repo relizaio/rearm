@@ -42,7 +42,7 @@ export const pageHrefs: Record<string, string> = {
   'Deployment Governance, DevOps, BYOC': '/use-cases/deployment-governance/',
   'EU CRA': '/use-cases/eu-cra/',
   'EU CRA Compliance': '/use-cases/eu-cra/',
-  'OpenChain CRA Checklist Mapping': '/use-cases/openchain-cra-mapping/',
+  'OpenChain CRA Checklist': '/use-cases/openchain-cra-mapping/',
   Pricing: '/pricing/',
 };
 
