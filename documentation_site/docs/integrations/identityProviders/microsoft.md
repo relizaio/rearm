@@ -100,6 +100,8 @@ and save the manifest.
 
 ReARM reads this `groups` claim at sign-in and adds the user to every ReARM user group connected to one of the claimed groups (configured in the next section). When a user signs in for the first time and their claim matches no connected user group of the default organization, and they hold no pending invitation, ReARM Pro follows the default organization's **SSO users without a role** setting (Organization Settings > Admin Settings > General). The default, **Refuse sign-in**, creates no account and shows the user a message that no ReARM role is assigned (reference `NO-ROLE`); **Create account without a role** creates the account with permission `None`.
 
+The **SSO users without a role** setting applies to ReARM Pro only: ReARM Community Edition creates such an account without a role.
+
 ## ReARM Part - Configure Keycloak Group Mapping to ReARM application
 1. Log in to ReARM as administrative user
 2. Open the `Organization Settings` view from the left menu.

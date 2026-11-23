@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -445,7 +446,9 @@ public class AgentBoardMechanicsIntegrationTest {
 	@Test
 	public void liftingWithARoleRoutesThere() throws RelizaException {
 		Rig r = rig();
-		agentBoardService.upsertRoleConfig(board(r), new AgentBoardService.RoleConfigSpec("architect", "decide it", 5,
+		// Ordered after the coder: an answer goes through the forward walk (task TPF-171, D3), which would queue a role
+		// ordered before the asking coder that never passed before the coder gets its answer back.
+		agentBoardService.upsertRoleConfig(board(r), new AgentBoardService.RoleConfigSpec("architect", "decide it", 25,
 				null, false, true, null, null, null, null, List.of(), List.of()), true, WU);
 		agentBoardService.upsertRoleConfig(board(r), new AgentBoardService.RoleConfigSpec("retired", "gone", 30,
 				null, false, false, null, null, null, null, List.of(), List.of()), true, WU);
@@ -690,19 +693,26 @@ public class AgentBoardMechanicsIntegrationTest {
 				SignOffOutcome.REJECTED, "the design is wrong", List.of(q.getUuid()), WU).getRole());
 		agentTaskService.assign(t.getUuid(), board(r), r.workerB().getUuid(), r.sessB().getUuid(), WU);
 		ReleaseData v2 = publishArchitecture(r.sessB(), reload(t), "c2", "d2");
-		agentTaskService.signOff(t.getUuid(), r.sessB().getUuid(), SignOffOutcome.PASSED,
+		AgentTaskData answered = agentTaskService.signOff(t.getUuid(), r.sessB().getUuid(), SignOffOutcome.PASSED,
 				"redesigned", List.of(v2.getUuid()), WU);
+
+		// The coder's pass was made against v1 and the design has moved since, so it describes
+		// something nobody built. The answer goes through the forward walk (task TPF-171, D3): the
+		// stale coder, ordered before the asking reviewer, runs again before the reviewer gets its
+		// answer back, rather than the task completing on a stale pass.
+		assertEquals(TaskStatus.QUEUED, answered.getStatus());
+		assertEquals("coder", answered.getRole(), "the stale pass is re-run before the asker");
+		agentTaskService.assign(t.getUuid(), board(r), r.workerB().getUuid(), r.sessB().getUuid(), WU);
+		AgentTaskData rebuilt = agentTaskService.signOff(t.getUuid(), r.sessB().getUuid(),
+				SignOffOutcome.PASSED, "built against v2", WU);
+		assertEquals(TaskStatus.QUEUED, rebuilt.getStatus());
+		assertEquals("reviewer", rebuilt.getRole(), "then the reviewer, back with its answer");
 
 		// the reviewer, back with its answer, passes
 		agentTaskService.assign(t.getUuid(), board(r), r.workerA().getUuid(), r.sessA().getUuid(), WU);
 		AgentTaskData after = agentTaskService.signOff(t.getUuid(), r.sessA().getUuid(),
 				SignOffOutcome.PASSED, "reviewed the new design", WU);
-
-		// The coder's pass was made against v1 and the design has moved since, so it describes
-		// something nobody built. Under strict routing the coder runs again rather than the task
-		// completing on a stale pass.
-		assertEquals(TaskStatus.QUEUED, after.getStatus());
-		assertEquals("coder", after.getRole(), "the stale pass is re-run, not counted");
+		assertNotEquals(TaskStatus.QUEUED, after.getStatus(), "every pass stands now: " + after.getStatusHistory());
 		assertNotNull(reviewer);
 	}
 
@@ -1619,6 +1629,8 @@ public class AgentBoardMechanicsIntegrationTest {
 		assertEquals(List.of("T-1"), openTestIds(t));
 		assertTrue(infoMessages(r).stream().anyMatch(m -> m.contains("designer passed, nothing to build; back to tester")),
 				infoMessages(r).toString());
+		// Task TPF-171 (T-12): the review-item branch keeps its own --no-change rule; no confirmation is asked for.
+		assertTrue(answered.getAnswerConfirmations().isEmpty(), "no confirmation record");
 		AgentTaskData.SignOff designerHop = answered.getSignOffs().get(answered.getSignOffs().size() - 1);
 		assertEquals(Boolean.TRUE, designerHop.noChange(), "the statement is recorded on the sign-off");
 		assertEquals(run[0].getUuid(), designerHop.answered());

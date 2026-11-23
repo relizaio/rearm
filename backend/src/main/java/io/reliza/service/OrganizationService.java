@@ -17,11 +17,13 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -53,14 +55,13 @@ import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.common.CommonVariables.SidPurlMode;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
+import io.reliza.common.CommonVariables.UserStatus;
 import io.reliza.common.EditedListValidation;
 import io.reliza.common.SafeRegex;
 import io.reliza.common.SidPurlUtils;
-import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
 import io.reliza.model.BrandingPreset;
-import io.reliza.model.SystemInfoData;
 import io.reliza.model.MetricsAudit;
 import io.reliza.model.Organization;
 import io.reliza.model.OrgTotalsTable;
@@ -70,14 +71,15 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.InvitedObject;
 import io.reliza.model.OrganizationData.TeaServing;
 import io.reliza.model.OrganizationData.TeaWellKnownHosting;
+import io.reliza.model.User;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission;
-import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.UserGroupData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.BrandedEmailText.EmailText;
+import io.reliza.service.UserRoleRules.RoleLevel;
 import io.reliza.repositories.OrganizationRepository;
 import io.reliza.ws.RelizaConfigProps;
 
@@ -124,6 +126,10 @@ public class OrganizationService {
 
 	@Autowired
 	private TeaHostAssignmentService teaHostAssignmentService;
+
+	@Autowired
+	@Lazy
+	private SeatGate seatGate;
 
 	private final OrganizationRepository repository;
 	
@@ -430,39 +436,6 @@ public class OrganizationService {
 			});
 	}
 	
-	private List<OrgUserRecord> getOrgUserRecords(UUID orgUuid) {
-		List<UserData> orgUsers = userService.listUserDataByOrg(orgUuid);
-		List<UserGroupData> orgUserGroups = userGroupService.getUserGroupsByOrganization(orgUuid);
-		
-		Map<UUID, List<UserGroupData>> userGroupsByUserUuid = new HashMap<>();
-		for (UserGroupData ugd : orgUserGroups) {
-			for (UUID userUuid : ugd.getAllUsers()) {
-				userGroupsByUserUuid.computeIfAbsent(userUuid, k -> new ArrayList<>()).add(ugd);
-			}
-		}
-
-		Map<String, UserType> emailToTypeMap = new LinkedHashMap<>();
-		for (UserData ud : orgUsers) {
-			String email = ud.getEmail(orgUuid);
-			if (email != null && !email.isEmpty()) {
-				boolean isWrite = isWriteUser(ud, orgUuid, userGroupsByUserUuid.getOrDefault(ud.getUuid(), List.of()));
-				UserType type = isWrite ? UserType.WRITE : UserType.READ;
-				// If email already exists, keep WRITE if either is WRITE
-				if (emailToTypeMap.containsKey(email)) {
-					if (type == UserType.WRITE) {
-						emailToTypeMap.put(email, UserType.WRITE);
-					}
-				} else {
-					emailToTypeMap.put(email, type);
-				}
-			}
-		}
-
-		return emailToTypeMap.entrySet().stream()
-				.map(entry -> new OrgUserRecord(entry.getKey(), entry.getValue()))
-				.collect(Collectors.toList());
-	}
-
 	/**
 	 * TPF-70: run one totals read in its own read-only transaction with the planner told to take
 	 * the index paths of the org totals indexes migration (SET LOCAL enable_seqscan = off: the cost
@@ -499,106 +472,63 @@ public class OrganizationService {
 		analytics.put(OrgTotalsTable.COUNTED_AT_KEY, org.oldestTotalsCountedAt()
 				.map(at -> DateTimeFormatter.ISO_INSTANT.format(at.toInstant())).orElse(null));
 
-		List<OrgUserRecord> orgUserRecords = getOrgUserRecords(orgUuid);
-		long writeUsers = orgUserRecords.stream().filter(r -> r.type() == UserType.WRITE).count();
-		long readUsers = orgUserRecords.stream().filter(r -> r.type() == UserType.READ).count();
+		// The three user figures add up to the organization's distinct ACTIVE members, each person counted
+		// once at their highest level (UserRoleRules). The per-org rule does not promote a global
+		// administrator, so one with no role here is users_without_role here.
+		Map<String, RoleLevel> levelByPerson = orgUserLevels(orgUuid, userService.listUsersByOrg(orgUuid, false),
+				userGroupService.getUserGroupsByOrganization(orgUuid));
+		long writeUsers = levelByPerson.values().stream().filter(l -> l == RoleLevel.WRITE).count();
+		long readUsers = levelByPerson.values().stream().filter(l -> l == RoleLevel.READ).count();
+		long noRoleUsers = levelByPerson.values().stream().filter(l -> l == RoleLevel.NONE).count();
 		
 		analytics.put("admin_and_write_users", BigInteger.valueOf(writeUsers));
 		analytics.put("read_only_users", BigInteger.valueOf(readUsers));
+		analytics.put("users_without_role", BigInteger.valueOf(noRoleUsers));
 		return analytics;
 	}
 
-	public enum UserType {
-		READ,
-		WRITE
+	/**
+	 * The role level of each person among the ACTIVE members of {@code org}, keyed by
+	 * {@link UserRoleRules#personKey}: the highest level of a person's records ({@link #activeMembers}). Pure.
+	 */
+	public static Map<String, RoleLevel> orgUserLevels(UUID org, Collection<User> users, Collection<UserGroupData> groups) {
+		Map<String, RoleLevel> levelByPerson = new HashMap<>();
+		for (ActiveMember<User> m : activeMembers(org, users, UserData::dataFromRecord, groups)) {
+			levelByPerson.merge(UserRoleRules.personKey(m.data()), UserRoleRules.levelOf(m.effective()), RoleLevel::max);
+		}
+		return levelByPerson;
 	}
 
-	public record OrgUserRecord(String email, UserType type) {}
+	/** An ACTIVE member of an organization: the caller's record, its data and its effective org permissions. */
+	public record ActiveMember<T>(T source, UserData data, Set<UserPermission> effective) {}
 
-	public record GlobalUserCounts(long writeUsers, long readUsers, long totalUsers) {}
-
-	public GlobalUserCounts getGlobalUserCounts() {
-		List<OrganizationData> allOrgs = listAllOrganizationData();
-		Map<String, UserType> globalEmailToTypeMap = new HashMap<>();
-		
-		for (OrganizationData od : allOrgs) {
-			List<OrgUserRecord> orgUserRecords = getOrgUserRecords(od.getUuid());
-			for (OrgUserRecord record : orgUserRecords) {
-				String email = record.email();
-				UserType type = record.type();
-				
-				// Merge by email: WRITE > READ
-				if (globalEmailToTypeMap.containsKey(email)) {
-					if (type == UserType.WRITE) {
-						globalEmailToTypeMap.put(email, UserType.WRITE);
-					}
-					// If existing is already WRITE, keep it
-				} else {
-					globalEmailToTypeMap.put(email, type);
-				}
+	/**
+	 * The ACTIVE members of {@code org} among {@code users}, each with their own permissions merged with
+	 * their groups' ({@link #combinePermissions}), in the order given. Every per-person count of an
+	 * organization's members by role walks its members through this. Pure.
+	 */
+	public static <T> List<ActiveMember<T>> activeMembers(UUID org, Collection<T> users, Function<T, UserData> dataOf,
+			Collection<UserGroupData> groups) {
+		Map<UUID, List<Set<UserPermission>>> groupSetsByUser = new HashMap<>();
+		if (null != groups) {
+			for (UserGroupData g : groups) {
+				Set<UUID> members = g.getAllUsers();
+				if (null == members) continue;
+				for (UUID u : members) groupSetsByUser.computeIfAbsent(u, k -> new ArrayList<>()).add(g.getOrgPermissions(org));
 			}
 		}
-		
-		long writeUsers = globalEmailToTypeMap.values().stream().filter(t -> t == UserType.WRITE).count();
-		long readUsers = globalEmailToTypeMap.values().stream().filter(t -> t == UserType.READ).count();
-		long totalUsers = globalEmailToTypeMap.size();
-		
-		return new GlobalUserCounts(writeUsers, readUsers, totalUsers);
-	}
-
-	public void validateNewUserAllowedByLicense(boolean isWriteUser) throws RelizaException {
-		if (LicensingConstants.isOssEdition()) return;
-		SystemInfoData sid = systemInfoService.getSystemInfoData();
-		if (sid.getLicensedMaxWriteUsers() == null && sid.getLicensedMaxReadUsers() == null) return;
-
-		GlobalUserCounts counts = getGlobalUserCounts();
-		int maxWrite = sid.getLicensedMaxWriteUsers() != null ? sid.getLicensedMaxWriteUsers() : Integer.MAX_VALUE;
-		int maxRead = sid.getLicensedMaxReadUsers() != null ? sid.getLicensedMaxReadUsers() : Integer.MAX_VALUE;
-
-		if (isWriteUser) {
-			if (counts.writeUsers() >= maxWrite) {
-				throw new RelizaException("License limit reached: maximum " + maxWrite + " write users allowed.");
-			}
-		} else {
-			if (counts.readUsers() >= maxRead) {
-				// read slots full - overflow into write slots
-				if (counts.writeUsers() >= maxWrite) {
-					throw new RelizaException("License limit reached: maximum " + maxRead + " read users and " + maxWrite + " write users allowed.");
-				}
-			}
+		List<ActiveMember<T>> out = new ArrayList<>();
+		if (null == users) return out;
+		for (T u : users) {
+			UserData ud = dataOf.apply(u);
+			if (ud.getStatus() != null && ud.getStatus() != UserStatus.ACTIVE) continue;
+			Set<UserPermission> effective = combinePermissions(ud.getOrgPermissions(org), org,
+					groupSetsByUser.getOrDefault(ud.getUuid(), List.of())).getOrgPermissionsAsSet(org);
+			out.add(new ActiveMember<>(u, ud, effective));
 		}
+		return out;
 	}
 
-	public void validateWriteUserElevationAllowedByLicense(int newWriteUsers) throws RelizaException {
-		if (LicensingConstants.isOssEdition()) return;
-		SystemInfoData sid = systemInfoService.getSystemInfoData();
-		if (sid.getLicensedMaxWriteUsers() == null) return;
-
-		GlobalUserCounts counts = getGlobalUserCounts();
-		int maxWrite = sid.getLicensedMaxWriteUsers();
-		if (counts.writeUsers() + newWriteUsers > maxWrite) {
-			throw new RelizaException("License limit reached: maximum " + maxWrite + " write users allowed.");
-		}
-	}
-
-	private boolean isWriteUser(UserData ud, UUID orgUuid, List<UserGroupData> preloadedUserGroups) {
-		Set<UserPermission> effectivePermissions = obtainCombinedUserOrgPermissions(ud, orgUuid, preloadedUserGroups)
-				.getOrgPermissionsAsSet(orgUuid);
-		for (UserPermission permission : effectivePermissions) {
-			if (permission.getType() == PermissionType.ADMIN || permission.getType() == PermissionType.READ_WRITE) {
-				return true;
-			}
-			if (null != permission.getFunctions()
-					&& permission.getFunctions().contains(PermissionFunction.FINDING_ANALYSIS_WRITE)) {
-				return true;
-			}
-			if (null != permission.getApprovals() && !permission.getApprovals().isEmpty()) {
-				return true;
-			}
-		}
-		return false;
-	}
-	
 	public Optional<UserPermission> obtainUserOrgPermission(UserData ud, UUID org) {
 		Optional<UserPermission> oup = ud.getPermission(org, PermissionScope.ORGANIZATION, org);
 		Set<String> approvals = (oup.isPresent() && null != oup.get().getApprovals()) ? new HashSet<>(oup.get().getApprovals()) : new HashSet<>();
@@ -702,6 +632,11 @@ public class OrganizationService {
 	 */
 	@Transactional
 	public OrganizationData inviteUserToOrganization (UUID org, String userEmail, PermissionType type, WhoUpdated wu) {
+		// license seats (TPF-167, P8): the lock first, then the invitee judged as max(current, type) before the
+		// org row UPDATE; outside the catch-all below so the refusal reaches the inviting admin as it is.
+		// An invitation reserves no seat: the join judges again.
+		SeatGate.Change seats = seatGate.beginSeatChange();
+		seatGate.assertWouldFit(seats, null == userEmail ? null : userEmail.toLowerCase(Locale.ROOT), type);
 		// we generate secret first, then store hash in the database
 		OrganizationData od = null;
 		try {
@@ -742,6 +677,9 @@ public class OrganizationService {
 		String[] splitSecret = secret.split(CommonVariables.JOIN_SECRET_SEPARATOR);
 		String orgUuidStr = encryptionService.decrypt(splitSecret[0]);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
+		// license seats (TPF-167, P9): the lock before the org row lock (D4 lock order, F-3);
+		// injectNewOrgDetailsToUser reuses the handle and judges the membership after its save
+		seatGate.beginSeatChange();
 		// TPF-48: the row locked and refreshed, so a join that read before an archive committed waits
 		// for it and sees ARCHIVED, and the save below writes from the committed row
 		Optional<Organization> oorg = repository.findByIdWriteLocked(orgUuid);
@@ -1028,6 +966,11 @@ public class OrganizationService {
 			}
 
 			applySidPurlPatch(settings, settingsPatch);
+
+			// TPF-167 (TPF-165 D6): PATCH-shaped; null leaves the stored value, read on the default org only.
+			if (null != settingsPatch.getSsoUsersWithoutRole()) {
+				settings.setSsoUsersWithoutRole(settingsPatch.getSsoUsersWithoutRole());
+			}
 
 
 			od.setSettings(settings);

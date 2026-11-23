@@ -4,6 +4,7 @@
 package io.reliza.ws;
 
 import static io.reliza.ws.OrientationText.section;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -65,6 +66,49 @@ class OrientationTakingATaskContractTest {
 		assertTrue(doc.contains("each child carries the design as pinned inputs"), "the carried design");
 		assertTrue(doc.contains("rearm agent task authorize <key> --session <seat-session-uuid> --role coder"), "send it on");
 		assertTrue(doc.contains("Authorizing a design role instead sends the task round again"), "the design role");
+		// task TPF-152 (6.2, F-4): the stop is qualified once, and the coordinator keeps its verbs on a waived task
+		assertTrue(doc.contains("once the design is reviewed, the task stops at the coordinator with an ALERT instead of"
+				+ " going to that role, unless the architect signed its newest design round off `--no-split` (below)"),
+				"the qualified stop");
+		assertTrue(doc.contains("An architect whose design fits one coder pass signs it off with `--no-split`: the task"
+				+ " does not stop"), "the waiver");
+		assertTrue(doc.contains("You keep `task hold`, `task reopen` and `task split` on a waived task."), "the verbs");
+	}
+
+	/**
+	 * Task TPF-161 (D11, T-21): a child marked designFromParent goes to the build role on the carried rounds, and the
+	 * coder sentence, verbatim (F-12); a proposed child may carry the flag and the coordinator decides.
+	 */
+	@Test
+	void aCarriedChildGoesToTheBuildRole() throws IOException {
+		String doc = section("taking-a-task").replaceAll("\\s+", " ");
+		String checkpoint = OrientationText.between(doc, "**The design checkpoint.**", "**A split request.**");
+		assertTrue(checkpoint.contains("A child marked `designFromParent` at the split (`\"designFromParent\":true` on the"
+				+ " child in `--children-json`) carries the parent's reviewed rounds as its design, lists them under"
+				+ " `carried from <parent key>`, and goes to the build role"), "the carried child");
+		assertTrue(checkpoint.contains("It stops here only once it publishes its own round."), "when it stops");
+		assertTrue(checkpoint.contains("On a carried child, work that the child's description asks for and the carried"
+				+ " design does not cover is a review item about ARCHITECTURE, not something to build."), "the coder sentence");
+		String request = OrientationText.between(doc, "**A split request.**", "A board's events are a log");
+		assertTrue(request.contains("A proposed child may say `designFromParent`; the coordinator decides:"
+				+ " `--from-request` keeps it, your own `--children-json` may drop it."), "the proposal");
+	}
+
+	/**
+	 * Task TPF-171 (D14, T-14): the coordinator's verdict on an answer marked no change, both verdicts, and that
+	 * authorize confirms nothing.
+	 */
+	@Test
+	void anAnswerMarkedNoChangeWaitsForTheCoordinatorsVerdict() throws IOException {
+		String doc = section("taking-a-task").replaceAll("\\s+", " ");
+		String paragraph = OrientationText.between(doc, "**An answer marked no change.**", "A child marked `designFromParent`");
+		assertTrue(paragraph.contains("`rearm agent task confirm-answer <key> --session <seat-session-uuid> --verdict CONFIRMED`"),
+				"the verb");
+		assertTrue(paragraph.contains("`--verdict REFUSED`"), "the refusal");
+		assertTrue(paragraph.contains("Sending the task on with `authorize` instead confirms nothing: the round counts as a change."),
+				"authorize");
+		assertTrue(paragraph.contains("You cannot confirm an answer your own agent gave, as the seat or with a personal key of"
+				+ " the user whose key that agent runs on."), "the self-confirmation rule");
 	}
 
 	/**
@@ -131,6 +175,35 @@ class OrientationTakingATaskContractTest {
 			assertTrue(cmd.contains("--session <seat-session-uuid>"), "no --session: " + cmd);
 		}
 		assertTrue(seatCommands >= 2, "the split and authorize examples were found: " + seatCommands);
+	}
+
+	/**
+	 * Task TPF-155 (7.2, T-92 b): an OPTIONAL role with runWhen is passed over by routing when the task's tags do not
+	 * meet it; the paragraph names the record, the reason text, when the condition is read, and the verb per state.
+	 */
+	@Test
+	void aConditionalRoleIsPassedOverByRouting() throws IOException {
+		String doc = section("taking-a-task").replaceAll("\\s+", " ");
+		String paragraph = OrientationText.between(doc, "**Conditional roles.**", "A board's events are a log");
+		assertTrue(paragraph.contains("**Conditional roles.**"), "the paragraph");
+		assertTrue(paragraph.contains("routing passes the role over with no hop and no event"), "no hop, no event");
+		assertTrue(paragraph.contains("`rolesSkippedByCondition`"), "the record");
+		assertTrue(paragraph.contains("runWhen not met: no mutation tag"), "the reason");
+		assertTrue(paragraph.contains("a tag added later changes nothing until routing next reaches the role"),
+				"a tag added later");
+		assertTrue(paragraph.contains("while QUEUED, `rearm agent task hold <key> --session <seat-session-uuid> --reason"
+				+ " '<why>'` then `rearm agent task lifthold <key> --session <seat-session-uuid> --role <role>`; once back with"
+				+ " the coordinator, `rearm agent task authorize <key> --session <seat-session-uuid> --role <role>`; once"
+				+ " completed, `rearm agent task reopen <key> --session <seat-session-uuid> --role <role> --reason '<why>'`."
+				+ " Each runs the role whatever the tags, for that round."), "the verb per state");
+		assertTrue(paragraph.contains("A REQUIRED role never carries a condition."), "never on a REQUIRED role");
+		assertTrue(doc.indexOf("**Conditional roles.**") > doc.indexOf("**A split request.**"), "after the split request");
+		int seatCommands = 0;
+		for (String cmd : inlineCommands(paragraph)) {
+			seatCommands++;
+			assertTrue(cmd.contains("--session <seat-session-uuid>"), "no --session: " + cmd);
+		}
+		assertEquals(4, seatCommands, "the hold, lifthold, authorize and reopen examples");
 	}
 
 	@Test

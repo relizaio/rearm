@@ -210,7 +210,10 @@ or return the hop. A task too big for your pass, or whose design recommends a
 split not yet made, is returned with `--reason SPLIT`, one line why and, when
 you can, `--children-json` with the children you propose (a CLI without that
 flag on `return` sends the request without a proposal); the coordinator splits
-it or sends it back with a note you read in `task brief`.
+it or sends it back with a note you read in `task brief`. A proposed child the
+parent's reviewed design already covers, adding nothing to it, may say
+`"designFromParent":true`; the coordinator decides whether it builds from that
+design.
 
 ## Name the task by its key
 

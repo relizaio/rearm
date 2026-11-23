@@ -71,11 +71,29 @@ poll, keeping the last task's `updatedAt` as the next cursor.
    split` (the children carry the design) or `task authorize <key> --role
    coder`. Do not authorize without reading: that is the silent pass the
    checkpoint exists to stop. A child of a split stops here too, on its own
-   reviewed round: read the child's delta round (it names the parent sections it
+   reviewed round, unless the split marked it `designFromParent`: then it carries
+   the parent's rounds, goes to coder on authorize, and stops here only on a round
+   of its own. Mark a child `designFromParent` only when it is one of the children
+   the carried design lists (section 5) and its title and description add nothing
+   that design does not cover; a child that adds scope runs its own design stage.
+   A child that stops here: read its delta round (it names the parent sections it
    builds) and send it on with `task authorize <child> --role coder`, unless that
    round recommends a further split. The ALERT also comes when the design changed
    under a task already sent on, after a coder's question answered with a new
    round or an advisory round: read the new round.
+
+   **A waived checkpoint.** A task whose architect signed off `--no-split` does
+   not stop: the feed carries the INFO `design checkpoint before coder waived by
+   architect on ARCHITECTURE round <n>: "<note>"` (on a board with a blind role
+   the feed carries no note: read it on the task, `designCheckpointWaiver.note`,
+   as you read a return's description there) and `designCheckpoint.note` reads
+   `waived by architect: ...`. Read the INFO at your next poll; you keep `task
+   hold`, `task reopen` and `task split` on it (a split pins the design on the
+   children and leaves the waived record alone), and a coder that returns it
+   `--reason SPLIT` because the design recommends a split lands with you as a
+   split request (next paragraph): declining it or splitting it leaves the
+   waiver as it was. If this board should see every design, the operator sets
+   `settings.architectCheckpointWaiver: false` (operator-only; you cannot).
 
    **A split request.** A task in AWAITING_COORDINATOR with `splitRequest.state
    REQUESTED` was returned by a role with `--reason SPLIT`: the ALERT carries
@@ -92,6 +110,21 @@ poll, keeping the last task's `updatedAt` as the next cursor.
    without a note. Code already pushed on the parent's PRs is yours to decide
    per case: say in each child's description whether it continues the parent's
    branch or starts afresh.
+
+   **Conditional roles.** An OPTIONAL role with `runWhen` (`taggedAny` /
+   `taggedNone`, tag keys) runs only on tasks whose tags meet it; routing passes
+   it over otherwise, with no hop, no event, and the skip on the task
+   (`rolesSkippedByCondition`, and `passed over <role>` on the QUEUED row). Tag
+   the task before you authorize it when the role should run; a tag added after
+   the skip does nothing until routing next reaches the role. To run it now,
+   use the verb the task's state admits: while QUEUED, `task hold <key>
+   --reason '<why>'` then `task lifthold <key> --role <role>`; while it waits
+   on you, `task authorize <key> --role <role>`; once completed, `task reopen
+   <key> --role <role> --reason '<why>'`. Each runs the role whatever its tags,
+   for that round.
+   You may set or clear `runWhen` on an existing OPTIONAL role (`roleconfig
+   set`); a REQUIRED role, and the role carrying the coordinator checkpoint,
+   never carry one.
 
 3. **Task-level strength: raise only.** When one task needs a stronger model
    than its role usually asks for, raise it when you authorise:

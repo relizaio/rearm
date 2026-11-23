@@ -120,9 +120,9 @@ public class DeclarativeConfigDataFetcher {
 	}
 
 	/**
-	 * Who a programmatic board apply acts as (task SPLIT-5, D11): the owner of a personal (USER) key, whose every
-	 * call is capped by and attributed to them; the application for any other key, which is what an agent's session
-	 * is opened with. Only a person changes which role carries the board's coordinator checkpoint.
+	 * Who a programmatic board apply acts as (task TPF-152, D13): the owner of a personal (USER) key, whose every call
+	 * is capped by and attributed to them; the application for any other key, which is what an agent's session is
+	 * opened with. Only the waiver switch still depends on it.
 	 */
 	static AgentActor applyActor(UserData owner) {
 		return null == owner ? AgentActor.system("declarative apply") : AgentActor.ofUser(owner.getUuid(), owner.getEmail());

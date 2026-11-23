@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import io.reliza.model.dto.notifications.LicenseSeatEventPayload;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -109,6 +110,7 @@ public class TeamsAdaptiveCardFormatter {
             case APPROVAL_RESOLVED -> renderApprovalResolved(event);
             case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event);
             case AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE, AGENT_SESSION_IDLE_WARNING -> renderAgentBoard(event);
+            case LICENSE_SEAT_EVENT -> renderLicenseSeat(event);
         };
     }
 
@@ -559,6 +561,16 @@ public class TeamsAdaptiveCardFormatter {
     }
 
     /** A board notification: the headline, the board's own words, and a link to the task page. */
+    private Map<String, Object> renderLicenseSeat(NotificationOutboxEvent event) {
+        LicenseSeatEventPayload p = LicenseSeatRenderSupport.payload(event);
+        if (p == null) return fallbackCard(event);
+        List<Map<String, Object>> body = new ArrayList<>();
+        body.add(textBlock(LicenseSeatRenderSupport.HEADLINE, "Medium", "Bolder", "Default"));
+        String text = LicenseSeatRenderSupport.body(p);
+        if (StringUtils.isNotBlank(text)) body.add(textBlock(text, "Default", "Default", "Default"));
+        return adaptiveCard(body, List.of());
+    }
+
     private Map<String, Object> renderAgentBoard(NotificationOutboxEvent event) {
         io.reliza.model.dto.notifications.AgentBoardEventPayload p = AgentBoardRenderSupport.payload(event);
         if (p == null) return fallbackCard(event);

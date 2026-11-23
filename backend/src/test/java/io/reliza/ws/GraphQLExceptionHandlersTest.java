@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import graphql.GraphQLError;
 import io.reliza.common.CommonVariables.ProgrammaticType;
+import io.reliza.exceptions.AccountRefusedException;
 import io.reliza.exceptions.ComponentRevisionConflictException;
 import io.reliza.exceptions.RebomResponseTooLargeException;
 import io.reliza.exceptions.RelizaException;
@@ -121,5 +122,13 @@ public class GraphQLExceptionHandlersTest {
 		GraphQLError bad = handlers.handleReliza(new RelizaException("branch is required"));
 		assertEquals("branch is required", bad.getMessage());
 		assertTrue(null == bad.getExtensions() || !bad.getExtensions().containsKey("ref"));
+	}
+
+	@Test
+	public void accountRefused_surfacesCodeAndReasonAsBadRequest() {
+		GraphQLError err = handlers.handleAccountRefused(AccountRefusedException.noRole());
+		assertEquals(AccountRefusedException.NO_ROLE_TEXT, err.getMessage());
+		assertEquals("BAD_REQUEST", String.valueOf(err.getErrorType()));
+		assertEquals(Map.of("code", "LICENSE_SEAT_REFUSED", "reason", "NO_ROLE"), err.getExtensions());
 	}
 }

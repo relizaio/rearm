@@ -1168,7 +1168,20 @@ public class AgentBoardService {
 			Long hopBudgetMicros,
 			Boolean blindReview,
 			AgentTaskRoleConfigData.Commissions commissions,
-			Boolean coordinatorCheckpoint) {
+			Boolean coordinatorCheckpoint,
+			Optional<AgentTaskRoleConfigData.RunWhen> runWhen) {
+
+		/** Pre-runWhen constructor (task TPF-155), so existing call sites read unchanged: null leaves runWhen alone. */
+		public RoleConfigSpec(String name, String prompt, Integer orderIndex, Integer wipLimit,
+				Boolean requireDistinctAgent, Boolean active, List<AgentCapability> requiredCapabilities,
+				AgentTaskRoleConfigData.RoleKind kind, AgentTaskRoleConfigData.RoleNecessity necessity,
+				AgentTaskRoleConfigData.HumanGate humanGate, List<RequiredInput> requiredInputs,
+				List<ProducedOutput> producesOutputs, StrengthSpec strength, Long hopBudgetMicros, Boolean blindReview,
+				AgentTaskRoleConfigData.Commissions commissions, Boolean coordinatorCheckpoint) {
+			this(name, prompt, orderIndex, wipLimit, requireDistinctAgent, active, requiredCapabilities,
+					kind, necessity, humanGate, requiredInputs, producesOutputs, strength, hopBudgetMicros, blindReview,
+					commissions, coordinatorCheckpoint, null);
+		}
 
 		/** Pre-checkpoint constructor (task SPLIT-5), so existing call sites read unchanged. */
 		public RoleConfigSpec(String name, String prompt, Integer orderIndex, Integer wipLimit,
@@ -1377,7 +1390,11 @@ public class AgentBoardService {
 		return saveRoleConfigData(rcd, wu);
 	}
 
-	/** The refusal of a routing-graph field to a caller that may not change it (the seat's upsert, a FREEFORM apply). */
+	/** The apply's refusal of a change to the architect's waiver switch from anyone but a person (task TPF-152). */
+	static final String SWITCH_OPERATOR_ONLY = "settings.architectCheckpointWaiver is operator-only: only a person turns"
+			+ " the architect's design-checkpoint waiver on or off";
+
+	/** The refusal of a routing-graph field to a caller that may not change it (the seat's upsert). */
 	static final String ROUTING_GRAPH_OPERATOR_ONLY = "Capabilities, role kind, necessity, human gate, required"
 			+ " inputs, produced outputs, model strength, blind review, coordinator checkpoint, commissions and the hop"
 			+ " allowance are operator-only";
@@ -1514,6 +1531,9 @@ public class AgentBoardService {
 		if (spec.requiredCapabilities() != null) rcd.setRequiredCapabilities(spec.requiredCapabilities());
 		if (spec.kind() != null) rcd.setKind(spec.kind());
 		if (spec.necessity() != null) rcd.setNecessity(spec.necessity());
+		if (spec.runWhen() != null) {
+			rcd.setRunWhen(spec.runWhen().isPresent() ? checkedRunWhen(spec.runWhen().get()) : null);
+		}
 		if (spec.humanGate() != null) rcd.setHumanGate(spec.humanGate());
 		// BOARD_QUESTIONS is not something a role can contract on, in either direction: a question is
 		// what a hop emits when it cannot proceed, so a role requiring one could never start and a
@@ -1583,6 +1603,16 @@ public class AgentBoardService {
 				throw new RelizaException("A HUMAN role is itself the human stage; humanGate applies to AGENTIC roles only");
 			}
 		}
+		// Both read the row after every field is applied, so the order of the writes does not matter and a file
+		// is not exempt (task TPF-155, C2 and C13).
+		if (null != rcd.getRunWhen() && AgentTaskRoleConfigData.RoleNecessity.REQUIRED == rcd.getNecessity()) {
+			throw new RelizaException("Role " + rcd.getName() + " is REQUIRED; runWhen applies to OPTIONAL roles only:"
+					+ " set necessity OPTIONAL first, or clear runWhen");
+		}
+		if (null != rcd.getRunWhen() && rcd.isCoordinatorCheckpoint()) {
+			throw new RelizaException("Role " + rcd.getName() + " cannot carry both runWhen and the coordinator"
+					+ " checkpoint: a checkpoint role runs on every task; clear one before setting the other");
+		}
 		if (spec.active() != null) {
 			if (!spec.active() && !fromFile
 					&& rcd.getNecessity() == AgentTaskRoleConfigData.RoleNecessity.REQUIRED) {
@@ -1615,6 +1645,38 @@ public class AgentBoardService {
 		if (names.isEmpty()) return null;
 		return new AgentTaskRoleConfigData.Commissions(names, c.effectiveIntake(), c.defaultBudgetMicros(),
 				StringUtils.isBlank(c.review()) ? null : c.review().strip());
+	}
+
+	/**
+	 * A role's runWhen as stored (task TPF-155): each key stripped, lower-cased and checked under the tag key rule,
+	 * each once per list in the order given, no key in both lists, at most {@link AgentTaskService#MAX_TAGS} per list.
+	 * A record naming no key is stored as none.
+	 */
+	static AgentTaskRoleConfigData.RunWhen checkedRunWhen(AgentTaskRoleConfigData.RunWhen rw) throws RelizaException {
+		if (null == rw) return null;
+		List<String> any = checkedRunWhenKeys(rw.taggedAny());
+		List<String> none = checkedRunWhenKeys(rw.taggedNone());
+		for (String k : any) {
+			if (none.contains(k)) throw new RelizaException("runWhen names " + k + " in both taggedAny and taggedNone");
+		}
+		if (any.isEmpty() && none.isEmpty()) return null;
+		return new AgentTaskRoleConfigData.RunWhen(any, none);
+	}
+
+	private static List<String> checkedRunWhenKeys(List<String> keys) throws RelizaException {
+		List<String> out = new ArrayList<>();
+		for (String raw : null == keys ? List.<String>of() : keys) {
+			String k = null == raw ? "" : raw.strip().toLowerCase(Locale.ROOT);
+			if (!AgentTaskService.TAG_KEY.matcher(k).matches()) {
+				throw new RelizaException("runWhen: a tag key is 1 to 40 lower-case letters, digits, dots, underscores"
+						+ " and hyphens, starting with a letter or digit (got '" + (null == raw ? "" : raw) + "')");
+			}
+			if (!out.contains(k)) out.add(k);
+		}
+		if (out.size() > AgentTaskService.MAX_TAGS) {
+			throw new RelizaException("runWhen names at most " + AgentTaskService.MAX_TAGS + " keys per list");
+		}
+		return out;
 	}
 
 	/**
@@ -1699,7 +1761,8 @@ public class AgentBoardService {
 					preset.getOrderIndex(), preset.getWipLimit(), preset.isRequireDistinctAgent(),
 					true, preset.getRequiredCapabilities(), preset.getKind(), preset.getNecessity(),
 					preset.getHumanGate(), preset.getRequiredInputs(), preset.getProducesOutputs(),
-					StrengthSpec.copyOf(preset), null, preset.isBlindReview(), preset.getCommissions(), null),
+					StrengthSpec.copyOf(preset), null, preset.isBlindReview(), preset.getCommissions(), null,
+					Optional.ofNullable(preset.getRunWhen())),
 					true, wu);
 		}
 		if (!seeded && StringUtils.isBlank(board.getCoordinatorPrompt())) {
@@ -1778,9 +1841,10 @@ public class AgentBoardService {
 	 * <li>BOARD_WRITE, when the coordinator seat is empty and no key clears BOARD_WRITE at WRITE.</li>
 	 * </ul>
 	 * Each key is judged as it would be on a call ({@link AuthorizationService#boardPermission(io.reliza.model.ApiKey,
-	 * UUID, UUID, PermissionFunction, CallType)}); the org's admin keys clear, as everywhere, and so do
-	 * its usable federated trust rules for the identities they admit. Keys are read only when a line
-	 * could apply.
+	 * UUID, UUID, PermissionFunction, CallType)}); a key counts when it can authenticate by a secret, a
+	 * bound trust rule or a person who can sign in with it through a CLI login (TPF-174). The org's admin
+	 * keys clear, as everywhere, and so do its usable federated trust rules for the identities they admit.
+	 * Keys are read only when a line could apply.
 	 */
 	public List<CoverageGap> missingCoverage(AgentBoardData board) {
 		if (null == board) return List.of();
@@ -2143,10 +2207,40 @@ public class AgentBoardService {
 		sb.append("- A review item the producer fixed in part is RESOLVED in the round that saw the fix;"
 				+ " what remains is re-raised under a new id whose title names the old one. The same"
 				+ " id still OPEN after the producer's round counts as no progress.\n");
+		sb.append(ANSWERS_LINE);
 		String checkpoint = null == roles ? null : checkpointRole(roles);
-		if (null != checkpoint) sb.append(checkpointLine(checkpoint));
+		if (null != checkpoint) sb.append(checkpointLine(board, checkpoint));
+		String conditions = null == roles ? null : conditionLine(roles);
+		if (null != conditions) sb.append(conditions);
 		if (null != merge) sb.append(deliveryLine(merge));
 		return sb.toString();
+	}
+
+	/**
+	 * The routing-rules bullet on answers (task TPF-171, D14), on every board: an answer goes through every stale pass
+	 * before the asker, and one signed off --no-change stops at the coordinator.
+	 */
+	static final String ANSWERS_LINE = "- Answers: a pass that answers a question goes to every role whose pass no longer"
+			+ " stands before the asker gets the task back; signed off --no-change it stops at the coordinator, who"
+			+ " confirms it changes nothing (back to the asker, unless another pass is stale, which is reviewed first) or"
+			+ " refuses it (reviewed as a change).\n";
+
+	/** The routing-rules bullet of the roles with a condition (task TPF-155); null when no active role carries one. */
+	static String conditionLine(Collection<AgentTaskRoleConfigData> roles) {
+		List<String> clauses = roles.stream().filter(rc -> rc.isActive() && null != rc.getRunWhen())
+				.map(rc -> rc.getName() + " runs only on a task " + describe(rc.getRunWhen())).toList();
+		if (clauses.isEmpty()) return null;
+		return "- Conditional roles: " + String.join("; ", clauses) + ". On any other task routing passes the role over"
+				+ " and records the skip on the task (rolesSkippedByCondition); only an explicit authorize, liftHold or"
+				+ " reopen naming the role runs it.\n";
+	}
+
+	/** A condition in words (task TPF-155): "tagged a or b", "not tagged c", or both joined by "and". */
+	static String describe(AgentTaskRoleConfigData.RunWhen rw) {
+		String any = rw.taggedAny().isEmpty() ? null : "tagged " + String.join(" or ", rw.taggedAny());
+		String none = rw.taggedNone().isEmpty() ? null : "not tagged " + String.join(" or ", rw.taggedNone());
+		if (null == any) return null == none ? "" : none;
+		return null == none ? any : any + " and " + none;
 	}
 
 	/**
@@ -2235,12 +2329,23 @@ public class AgentBoardService {
 		return servedPrompt(board, prompt, effectiveMerge(board), active);
 	}
 
-	/** The routing-rules bullet of the design checkpoint before {@code role} (task SPLIT-5, 3.9). */
-	static String checkpointLine(String role) {
+	/**
+	 * The routing-rules bullet of the design checkpoint before {@code role} (task SPLIT-5, 3.9), stating the
+	 * architect's waiver once when the board's architectCheckpointWaiver is on (task TPF-152, 6.1).
+	 */
+	static String checkpointLine(AgentBoardData board, String role) {
+		if (board.getEffectiveArchitectCheckpointWaiver()) {
+			return "- Design checkpoint: before the " + role + " is queued, a task stops at the coordinator with an"
+					+ " ALERT unless the architect signed its newest design round off --no-split; a stopped design the"
+					+ " coordinator reads and splits or sends on, a waived one goes to the " + role + " with an INFO and"
+					+ " the coordinator keeps hold, reopen and split. An architect that recommends a split says so in the"
+					+ " design's last section and in its sign-off note, and signs off without the flag.\n";
+		}
 		return "- Design checkpoint: before the " + role + " is queued, every task stops at the coordinator with an"
 				+ " ALERT; the coordinator reads the reviewed design and splits the task or sends it on. No pass goes"
 				+ " straight to the " + role + ". An architect that recommends a split says so in the design's last"
-				+ " section and in its sign-off note.\n";
+				+ " section and in its sign-off note. An architect's --no-split is recorded but ignored on this board:"
+				+ " every design stops at the coordinator.\n";
 	}
 
 	/** Heading of the merge-procedure part of the coordinator's served prompt. */
@@ -2585,6 +2690,8 @@ public class AgentBoardService {
 		private Integer completionPriority;
 		/** Whether a loop stop parks for the coordinator first (task c0a2134c); null is on. */
 		private Boolean coordinatorStopLift;
+		/** Whether an architect's --no-split waives the design checkpoint (task TPF-152); null is on. Operator-only. */
+		private Boolean architectCheckpointWaiver;
 		/** Days the event log keeps an event (task 04dedcc5); null is 15, 0 keeps everything. */
 		private Integer eventRetentionDays;
 		/**
@@ -2640,11 +2747,14 @@ public class AgentBoardService {
 		private Boolean blindReview;
 		/**
 		 * Before this role is queued on a design the task stops at the coordinator (task SPLIT-5). A board's own role
-		 * only: a presets file that carries it is refused. Changed only by a person (D11).
+		 * only: a presets file that carries it is refused. The seat's upsert refuses it; an apply changes it under the
+		 * apply's own gate (D11).
 		 */
 		private Boolean coordinatorCheckpoint;
 		/** Who the role may commission for a report (task RD4-12): roles by name, so the file travels. */
 		private AgentTaskRoleConfigData.Commissions commissions;
+		/** When routing's own walk queues the role, by task tag. Absent: unchanged; null: cleared (D15); task TPF-155. */
+		private AgentTaskRoleConfigData.RunWhen runWhen;
 		private BoardStrengthSpecDto strength;
 		/** As {@link BoardSpecDto#getDeclared}, with the strength parts as {@code strength.<key>}. */
 		@JsonIgnore private Set<String> declared;
@@ -2671,7 +2781,7 @@ public class AgentBoardService {
 
 	private static final List<String> SETTINGS_KEYS = List.of("budgetMicros", "softAlertPercent", "cycleCap",
 			"noProgressRepeatsToStop", "blockingPriority", "completionPriority", "humanQueueAgeMinutes",
-			"coordinatorStopLift", "eventRetentionDays", "staleness", "ladder");
+			"coordinatorStopLift", "architectCheckpointWaiver", "eventRetentionDays", "staleness", "ladder");
 
 	/**
 	 * Read a board spec from input, keeping which keys it carried (D15). A key present with a null
@@ -3086,6 +3196,9 @@ public class AgentBoardService {
 			}
 		}
 		Map<String, Object> boardBefore = creating ? Map.of() : boardState(bd);
+		// The architect's waiver switch is operator-only (task TPF-152, 4.5, the D11 person rule); a create counts the
+		// default, on, as the value before.
+		boolean waiverBefore = creating || bd.getEffectiveArchitectCheckpointWaiver();
 		List<Change> roleChanges = new ArrayList<>();
 		List<String> alerts = new ArrayList<>();
 		try {
@@ -3104,13 +3217,16 @@ public class AgentBoardService {
 			return result;
 		}
 
+		if (bd.getEffectiveArchitectCheckpointWaiver() != waiverBefore
+				&& (null == actor || AgentActor.ActorKind.USER != actor.kind())) {
+			result.add(error(boardName, SWITCH_OPERATOR_ONLY));
+		}
+
 		// ---- roles ----
 		List<AgentTaskRoleConfigData> current = listRoleConfigs(bd.getUuid());
 		// The commissions check reads the roles as the file leaves them (task RD4-12): the rows below are changed
 		// in place, and a new role joins them once its entry applies.
 		List<String> commissionsBefore = commissionProblems(current, "board " + boardName);
-		// The board's active flagged role before the file (task SPLIT-5, D11): the rows below change in place.
-		String checkpointBefore = checkpointRole(current);
 		List<AgentTaskRoleConfigData> rolesAfter = new ArrayList<>(current);
 		position = 0;
 		for (ResolvedRole rr : roles) {
@@ -3171,8 +3287,12 @@ public class AgentBoardService {
 		List<String> commissionsAfter = new ArrayList<>(commissionProblems(rolesAfter, "board " + boardName));
 		commissionsAfter.removeAll(commissionsBefore);
 		for (String p : commissionsAfter) roleChanges.add(error(boardName, p));
-		checkpointChanges(bd, checkpointBefore, rolesAfter, rolesDeclared ? names : null, actor)
-				.forEach(roleChanges::add);
+		// At most one active role carries the design checkpoint (task SPLIT-5, 3.5), on the roles as the file leaves
+		// them. Which role carries it is the applying key's to change: the apply's gate is CONFIGURATION_WRITE and
+		// BOARD_WRITE on the board, which already covers the coder's prompt, inputs and gate; the seat's own upsert
+		// still refuses the flag (upsertRoleConfig).
+		String twoCheckpoints = checkpointProblem(bd, rolesAfter, null);
+		if (null != twoCheckpoints) roleChanges.add(error(bd.getName(), twoCheckpoints));
 
 		// ---- the board's own change, provenance and the record (D9) ----
 		List<String> boardChanged = changedFields(boardBefore, boardState(bd));
@@ -3196,35 +3316,6 @@ public class AgentBoardService {
 			for (String a : alerts) postEvent(bd.getUuid(), AgentBoardData.BoardEventKind.ALERT, a, by, wu);
 		}
 		return result;
-	}
-
-	/**
-	 * The design checkpoint's rules on an apply (task SPLIT-5, 3.5, D11), on the roles as the file leaves them, the
-	 * archive of absent roles included: at most one active role carries the flag, and which one does -- by name, or
-	 * none -- changes only when a person applies. A change from any other actor is an error on the role that changed,
-	 * so the file is refused as a whole. A file that repeats the stored state changes nothing and passes.
-	 *
-	 * @param declaredNames the lower-cased role names of a file that declares {@code roles}; null when it does not
-	 */
-	private static List<Change> checkpointChanges(AgentBoardData bd, String before, List<AgentTaskRoleConfigData> after,
-			Set<String> declaredNames, AgentActor actor) {
-		List<Change> out = new ArrayList<>();
-		String two = checkpointProblem(bd, after, null);
-		if (null != two) out.add(error(bd.getName(), two));
-		String now = checkpointRole(after);
-		boolean person = null != actor && AgentActor.ActorKind.USER == actor.kind();
-		if (person || Objects.equals(before, now)) return out;
-		if (null != before) {
-			boolean absent = null != declaredNames && !declaredNames.contains(before.toLowerCase(Locale.ROOT));
-			out.add(error(before, ROUTING_GRAPH_OPERATOR_ONLY + " (" + before + " carries the board's coordinator"
-					+ " checkpoint" + (absent ? " and is absent from the file" : "") + "; only a person changes which role"
-					+ " carries it)"));
-		}
-		if (null != now) {
-			out.add(error(now, ROUTING_GRAPH_OPERATOR_ONLY + " (only a person puts the board's coordinator checkpoint"
-					+ " on " + now + ")"));
-		}
-		return out;
 	}
 
 	private ApplyResult applyPresetWrites(UUID orgUuid, RolePresetsSpecDto spec, boolean dryRun, SourceDto source,
@@ -3406,15 +3497,16 @@ public class AgentBoardService {
 				d.has("hopBudgetMicros", r.getHopBudgetMicros()) ? r.getHopBudgetMicros() : null,
 				d.has("blindReview", r.getBlindReview()) ? r.getBlindReview() : null,
 				d.has("commissions", r.getCommissions()) ? r.getCommissions() : null,
-				d.has("coordinatorCheckpoint", r.getCoordinatorCheckpoint()) ? r.getCoordinatorCheckpoint() : null);
+				// A declared null reaches applySpec as false, so the runWhen check sees the flag cleared (task TPF-155).
+				d.has("coordinatorCheckpoint", r.getCoordinatorCheckpoint())
+						? Boolean.TRUE.equals(r.getCoordinatorCheckpoint()) : null,
+				// Declared null clears through applySpec (task TPF-155, D15).
+				d.has("runWhen", r.getRunWhen()) ? Optional.ofNullable(r.getRunWhen()) : null);
 		applySpec(rc, spec, fromFile);
 		// Declared null clears (D15). The upsert reads null as "leave it", so the clears are here.
 		if (d.has("wipLimit", r.getWipLimit()) && null == r.getWipLimit()) rc.setWipLimit(null);
 		if (d.has("hopBudgetMicros", r.getHopBudgetMicros()) && null == r.getHopBudgetMicros()) rc.setHopBudgetMicros(null);
 		if (d.has("blindReview", r.getBlindReview()) && null == r.getBlindReview()) rc.setBlindReview(false);
-		if (d.has("coordinatorCheckpoint", r.getCoordinatorCheckpoint()) && null == r.getCoordinatorCheckpoint()) {
-			rc.setCoordinatorCheckpoint(false);
-		}
 		// Declared null, or naming no role, commissions nobody (task RD4-12).
 		if (d.has("commissions", r.getCommissions()) && null == checkedCommissions(r.getCommissions())) {
 			rc.setCommissions(null);
@@ -3532,6 +3624,9 @@ public class AgentBoardService {
 		}
 		if (d.hasNested("settings", "coordinatorStopLift", s, null == s ? null : s.getCoordinatorStopLift())) {
 			bd.setCoordinatorStopLift(null == s ? null : s.getCoordinatorStopLift());
+		}
+		if (d.hasNested("settings", "architectCheckpointWaiver", s, null == s ? null : s.getArchitectCheckpointWaiver())) {
+			bd.setArchitectCheckpointWaiver(null == s ? null : s.getArchitectCheckpointWaiver());
 		}
 		if (d.hasNested("settings", "eventRetentionDays", s, null == s ? null : s.getEventRetentionDays())) {
 			bd.setEventRetentionDays(null == s ? null : s.getEventRetentionDays());
@@ -3767,6 +3862,7 @@ public class AgentBoardService {
 		m.put("settings.humanQueueAgeMinutes", bd.getHumanQueueAgeMinutes());
 		m.put("settings.completionPriority", bd.getCompletionPriority());
 		m.put("settings.coordinatorStopLift", bd.getCoordinatorStopLift());
+		m.put("settings.architectCheckpointWaiver", bd.getArchitectCheckpointWaiver());
 		m.put("settings.eventRetentionDays", bd.getEventRetentionDays());
 		m.put("settings.staleness", bd.getStaleness());
 		m.put("settings.ladder", bd.getLadder());
@@ -3929,6 +4025,7 @@ public class AgentBoardService {
 		m.put("blindReview", rc.isBlindReview());
 		m.put("coordinatorCheckpoint", rc.isCoordinatorCheckpoint());
 		m.put("commissions", rc.getCommissions());
+		m.put("runWhen", rc.getRunWhen());
 		m.put("strength.requiredStrength", rc.getRequiredStrength());
 		m.put("strength.strengthHeadroom", rc.getStrengthHeadroom());
 		m.put("strength.strengthCategory", rc.getStrengthCategory());
@@ -4002,6 +4099,7 @@ public class AgentBoardService {
 		settings.setCompletionPriority(bd.getCompletionPriority());
 		settings.setHumanQueueAgeMinutes(bd.getHumanQueueAgeMinutes());
 		settings.setCoordinatorStopLift(bd.getCoordinatorStopLift());
+		settings.setArchitectCheckpointWaiver(bd.getArchitectCheckpointWaiver());
 		settings.setEventRetentionDays(bd.getEventRetentionDays());
 		settings.setStaleness(bd.getStaleness());
 		settings.setLadder(bd.getLadder());
@@ -4126,6 +4224,7 @@ public class AgentBoardService {
 		// A board's own role only: a preset never carries the flag, and its file refuses the key (task SPLIT-5).
 		if (null != rc.getBoard()) r.setCoordinatorCheckpoint(rc.isCoordinatorCheckpoint());
 		r.setCommissions(rc.getCommissions());
+		r.setRunWhen(rc.getRunWhen());
 		BoardStrengthSpecDto st = new BoardStrengthSpecDto();
 		st.setRequiredStrength(rc.getRequiredStrength());
 		st.setStrengthHeadroom(rc.getStrengthHeadroom());

@@ -5,6 +5,7 @@
 package io.reliza.ws;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -60,6 +61,20 @@ class SplitChildConversionTest {
 		assertNull(c.producesComponent());
 		assertTrue(c.dependsOnSiblingIndexes().isEmpty(),
 				"the compact constructor normalizes the absent list, so callers never null-check it");
+	}
+
+	/** T-1 of task TPF-161: designFromParent arrives true, false or absent, and stays so. */
+	@Test
+	void designFromParentKeepsTrueFalseAndAbsent() throws RelizaException {
+		Map<String, Object> on = new HashMap<>(Map.of("title", "part 1", "designFromParent", true));
+		Map<String, Object> off = new HashMap<>(Map.of("title", "part 2", "designFromParent", false));
+		List<SplitChild> cs = AgentTaskDataFetcher.toSplitChildren(List.of(on, off, Map.of("title", "part 3")));
+		assertEquals(Boolean.TRUE, cs.get(0).designFromParent());
+		assertTrue(cs.get(0).carriesDesign());
+		assertEquals(Boolean.FALSE, cs.get(1).designFromParent());
+		assertFalse(cs.get(1).carriesDesign());
+		assertNull(cs.get(2).designFromParent());
+		assertFalse(cs.get(2).carriesDesign());
 	}
 
 	@Test

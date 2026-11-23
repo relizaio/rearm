@@ -3,12 +3,16 @@
 */
 package io.reliza.service;
 
+import java.time.Instant;
+import io.reliza.model.LicenseSeatEventKind;
+import io.reliza.model.dto.notifications.LicenseSeatEventPayload;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import io.reliza.common.Utils;
+import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.NotificationEventType;
@@ -305,6 +309,10 @@ public final class SyntheticEventTemplates {
                         io.reliza.model.dto.notifications.AgentBoardEventPayload.taskLink(task),
                         eventType == NotificationEventType.AGENT_TASK_QUEUE_AGE ? 45L : null);
             }
+            case LICENSE_SEAT_EVENT -> new LicenseSeatEventPayload(LicenseSeatEventKind.SYNC_SKIPPED, "user@example.com",
+                    "Sample write group", "SSO group sync did not add user@example.com to Sample write group: no free write"
+                            + " seat (3 of 3). The user keeps read access.", Instant.parse("2026-11-07T00:00:00Z"),
+                    List.of(UUID.randomUUID()));
         };
     }
 
@@ -315,6 +323,6 @@ public final class SyntheticEventTemplates {
                 ComponentType.COMPONENT, UUID.randomUUID(), "main",
                 ReleaseLifecycle.GENERAL_AVAILABILITY, "0123abcd",
                 "https://git.example.com/commit/0123abcd", "Sample commit message",
-                "Sample User", "user@example.com");
+                "Sample User", "user@example.com", ComponentKind.GENERIC.name());
     }
 }

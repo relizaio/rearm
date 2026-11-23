@@ -251,8 +251,9 @@ public class AgentBudgetStopIntegrationTest {
 
 		AgentTaskData held = signOff(t, r.sessB(), SignOffOutcome.PASSED, answer);
 
-		assertHeldForAPerson(held, "budget: returning to coder does not fit");
-		assertEquals(1, alerts(r, "stopped by budget: returning to coder").size());
+		// The answer goes through the forward walk (task TPF-171, D3), so the stop is the walk's.
+		assertHeldForAPerson(held, "budget: the next coder round does not fit");
+		assertEquals(1, alerts(r, "stopped by budget: the next coder round").size());
 	}
 
 	// ---------- loop stops ----------

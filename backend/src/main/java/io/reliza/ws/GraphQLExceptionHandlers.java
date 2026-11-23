@@ -27,6 +27,7 @@ import com.netflix.graphql.dgs.exceptions.DgsEntityNotFoundException;
 import io.reliza.exceptions.ActionRefusedException;
 import io.reliza.exceptions.ComponentRevisionConflictException;
 import io.reliza.exceptions.InvalidInputException;
+import io.reliza.exceptions.AccountRefusedException;
 import io.reliza.exceptions.RebomResponseTooLargeException;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.exceptions.SbomScoreException;
@@ -99,6 +100,20 @@ public class GraphQLExceptionHandlers {
         return GraphqlErrorBuilder.newError()
                 .message(ex.getMessage())
                 .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    /**
+     * A person's account refused: the end-user text as the message, and the client switches on
+     * {@code extensions.code} and {@code extensions.reason}, never on the text. A client error: no log
+     * line, no ref.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleAccountRefused(AccountRefusedException ex) {
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .extensions(Map.of("code", ex.getErrorCode(), "reason", ex.getReason().name()))
                 .build();
     }
 

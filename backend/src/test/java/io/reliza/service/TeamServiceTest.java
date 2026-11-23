@@ -271,6 +271,7 @@ public class TeamServiceTest {
 		Assertions.assertNotNull(sub, "enabling should materialise a subscription");
 		Assertions.assertEquals(NotificationSubscriptionStatus.ACTIVE, sub.status());
 		Assertions.assertEquals(td.getUuid(), sub.managedByTeam(), "the row must name its owner");
+		Assertions.assertNull(sub.includeBoardDocuments(), "a team's feed never includes document rounds");
 		// The two halves that make it a team's OWN feed rather than an org-wide one.
 		Assertions.assertEquals(td.getUuid(), sub.ownedByTeam(),
 				"without the scope this delivers every team's events to this team");

@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import io.reliza.model.dto.notifications.LicenseSeatEventPayload;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -103,6 +104,7 @@ public class SlackBlockKitFormatter {
             case APPROVAL_RESOLVED -> renderApprovalResolved(event, payload);
             case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event, payload);
             case AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE, AGENT_SESSION_IDLE_WARNING -> renderAgentBoard(event, payload);
+            case LICENSE_SEAT_EVENT -> renderLicenseSeat(event, payload);
         }
         return payload;
     }
@@ -386,6 +388,17 @@ public class SlackBlockKitFormatter {
     }
 
     /** A board notification: the headline linked to the task page, the board's own words below it. */
+    private void renderLicenseSeat(NotificationOutboxEvent event, Map<String, Object> out) {
+        LicenseSeatEventPayload p = LicenseSeatRenderSupport.payload(event);
+        if (p == null) { renderFallback(event, out); return; }
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        blocks.add(sectionBlock("*" + LicenseSeatRenderSupport.HEADLINE + "*"));
+        String body = LicenseSeatRenderSupport.body(p);
+        if (StringUtils.isNotBlank(body)) blocks.add(contextBlock(StringUtils.truncate(body, 2900)));
+        out.put("text", capText(LicenseSeatRenderSupport.HEADLINE + ": " + body));
+        out.put("blocks", blocks);
+    }
+
     private void renderAgentBoard(NotificationOutboxEvent event, Map<String, Object> out) {
         io.reliza.model.dto.notifications.AgentBoardEventPayload p = AgentBoardRenderSupport.payload(event);
         if (p == null) { renderFallback(event, out); return; }

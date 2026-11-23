@@ -30,6 +30,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.model.AcollectionData.DiffComponent;
 import io.reliza.model.ComponentData;
+import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -135,6 +136,19 @@ class ReleaseChangeHookImplTest {
         assertEquals(Boolean.FALSE, saved.getRecordData().get("scheduled"));
         assertEquals("myapp", release(saved).get("componentName"));
         assertEquals("v2.0", release(saved).get("version"));
+        assertEquals("GENERIC", release(saved).get("componentKind"), "a software release carries its kind");
+    }
+
+    /** TPF-158 row 1: a board's document round carries its component kind on the payload. */
+    @Test
+    void onReleaseCreatedCarriesTheComponentKind() {
+        stubComponent(ComponentType.COMPONENT, ComponentKind.BOARD_DOCUMENT);
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+
+        hook.onReleaseCreated(release(UUID.randomUUID(), ReleaseLifecycle.DRAFT), false);
+
+        NotificationOutboxEvent saved = captureSaved();
+        assertEquals("BOARD_DOCUMENT", release(saved).get("componentKind"));
     }
 
     /**
@@ -292,6 +306,19 @@ class ReleaseChangeHookImplTest {
                 "Dedup key should carry the new lifecycle: " + saved.getDedupKey());
         assertEquals("DRAFT", saved.getRecordData().get("oldLifecycle"));
         assertEquals("ASSEMBLED", saved.getRecordData().get("newLifecycle"));
+        assertEquals("GENERIC", release(saved).get("componentKind"));
+    }
+
+    /** TPF-158 row 3: the promotion of a document round carries the document kind. */
+    @Test
+    void onReleaseLifecycleChangedCarriesTheDocumentKind() {
+        stubComponent(ComponentType.COMPONENT, ComponentKind.BOARD_DOCUMENT);
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+
+        hook.onReleaseLifecycleChanged(release(UUID.randomUUID(), ReleaseLifecycle.ASSEMBLED),
+                ReleaseLifecycle.DRAFT, ReleaseLifecycle.ASSEMBLED);
+
+        assertEquals("BOARD_DOCUMENT", release(captureSaved()).get("componentKind"));
     }
 
     @Test
@@ -318,6 +345,7 @@ class ReleaseChangeHookImplTest {
                 "Unexpected dedup key: " + saved.getDedupKey());
         assertNotNull(saved.getRecordData().get("added"));
         assertNotNull(saved.getRecordData().get("removed"));
+        assertEquals("GENERIC", release(saved).get("componentKind"));
     }
 
     @Test
@@ -434,6 +462,7 @@ class ReleaseChangeHookImplTest {
         assertEquals("myapp", release(saved).get("componentName"));
         assertEquals("v2.0", release(saved).get("version"));
         assertEquals(rd.getUuid().toString(), String.valueOf(release(saved).get("releaseUuid")));
+        assertEquals("GENERIC", release(saved).get("componentKind"));
         assertNotNull(data.get("affectedReleases"), "TEA events stamp affectedReleases like every release event");
     }
 
@@ -465,6 +494,7 @@ class ReleaseChangeHookImplTest {
         assertEquals(API_BASE + "/v1.0.0/componentRelease/" + p.getUuid(), data.get("publicUrl"));
         assertEquals(0, ((Number) data.get("childrenPublished")).intValue());
         assertEquals("myapp", release(saved).get("componentName"));
+        assertEquals("GENERIC", release(saved).get("componentKind"));
     }
 
     @Test
@@ -511,6 +541,7 @@ class ReleaseChangeHookImplTest {
         assertEquals("RESUBMITTED", data.get("act"));
         assertEquals("myapp", release(saved).get("componentName"));
         assertEquals(rd.getUuid().toString(), String.valueOf(release(saved).get("releaseUuid")));
+        assertEquals("GENERIC", release(saved).get("componentKind"));
     }
 
     /** Task TEA-35, F-7: two withdrawals of one submission inside one minute write distinct keys, by version. */
@@ -534,13 +565,19 @@ class ReleaseChangeHookImplTest {
         assertEquals("submission-withdrawn:" + submission + ":2", rows.get(0).getDedupKey());
         assertEquals("submission-withdrawn:" + submission + ":3", rows.get(1).getDedupKey());
         assertEquals("WITHDRAWN", rows.get(0).getRecordData().get("act"));
+        assertEquals("GENERIC", release(rows.get(0)).get("componentKind"));
     }
 
     private void stubComponent(ComponentType type) {
+        stubComponent(type, ComponentKind.GENERIC);
+    }
+
+    private void stubComponent(ComponentType type, ComponentKind kind) {
         ComponentData cd = new ComponentData();
         cd.setUuid(UUID.randomUUID());
         cd.setName("myapp");
         cd.setType(type);
+        cd.setKind(kind);
         when(getComponentService.getComponentData(any())).thenReturn(Optional.of(cd));
     }
 

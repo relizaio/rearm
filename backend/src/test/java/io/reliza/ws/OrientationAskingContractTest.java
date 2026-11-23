@@ -26,6 +26,20 @@ import org.junit.jupiter.api.Test;
  */
 class OrientationAskingContractTest {
 
+	/**
+	 * Task TPF-171 (D14, T-14): an answer that changes the design is reviewed before the asker gets it back; one signed
+	 * off --no-change stops at the coordinator.
+	 */
+	@Test
+	void anAnswerToAQuestionIsReviewedOrConfirmedBeforeTheAsker() throws IOException {
+		String doc = section("asking").replaceAll("[ \\t]*\\n[ \\t]*", " ");
+		assertTrue(doc.contains("sign off with `--no-change`: the task stops at the coordinator"), "the stop");
+		assertTrue(doc.contains("before the asker gets the task back"), "the walk");
+		assertTrue(doc.contains("(the earlier reviews stand and the task returns to the asker, unless another pass is stale,"
+				+ " which is reviewed first) or refuses it (it is reviewed as a change)."), "the two verdicts");
+		assertTrue(doc.contains("when in doubt, leave it out."), "the default");
+	}
+
 	/** Task RD4-13: the answering role learns both paths after a review item about its document; in the asking section. */
 	@Test
 	void anAnswerToAReviewItemAboutYourDocumentGoesToTheBuilderUnlessNoChange() throws IOException {
