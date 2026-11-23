@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { NOT_JSON_NOTE, NOT_SIGNED_NO_KEY, NOT_SIGNED_SIGNING_ERROR, SIGNED_LINE_PREFIX } from './sbomSigning'
-import { IMPORT_HINT, REVOKE_CONFIRM, ROTATE_CONFIRM } from './sbomSigningKeys'
+import { IMPORT_HINT, PUBLIC_KEYS_NOTE, REVOKE_CONFIRM, ROTATE_CONFIRM } from './sbomSigningKeys'
 
 // T-28 (SCORE-35, design 3.8): the documentation page "Signing exported SBOMs" and its links. The
 // docs build (cd documentation_site && npm ci && npm run docs:build) checks the links resolve;
 // this pins what the design asks the page and its neighbours to say, with the UI's own texts.
+// While the organization's public keys are not published, the cases below also pin what the page says instead.
 const DOCS = fileURLToPath(new URL('../../../documentation_site/docs/', import.meta.url))
 const doc = (f: string): string => readFileSync(DOCS + f, 'utf8')
 const flat = (s: string): string => s.replace(/\s+/g, ' ')
@@ -29,12 +30,38 @@ describe('documentation: Signing exported SBOMs', () => {
         expect(sections).toEqual(['What a signed export is', 'Configure', 'Rotate and revoke', 'Import', 'How a consumer verifies', 'What the UI shows', 'Limitations'])
     })
 
-    it('gives the JWKS URL shape, the cache time and the three command lines', () => {
-        expect(page).toContain('https://<your ReARM>/api/public/v1/organization/<organization uuid>/sbom-signing-keys')
-        expect(page).toContain('max-age=300')
-        expect(page).toContain('rearm bomutils verify-signature -f release.cdx.json --key org-sbom-keys.jwks.json')
+    it('gives the three command lines with one public key file', () => {
+        expect(page).toContain('rearm bomutils verify-signature -f release.cdx.json --key pub.pem')
         expect(page).toContain('rearm exportreleasebom --releaseid <release uuid> | rearm bomutils verify-signature --key pub.pem')
-        expect(page).toContain('rearm bomutils score -f release.cdx.json --signature-key org-sbom-keys.jwks.json --fail-on-not-ready')
+        expect(page).toContain('rearm bomutils score -f release.cdx.json --signature-key pub.pem --fail-on-not-ready')
+    })
+
+    it('presents no public keys URL, no cache time and no JWKS file', () => {
+        const text = flat(page)
+        for (const gone of ['/api/public/', 'sbom-signing-keys', 'max-age', 'Cache-Control', 'curl', 'org-sbom-keys', '.jwks.json',
+            'public JWKS URL', 'exact URL', 'JWKS is public', 'published keys', 'stay published', 'no API key']) {
+            expect(text).not.toContain(gone)
+        }
+    })
+
+    it('quotes the panel note that publishing the keys is not available yet', () => {
+        expect(flat(page)).toContain(`> Experimental: ${PUBLIC_KEYS_NOTE}`)
+    })
+
+    it('says how a consumer gets a key and what the CLI cannot know', () => {
+        const text = flat(page)
+        for (const sentence of [
+            'ReARM does not publish an organization\'s public keys today, at any URL.',
+            'The table does not show their public keys.',
+            'copy the current key\'s public key (PEM or JWK) and note its key id before you rotate',
+            'a consumer learns of a revocation only from you',
+            'The consumer must be sure that the file comes from the organization',
+            'ReARM does not hand out a JWKS today.',
+            'The PEM and the JWK the settings section shows carry none',
+            'Only a check against a public key you received from the organization says who signed it.',
+        ]) {
+            expect(text).toContain(sentence)
+        }
     })
 
     it('quotes the dialog lines, the confirms and the import hint word for word', () => {
