@@ -64,9 +64,8 @@ class OssResolveUserNoRoleTest {
 	void up() throws Exception {
 		previousDefaultOrg = systemInfoService.getDefaultOrg();
 		previousInstallationType = relizaConfigProps.getInstallationType();
-		OrganizationData.Settings settings = getOrganizationService.getOrganizationData(UserService.USER_ORG)
-				.orElseThrow().getSettings();
-		previousUserOrgSetting = null == settings ? SsoUsersWithoutRole.REFUSE : settings.getSsoUsersWithoutRoleOrDefault();
+		previousUserOrgSetting = getOrganizationService.getOrganizationData(UserService.USER_ORG).orElseThrow()
+				.getSettingsWithDefaults().getSsoUsersWithoutRoleOrDefault();
 
 		relizaConfigProps.setInstallationType("OSS");
 		String seed = tag();
