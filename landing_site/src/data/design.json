@@ -753,9 +753,9 @@
         },
         {
           "num": "04",
-          "title": "Release evidence retained for the product lifecycle",
-          "body": "SBOMs, VEX records, approvals, attestations, and supporting artifacts remain associated with the release that produced them. Retrieve evidence years after shipment, compare versions, and demonstrate exactly what was known when a release was approved.",
-          "cap": "Audit Evidence"
+          "title": "Release criteria and retained evidence",
+          "body": "Documented release criteria and approvals gate what ships, and the SBOMs, VEX records, attestations, and approval history stay attached to the release that produced them. Retrieve the evidence after shipment and show what was known when the release was approved.",
+          "cap": "Release Policies & Audit Evidence"
         }
               ]
             },
