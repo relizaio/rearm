@@ -80,6 +80,10 @@ backups:
 
 Every available setting is documented in the chart's [values file](https://github.com/relizaio/rearm/blob/main/deploy/helm/dtrack5-helm/values.yaml).
 
+## Upgrading
+
+From chart versions that run `rearm-postgres` 0.1.3, the database moves to 0.1.7, which runs on a different operating system. Dependency-Track keeps working, but PostgreSQL logs `collation version mismatch` until a one-time step is run; see [Moving to rearm-postgres 0.1.7](/installation/#rearm-postgres-0-1-7) (pod `dtrack5-postgres-0`, container `dtrack5-postgres`).
+
 ## Connecting it to ReARM
 
 Once Dependency-Track is up, follow [Dependency-Track integration](/integrations/dtrack) to create the API key and configure the integration. The one simplification with this chart: the API Server URI and the Frontend URI are the same value - `https://` plus your `ingressHost`.
