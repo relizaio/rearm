@@ -336,7 +336,8 @@ public class SafetyContextService {
 			if (purl == null || purl.isBlank()) continue;
 			out.add(purl);
 			try {
-				out.add(Utils.canonicalizePurl(purl));
+				String canonical = Utils.canonicalizePurl(purl);
+				if (canonical != null) out.add(canonical);
 			} catch (RuntimeException e) {
 				// Not parseable as a purl: the stored form above is all there is.
 			}
