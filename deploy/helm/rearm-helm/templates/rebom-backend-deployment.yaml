@@ -78,6 +78,10 @@ spec:
             secretKeyRef:
               name: {{ .Release.Name }}-rebom-pgpassword
               key: password
+        # java4shell (CVE-2026-114938) mitigation; remove once the Flyway image
+        # ships a JDK with the fix (Temurin 21.0.13.1+ or 25.0.5.1+).
+        - name: JAVA_ARGS
+          value: "-XX:-UseBASE64Intrinsics"
         command: ['/bin/sh', '-c', "/flyway/flyway -url=$POSTGRES_JDBC -user=$POSTGRES_USER -password=$POSTGRES_PASSWORD -defaultSchema=rebom -schemas=rebom migrate"]
         volumeMounts:
           - mountPath: "/flyway/sql"
