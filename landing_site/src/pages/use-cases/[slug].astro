@@ -46,6 +46,14 @@ const { page } = Astro.props;
               : <span class="step-cap step-cap--plain">↳ {s.cap}</span>}
           </div>
         ))}
+        {page.seeAlso && (
+          <a class="step-card see-also-card" href={page.seeAlso.href}>
+            <div class="step-num">{page.seeAlso.eyebrow}</div>
+            <h3>{page.seeAlso.title}</h3>
+            <p>{page.seeAlso.body}</p>
+            <span class="step-cap">{page.seeAlso.cta} →</span>
+          </a>
+        )}
       </div>
       {page.note && <p class="page-note">NOTE: {page.note}</p>}
     </div>
@@ -120,19 +128,6 @@ const { page } = Astro.props;
     </div>
   </section>
 
-  {page.seeAlso && (
-    <section class="see-also">
-      <div class="container">
-        <a class="see-also-card" href={page.seeAlso.href}>
-          <span class="eyebrow eyebrow--muted">{page.seeAlso.eyebrow}</span>
-          <h2>{page.seeAlso.title}</h2>
-          <p>{page.seeAlso.body}</p>
-          <span class="see-also-cta">{page.seeAlso.cta} →</span>
-        </a>
-      </div>
-    </section>
-  )}
-
   <CtaBand publicDemo={page.publicDemo} />
 </Base>
 
@@ -203,15 +198,12 @@ const { page } = Astro.props;
   .map-links > a { font-weight: 600; }
   .map-source { color: var(--muted-1); font-size: 13px; }
 
-  .see-also { padding: 0 0 56px; }
   .see-also-card {
-    display: block; border: 1px solid var(--border-card); padding: 26px 28px; text-decoration: none;
+    display: block; text-decoration: none; color: inherit;
     background: linear-gradient(135deg, rgba(91,124,250,0.06), rgba(240,138,75,0.06));
   }
-  .see-also-card h2 { font-size: 21px; font-weight: 700; color: var(--navy); margin: 10px 0 8px; }
-  .see-also-card p { font-size: 15px; line-height: 1.65; color: var(--body-2); max-width: 760px; margin-bottom: 14px; }
-  .see-also-cta { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.06em; font-weight: 600; color: var(--orange-text); }
-  .see-also-card:hover h2 { text-decoration: underline; }
+  .see-also-card h3 { color: var(--navy); }
+  .see-also-card:hover h3 { text-decoration: underline; }
 
   @media (max-width: 900px) {
     .map-row { grid-template-columns: 1fr; gap: 6px; }

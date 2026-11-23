@@ -753,15 +753,21 @@
         },
         {
           "num": "04",
-          "title": "Release criteria and retained evidence",
-          "body": "Documented release criteria and approvals gate what ships, and the SBOMs, VEX records, attestations, and approval history stay attached to the release that produced them. Retrieve the evidence after shipment and show what was known when the release was approved.",
-          "cap": "Release Policies & Audit Evidence"
+          "title": "Release criteria and approvals",
+          "body": "Documented release criteria and approvals gate what ships.",
+          "cap": "Release Policies"
+        },
+        {
+          "num": "05",
+          "title": "Retained evidence",
+          "body": "The SBOMs, VEX records, attestations, and approval history stay attached to the release that produced them. Retrieve the evidence after shipment and show what was known when the release was approved.",
+          "cap": "Audit Evidence"
         }
       ],
       "seeAlso": {
         "eyebrow": "OPENCHAIN CRA CHECKLIST",
         "title": "Working from the OpenChain CRA checklist?",
-        "body": "See how ReARM maps to the checklist's SBOM, vulnerability handling and Technical File items, one item at a time, with what is supported today, what is partial and what stays with your organization.",
+        "body": "See which checklist items ReARM covers today, item by item: what is supported, what is partial, and what stays with your organization.",
         "cta": "View the checklist mapping",
         "href": "/use-cases/openchain-cra-mapping/"
       }
