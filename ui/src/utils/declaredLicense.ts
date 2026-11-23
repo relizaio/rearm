@@ -150,7 +150,7 @@ export const RELEASE_INTRO = 'Declares a different licence for this release only
 export const ORG_NOT_LISTED = 'The server\'s list of your organizations does not include this one, so its default licence could not be read.'
 
 export const EFFECTIVE_NONE = 'No licence declared at any level.'
-export const UNSUPPORTED_NOTE = 'This server does not offer a declared licence yet. A ReARM CE installation gains it at its next sync.'
+export const UNSUPPORTED_NOTE = 'This server does not offer a declared licence yet. The server runs an older version of ReARM, from before this feature. Updating the server adds it.'
 
 export const EXPRESSION_PLACEHOLDER = 'Apache-2.0, AGPL-3.0-only, LicenseRef-Acme-Commercial'
 export const URL_PLACEHOLDER = 'https://example.com/licence.txt'

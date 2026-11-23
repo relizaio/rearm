@@ -1383,13 +1383,11 @@
                         <!-- SCORE-35: the organization's SBOM signing key, beside the support disclosure
                              because both decide what an export carries. Its own block, not a field of the
                              form above: four mutations of its own and no Save. Hidden for the session once
-                             the panel's list query is refused as schema drift (a CE mirror before its sync). -->
+                             the panel's list query is refused as schema drift (a server older than the feature). -->
                         <div v-if="sbomSigningSupported" class="adminSettingsBlock mt-4" data-testid="sbom-signing-block">
                             <SbomSigningKeysPanel :org-uuid="orgResolved" :can-manage="isOrgAdmin" :notify="notify" @unsupported="markSbomSigningUnsupported" />
                         </div>
-                        <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="sbom-signing-unsupported">
-                            This server does not offer SBOM export signing yet. A ReARM CE installation gains it at its next sync.
-                        </div>
+                        <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="sbom-signing-unsupported">{{ UNSUPPORTED_TEXT }}</div>
                         <div class="adminSettingsBlock mt-4" data-testid="org-default-view-block">
                             <h5>Default View</h5>
                             <p class="text-muted">The view (Security or DevOps) users of this organization land on. A user's own choice in the header, remembered in their browser, overrides this.</p>
@@ -1569,6 +1567,7 @@ import ExternalKeysPanel from './ExternalKeysPanel.vue'
 import SbomSigningKeysPanel from './SbomSigningKeysPanel.vue'
 import OrgDeclaredLicensePanel from './OrgDeclaredLicensePanel.vue'
 import { UNSUPPORTED_NOTE } from '@/utils/declaredLicense'
+import { UNSUPPORTED_TEXT } from '@/utils/sbomSigningKeys'
 import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn, apiKeyActivityColumns, apiKeyLeadColumns, apiKeyNotesColumn, apiKeySorters, escapeHtml, filterApiKeysBySearch } from '../utils/apiKeyControls'
 import { uuidCopyColumn } from '../utils/uuidCopyColumn'
 import { apiKeyPagination, byNewestKey, fmtKeyDate } from '@/utils/apiKeyTable'
