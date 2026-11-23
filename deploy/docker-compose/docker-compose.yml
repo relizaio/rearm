@@ -1,6 +1,6 @@
 services:
   rearm-core:
-    image: registry.relizahub.com/library/rearm-backend:26.11.9@sha256:a369c5e449b40f8fc6b76b943966b0c543231c806b27f6e36f880c32f1c6384f
+    image: registry.relizahub.com/library/rearm-backend:26.11.10@sha256:0b2ad6a0b21de05793d30a37824e4647f3cd0be11503f2a74b3182d64b8c2725
     # Legacy core.env kept for one release for backward compatibility --
     # prefer the OCI_* variables in .env (see .env.example).
     env_file:
@@ -34,7 +34,7 @@ services:
         parallelism: 1
         delay: 10s
   rearm-ui:
-    image: registry.relizahub.com/library/rearm-ui:26.11.9@sha256:fb49b2ce0cdcd14622c1a5e8bbf82d659d0d38ca62e5f7dbcf3d89ec58d5da65
+    image: registry.relizahub.com/library/rearm-ui:26.11.20@sha256:fdc28e7c4937f7dc68a99f58e10cda4ace27241c5c6d4afd22c9eb32b736c707
     ports:
      - "8092:80"
     environment:

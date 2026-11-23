@@ -22,8 +22,8 @@ rebom_postgres_port: "5432"
 traefik_crd_api_version: traefik.containo.us/v1alpha1
 
 image:
-  backEndImage: registry.relizahub.com/library/rearm-backend:26.11.9@sha256:a369c5e449b40f8fc6b76b943966b0c543231c806b27f6e36f880c32f1c6384f
-  uiImage: registry.relizahub.com/library/rearm-ui:26.11.9@sha256:fb49b2ce0cdcd14622c1a5e8bbf82d659d0d38ca62e5f7dbcf3d89ec58d5da65
+  backEndImage: registry.relizahub.com/library/rearm-backend:26.11.10@sha256:0b2ad6a0b21de05793d30a37824e4647f3cd0be11503f2a74b3182d64b8c2725
+  uiImage: registry.relizahub.com/library/rearm-ui:26.11.20@sha256:fdc28e7c4937f7dc68a99f58e10cda4ace27241c5c6d4afd22c9eb32b736c707
   ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:26.10.2@sha256:b724b8e6934d578e0ec1763e46e8e85994582dabd3e269c664952f83f7a0be8a
   keycloakImage: registry.relizahub.com/library/rearm-keycloak:26.11.1@sha256:d677bb454f714b0b9f23bf8ec9e01fd058136e8ac15008c8845436e14365faff
   postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
