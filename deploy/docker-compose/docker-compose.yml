@@ -59,7 +59,7 @@ services:
     depends_on:
      - rearm-core
   rearm-postgresql:
-    image: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
+    image: registry.relizahub.com/library/rearm-postgres:0.1.7@sha256:f51a5cfc1027d169ee93f20c22ff441ce720e838ec71119da24e26f967c16b5e
     ports:
      # Bound to loopback by default -- this is a convenience port with a
      # well-known default password. Override REARM_PG_BIND (e.g. 0.0.0.0)
@@ -113,7 +113,7 @@ services:
         parallelism: 1
         delay: 10s
   keycloak-postgres:
-    image: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
+    image: registry.relizahub.com/library/rearm-postgres:0.1.7@sha256:f51a5cfc1027d169ee93f20c22ff441ce720e838ec71119da24e26f967c16b5e
     environment:
      - POSTGRES_PASSWORD=${KEYCLOAK_PG_PASS:-relizaPass}
     deploy:
@@ -211,7 +211,7 @@ services:
         parallelism: 1
         delay: 10s
   rebom-postgresql:
-    image: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
+    image: registry.relizahub.com/library/rearm-postgres:0.1.7@sha256:f51a5cfc1027d169ee93f20c22ff441ce720e838ec71119da24e26f967c16b5e
     environment:
      - POSTGRES_PASSWORD=${REBOM_PG_PASS:-relizaPass}
     deploy:

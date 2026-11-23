@@ -66,7 +66,7 @@ postgres:
 # initContainer is pinned inline there -- values cannot reference other
 # values, so they cannot be hoisted here.
 images:
-  postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.3@sha256:3c52805d1d6d09147fd469dba80b7962ba051ba3f6ac15ed4962945b274bcd56
+  postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.7@sha256:f51a5cfc1027d169ee93f20c22ff441ce720e838ec71119da24e26f967c16b5e
   pgbackups: registry.relizahub.com/library/cloud-backup:26.04.0@sha256:abae25e630892c60018e1d269f1d41db4f444a87c556ed41e69540c2337998ee
   pullPolicy: IfNotPresent
 

@@ -26,7 +26,7 @@ image:
   uiImage: registry.relizahub.com/library/rearm-ui:26.11.20@sha256:fdc28e7c4937f7dc68a99f58e10cda4ace27241c5c6d4afd22c9eb32b736c707
   ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:26.10.2@sha256:b724b8e6934d578e0ec1763e46e8e85994582dabd3e269c664952f83f7a0be8a
   keycloakImage: registry.relizahub.com/library/rearm-keycloak:26.11.1@sha256:d677bb454f714b0b9f23bf8ec9e01fd058136e8ac15008c8845436e14365faff
-  postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
+  postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.7@sha256:f51a5cfc1027d169ee93f20c22ff441ce720e838ec71119da24e26f967c16b5e
   rebomBackend: registry.relizahub.com/library/rebom-backend:0.27.3@sha256:8261e5c58c9f151600376b1ed7ddda079e1530cdc25b9ab3d5fc440455193834
   flywayImage: docker.io/redgate/flyway:11.20.3-alpine@sha256:52cdd559dc8ae38a17b56615e3c7137d9b01470271112525b40373de470bb005
   zotImage: ghcr.io/project-zot/zot-minimal:v2.1.18@sha256:892f2a5a63dd99bdf85320fee5448506119328a6d5e1a2d14d4db876be595236
@@ -221,8 +221,8 @@ postgresql:
   image:
     registry: registry.relizahub.com
     repository: library/rearm-postgres
-    tag: "0.1.6"
-    digest: "sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee"
+    tag: "0.1.7"
+    digest: "sha256:f51a5cfc1027d169ee93f20c22ff441ce720e838ec71119da24e26f967c16b5e"
     ## Specify a imagePullPolicy
     ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
     ## ref: https://kubernetes.io/docs/user-guide/images/#pre-pulling-images
