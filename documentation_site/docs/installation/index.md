@@ -238,9 +238,9 @@ Before you upgrade an installation of 26.10.52 or earlier, or one that ran a bui
 
 The databases now run PostgreSQL 17.12 on the `rearm-postgres` 0.1.7 image. It is the same major version, so no dump and restore is needed; each database pod or container restarts once.
 
-A database first created on a Debian-based `rearm-postgres` (0.1.0 to 0.1.4, or 0.1.3 in the Dependency-Track chart) logs `collation version mismatch` on every new connection after moving to 0.1.7, because the operating system's glibc moves from 2.41 to 2.39. The data and sort order are unaffected. Run the step below once per database server: it rebuilds the indexes and records the new collation version in every database that accepts connections, `postgres` and `template1` included. A database created on 0.1.6 needs nothing.
+A database first created on a Debian-based `rearm-postgres` (0.1.0 to 0.1.4, including the Dependency-Track chart's 0.1.3) logs `collation version mismatch` on every new connection after moving to 0.1.7, because the operating system's glibc moves from 2.41 to 2.39. The data and sort order are unaffected. Run the step below once per database server: it rebuilds the indexes and records the new collation version in every database that accepts connections, `postgres` and `template1` included. A database created on 0.1.6 needs nothing.
 
-The step reads the password from the container's own environment. Applications keep running while it runs; Dependency-Track 4 and 5 were checked live. On a large database, replace `REINDEX DATABASE` with `REINDEX DATABASE CONCURRENTLY` to avoid long locks.
+The step reads the password from the container's own environment. Applications, Dependency-Track included, keep running while it runs. On a large database, replace `REINDEX DATABASE` with `REINDEX DATABASE CONCURRENTLY` to avoid long locks; if a concurrent run fails, it can leave invalid indexes behind, so run it again.
 
 Helm, with the release and namespace from [Installing the chart](/installation/#installing-the-chart) (`rearm`):
 
@@ -257,7 +257,7 @@ export PGPASSWORD="${POSTGRESQL_POSTGRES_PASSWORD:-${POSTGRESQL_PASSWORD:-$POSTG
 psql -h 127.0.0.1 -U postgres -d postgres -Atc "SELECT datname FROM pg_database WHERE datallowconn" |
 while IFS= read -r db; do
   psql -h 127.0.0.1 -U postgres -d "$db" -v ON_ERROR_STOP=1 \
-    -c "REINDEX DATABASE \"$db\"" -c "ALTER DATABASE \"$db\" REFRESH COLLATION VERSION" </dev/null
+    -c "REINDEX DATABASE \"$db\"" -c "ALTER DATABASE \"$db\" REFRESH COLLATION VERSION" </dev/null || exit 1
 done'
 ```
 
@@ -272,7 +272,7 @@ export PGPASSWORD="${POSTGRESQL_POSTGRES_PASSWORD:-${POSTGRESQL_PASSWORD:-$POSTG
 psql -h 127.0.0.1 -U postgres -d postgres -Atc "SELECT datname FROM pg_database WHERE datallowconn" |
 while IFS= read -r db; do
   psql -h 127.0.0.1 -U postgres -d "$db" -v ON_ERROR_STOP=1 \
-    -c "REINDEX DATABASE \"$db\"" -c "ALTER DATABASE \"$db\" REFRESH COLLATION VERSION" </dev/null
+    -c "REINDEX DATABASE \"$db\"" -c "ALTER DATABASE \"$db\" REFRESH COLLATION VERSION" </dev/null || exit 1
 done'
 done
 ```
