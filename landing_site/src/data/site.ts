@@ -26,6 +26,7 @@ export const useCaseNav = [
   { label: 'Field Digital Twin', href: '/use-cases/field-digital-twin/' },
   { label: 'Deployment Governance, DevOps, BYOC', href: '/use-cases/deployment-governance/' },
   { label: 'EU CRA Compliance', href: '/use-cases/eu-cra/' },
+  { label: 'OpenChain CRA Checklist Mapping', href: '/use-cases/openchain-cra-mapping/' },
 ];
 
 // page-name -> href used by capability cards / question rows / related links
@@ -42,6 +43,7 @@ export const pageHrefs: Record<string, string> = {
   'Deployment Governance, DevOps, BYOC': '/use-cases/deployment-governance/',
   'EU CRA': '/use-cases/eu-cra/',
   'EU CRA Compliance': '/use-cases/eu-cra/',
+  'OpenChain CRA Checklist Mapping': '/use-cases/openchain-cra-mapping/',
   Pricing: '/pricing/',
 };
 
