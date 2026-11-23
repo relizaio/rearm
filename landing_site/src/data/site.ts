@@ -108,7 +108,6 @@ export const clientsPartners = [
   { file: 'investottawa.png', url: 'https://www.investottawa.ca/', title: 'Invest Ottawa' },
   { file: 'kdm.png', url: 'https://kdmanalytics.com', title: 'KDM Analytics' },
   { file: 'iq.png', url: 'https://www.iqinnovationhub.com', title: 'IQ Innovation Hub' },
-  { file: 'wysdom.png', url: 'https://wysdom.ai', title: 'Wysdom.AI' },
   { file: 'ovh.png', url: 'https://ovhcloud.com', title: 'OVHcloud' },
   { file: 'wicwac.png', url: 'https://wicwac.com', title: 'WicWac' },
   { file: 'semperis.png', url: 'https://www.semperis.com', title: 'Semperis' },
