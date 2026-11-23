@@ -9,7 +9,7 @@ const ENTRY_FIELDS = `
     levelRaw levelNormalized levelRank levelNote levelChange componentMostConservative
     verificationStatus issuerClassDerived issuerClassEffective originBinding issuerOverride
     overrideHonoured elevatedByOverride overrideActorName importMode gateRule notes matchStatus
-    statusReason conflictFlag sourceArtifact sourceDeleted releaseUuid specCommit docSerialNumber
+    statusReason conflictFlag sourceArtifact sourceDeleted releaseUuid sourceReleaseVersion specCommit docSerialNumber
     docVersion uploadedBy actedBy actedAt acceptComment rejectReason acceptedVia acceptedByName
     acceptedAt acceptedByUploader supersededBy
 `

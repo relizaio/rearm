@@ -514,7 +514,7 @@ function showSafetyOutcome(release: any, displayId: string) {
     }
     const parts = [`${s.statementsTotal ?? 0} safety level${s.statementsTotal === 1 ? '' : 's'}:`,
         `${s.proposalsAutoAccepted ?? 0} auto-accepted, ${s.proposalsCreated ?? 0} staged for review,`,
-        `${s.statementsUnchanged ?? 0} unchanged, ${s.statementsErrored ?? 0} errored.`]
+        `${s.statementsUnchanged ?? 0} already recorded with no change, ${s.statementsErrored ?? 0} errored.`]
     if (s.statementsUnmatched) parts.push(`${s.statementsUnmatched} staged level${s.statementsUnmatched === 1 ? '' : 's'} did not match a component in this release's SBOM.`)
     const messages = (s.errorMessages ?? []).join(' ')
     Swal.fire({

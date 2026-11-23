@@ -28,9 +28,10 @@ public interface SafetyContextRecordRepository extends JpaRepository<SafetyConte
 		@Param("scopeUuid") String scopeUuid, @Param("componentPurl") String componentPurl,
 		@Param("schemeKey") String schemeKey);
 
-	@Query(value = VariableQueries.FIND_SAFETY_CONTEXT_RECORDS_BY_ORG_AND_RELEASE, nativeQuery = true)
-	List<SafetyContextRecord> findByOrgAndRelease(@Param("org") String org, @Param("release") String release,
-		@Param("includeSuperseded") boolean includeSuperseded, @Param("limit") int limit, @Param("offset") int offset);
+	@Query(value = VariableQueries.FIND_SAFETY_CONTEXT_RECORDS_AT_RELEASE_TARGETS, nativeQuery = true)
+	List<SafetyContextRecord> findAtReleaseTargets(@Param("org") String org, @Param("release") String release,
+		@Param("branch") String branch, @Param("component") String component,
+		@Param("includeSuperseded") boolean includeSuperseded, @Param("cap") int cap);
 
 	@Query(value = VariableQueries.FIND_SAFETY_CONTEXT_RECORDS_BY_ORG_AND_SCOPE_TARGET, nativeQuery = true)
 	List<SafetyContextRecord> findByOrgAndScopeTarget(@Param("org") String org, @Param("scope") String scope,

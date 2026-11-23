@@ -5637,6 +5637,9 @@ type SafetyContextEntry {
 	sourceArtifact: ID
 	sourceDeleted: Boolean
 	releaseUuid: ID
+	# Version of the release the level was uploaded on; a component-, branch- or org-scope level
+	# also applies to other releases.
+	sourceReleaseVersion: String
 	sourceFormat: SafetySourceFormat
 	specCommit: String
 	docSerialNumber: String

@@ -71,6 +71,8 @@ public class SafetyContextEntryWebDto {
 	private UUID sourceArtifact;
 	private Boolean sourceDeleted;
 	private UUID releaseUuid;
+	// Version of the release the level was uploaded on (set on read; may differ from the release viewed).
+	private String sourceReleaseVersion;
 	private DocumentFormat sourceFormat;
 	private String specCommit;
 	private String docSerialNumber;

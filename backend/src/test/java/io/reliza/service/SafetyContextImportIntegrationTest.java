@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -136,7 +137,7 @@ class SafetyContextImportIntegrationTest {
 	}
 
 	private List<SafetyContextRecordData> active() {
-		return service.listRecordsForRelease(org, release, false, 100, 0);
+		return service.recordsApplyingTo(org, release, null, component, Set.of(PUMP, TLS), false, 100, 0);
 	}
 
 	private List<SafetyContextProposalData> pending() {
@@ -207,7 +208,7 @@ class SafetyContextImportIntegrationTest {
 		assertEquals(AcceptedVia.MANUAL, pump.getAcceptedVia());
 		assertFalse(pump.isAcceptedByUploader());
 		assertEquals("re-assessed", pump.getAcceptComment());
-		List<SafetyContextRecordData> all = service.listRecordsForRelease(org, release, true, 100, 0);
+		List<SafetyContextRecordData> all = service.recordsApplyingTo(org, release, null, component, Set.of(PUMP, TLS), true, 100, 0);
 		assertEquals(1, all.stream().filter(r -> r.getStatus() == RecordStatus.SUPERSEDED
 			&& pump.getUuid().equals(r.getSupersededBy())).count(), "the old record is kept and points at the new one");
 	}
@@ -218,7 +219,7 @@ class SafetyContextImportIntegrationTest {
 		ImportSummary s = upload(twoAssets("class-c"), ArtifactBelongsTo.RELEASE);
 		assertEquals(1, s.getProposalsAutoAccepted());
 		assertEquals(2, active().size());
-		assertEquals(3, service.listRecordsForRelease(org, release, true, 100, 0).size());
+		assertEquals(3, service.recordsApplyingTo(org, release, null, component, Set.of(PUMP, TLS), true, 100, 0).size());
 	}
 
 	@Test
@@ -436,5 +437,41 @@ class SafetyContextImportIntegrationTest {
 		assertEquals(1, s.getProposalsCreated());
 		SafetyContextProposalData waiting = pending().get(0);
 		assertEquals(MatchStatus.SBOM_PENDING, waiting.getMatchStatus(), "a purl not found yet waits on the reconcile");
+	}
+
+	@Test
+	void aComponentLevelAppliesToEveryReleaseOfTheComponentThatHasThePackage() throws Exception {
+		upload(twoAssets("class-c"), ArtifactBelongsTo.RELEASE);
+		UUID otherRelease = UUID.randomUUID();
+		UUID branch = UUID.randomUUID();
+		List<SafetyContextRecordData> both = service.recordsApplyingTo(org, otherRelease, branch, component,
+			Set.of(PUMP, TLS), false, 100, 0);
+		assertEquals(2, both.size(), "uploaded on one release, applies to another release of the component");
+		assertEquals(release, both.get(0).getReleaseUuid(), "the record still names the release it came from");
+		assertEquals(1, service.recordsApplyingTo(org, otherRelease, branch, component, Set.of(TLS), false, 100, 0).size(),
+			"only packages in the release's inventory");
+		assertTrue(service.recordsApplyingTo(org, otherRelease, branch, UUID.randomUUID(), Set.of(PUMP, TLS), false, 100, 0)
+			.isEmpty(), "another component's release does not get them");
+	}
+
+	@Test
+	void theMostSpecificScopeWins() throws Exception {
+		upload(twoAssets("class-c"), ArtifactBelongsTo.RELEASE);
+		when(scopeTargetResolver.targets(eq(org), eq(AnalysisScope.RELEASE), any(), eq(release)))
+			.thenReturn(List.of(new MatchCandidate(AnalysisScope.RELEASE, release)));
+		ArtifactDto dto = ArtifactDto.builder().importScope(AnalysisScope.RELEASE).build();
+		handler.dispatch(UUID.randomUUID(), dto, rd, ArtifactBelongsTo.RELEASE,
+			twoAssets("class-b").getBytes(StandardCharsets.UTF_8), uploader);
+		UUID branch = UUID.randomUUID();
+		SafetyContextRecordData onThisRelease = service.recordsApplyingTo(org, release, branch, component,
+			Set.of(PUMP, TLS), false, 100, 0).stream().filter(r -> PUMP.equals(r.getComponentPurl())).findFirst().orElseThrow();
+		assertEquals(AnalysisScope.RELEASE, onThisRelease.getScope());
+		assertEquals("Class B", onThisRelease.getLevelNormalized(), "the release's own level overrides the component's");
+		SafetyContextRecordData onAnother = service.recordsApplyingTo(org, UUID.randomUUID(), branch, component,
+			Set.of(PUMP, TLS), false, 100, 0).stream().filter(r -> PUMP.equals(r.getComponentPurl())).findFirst().orElseThrow();
+		assertEquals(AnalysisScope.COMPONENT, onAnother.getScope());
+		assertEquals("Class C", onAnother.getLevelNormalized());
+		assertEquals(2, service.recordsApplyingTo(org, release, branch, component, Set.of(PUMP, TLS), false, 100, 0).size(),
+			"one level per package and scheme on a release, not one per scope");
 	}
 }

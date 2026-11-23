@@ -184,10 +184,15 @@ public class SafetyContextDataFetcher {
 	private final class Enrichment {
 		private final Map<UUID, String> names = new HashMap<>();
 		private final Map<UUID, Boolean> deleted = new HashMap<>();
+		private final Map<UUID, String> versions = new HashMap<>();
 
 		SafetyContextEntryWebDto apply(SafetyContextEntryWebDto dto) {
 			dto.setOverrideActorName(name(dto.getOverrideActor()));
 			dto.setAcceptedByName(name(dto.getAcceptedBy()));
+			if (dto.getReleaseUuid() != null) {
+				dto.setSourceReleaseVersion(versions.computeIfAbsent(dto.getReleaseUuid(), r -> sharedReleaseService
+					.getReleaseData(r, dto.getOrg()).map(ReleaseData::getVersion).orElse(null)));
+			}
 			if (dto.getSourceArtifact() != null) {
 				dto.setSourceDeleted(deleted.computeIfAbsent(dto.getSourceArtifact(), a -> artifactService.getArtifactData(a)
 					.map(ad -> ad.getStatus() == StatusEnum.ARCHIVED).orElse(true)));
