@@ -163,8 +163,11 @@ describe('TEA publication documents (TEA-5) and the edition gate', () => {
         }
     })
 
+    // SAFE-11: present in the UI before the Pro schema; remove once rearm-saas main has it.
+    const TRANSITION_RIDE_ALONG_STATUSES = ['SKIPPED_UNKNOWN_TYPE']
+
     it.runIf(proSchema)('the ride-along statuses equal the Pro TeaRideAlongStatus, and every one but PUBLISHED has a summary label', () => {
-        const pro = enumValuesOf(proSchema!, 'TeaRideAlongStatus')
+        const pro = [...new Set([...enumValuesOf(proSchema!, 'TeaRideAlongStatus'), ...TRANSITION_RIDE_ALONG_STATUSES])]
         expect([...TEA_RIDE_ALONG_STATUSES].sort()).toEqual([...pro].sort())
         expect(Object.keys(TEA_RIDE_ALONG_SKIP_LABELS).sort()).toEqual(pro.filter(v => v !== 'PUBLISHED').sort())
     })

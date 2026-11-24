@@ -178,6 +178,22 @@ describe('teaPublishSummary (55)', () => {
         expect(text).not.toContain('SKIPPED_')
     })
 
+    it('SKIPPED_UNKNOWN_TYPE (SAFE-11) shows its label, not the raw status', () => {
+        const text = teaPublishSummary({
+            outcome: 'PUBLISHED',
+            publication: publication({ latestVersion: 1 }),
+            collection: { version: 1, entries: [{ artifact: 'agg-1', revision: 1, origin: 'SYNTHETIC' }] },
+            artifacts: [
+                { artifact: 'a-2', status: 'PUBLISHED' },
+                { artifact: 'a-3', status: 'SKIPPED_UNKNOWN_TYPE', detail: 'type FUTURE_TYPE_X is not known to this server version' },
+            ],
+            children: [],
+        })
+        expect(text).toBe('Published: collection version 1; aggregate SBOM revision 1; 1 artifacts published, 1 skipped '
+            + '(1 type not known to this server version)')
+        expect(text).not.toContain('SKIPPED_')
+    })
+
     it('UNCHANGED names the version', () => {
         expect(teaPublishSummary({ outcome: 'UNCHANGED', publication: publication({ latestVersion: 3 }),
             collection: { version: 3, entries: [] }, artifacts: [], children: [] }))
