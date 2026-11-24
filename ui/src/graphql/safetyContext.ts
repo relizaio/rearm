@@ -12,6 +12,7 @@ const ENTRY_FIELDS = `
     statusReason conflictFlag sourceArtifact sourceDeleted releaseUuid sourceReleaseVersion specCommit docSerialNumber
     docVersion uploadedBy actedBy actedAt acceptComment rejectReason acceptedVia acceptedByName
     acceptedAt acceptedByUploader supersededBy
+    comparedRecordUuid comparedWith overridesScope overridesLevel overridesRecordUuid carried shownForPurl
 `
 
 export const GET_SAFETY_PROPOSALS = gql`
