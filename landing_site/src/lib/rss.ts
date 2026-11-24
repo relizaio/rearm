@@ -3,11 +3,13 @@ import rss from '@astrojs/rss';
 import type { APIContext } from 'astro';
 import { getCollection } from 'astro:content';
 
-// Plain-text excerpt from a post's markdown: drop code blocks, images, HTML and
+// Plain-text excerpt from a post's markdown: drop code blocks, figures (with
+// their captions), images, HTML and
 // markdown syntax, keep link text, and cut at a word boundary.
 export const excerpt = (md: string, max = 280): string => {
   const text = md
     .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/<[^>]+>/g, ' ')
