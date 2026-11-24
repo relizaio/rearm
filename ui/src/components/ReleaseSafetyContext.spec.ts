@@ -52,4 +52,55 @@ describe('ReleaseSafetyContext', () => {
         expect(w.text()).not.toContain('overrides Component')
         expect(w.text()).not.toContain('carried from ')
     })
+
+    it('does not wrap a plain scope cell with no override or cross-release link', async () => {
+        const w = await mounted([row({})])
+        const cell = w.findAll('[data-col-key="scope"]')[1]
+        expect(cell.html()).not.toContain('<span')
+    })
+
+    it('marks most stringent only when several non-carried active levels share the component and scheme', async () => {
+        const w = await mounted([
+            row({ uuid: 'r1', componentMostConservative: true }),
+            row({ uuid: 'r2', carried: true, shownForPurl: 'pkg:generic/acme/pump@1.1.0' })
+        ])
+        const cell = w.findAll('[data-col-key="levelRaw"]')[1]
+        expect(cell.text()).not.toContain('most stringent')
+    })
+
+    it('does not mark most stringent for a lone active level even when componentMostConservative is set', async () => {
+        const w = await mounted([row({ componentMostConservative: true })])
+        const cell = w.findAll('[data-col-key="levelRaw"]')[1]
+        expect(cell.text()).not.toContain('most stringent')
+    })
+
+    it('falls back to the raw scope value for a scope with no label', async () => {
+        const w = await mounted([row({ scope: 'UNKNOWN_SCOPE' })])
+        expect(w.text()).toContain('UNKNOWN_SCOPE')
+    })
+
+    it('strips only the version from the carried purl, not a leading empty host', async () => {
+        const w = await mounted([row({ carried: true, componentPurl: '@1.0.0', shownForPurl: 'pkg:generic/acme/pump@1.1.0' })])
+        expect(w.text()).toContain('carried from 1.0.0')
+    })
+
+    it('strips qualifiers and the subpath from the carried purl version', async () => {
+        const w = await mounted([row({
+            carried: true, componentPurl: 'pkg:generic/acme/pump@1.0.0?os=linux#sub', shownForPurl: 'pkg:generic/acme/pump@1.1.0'
+        })])
+        expect(w.text()).toContain('carried from 1.0.0')
+        expect(w.text()).not.toContain('carried from 1.0.0?os=linux')
+    })
+
+    it('names the version of a level uploaded on another release', async () => {
+        const w = await mounted([row({ releaseUuid: 'rel-2', sourceReleaseVersion: '2.0.0' })])
+        expect(w.text()).toContain('uploaded on 2.0.0')
+    })
+
+    it('does not mark most stringent for several active levels unless componentMostConservative is set', async () => {
+        const w = await mounted([row({ uuid: 'r1' }), row({ uuid: 'r2' })])
+        const cells = w.findAll('[data-col-key="levelRaw"]')
+        expect(cells[1].text()).not.toContain('most stringent')
+        expect(cells[2].text()).not.toContain('most stringent')
+    })
 })
