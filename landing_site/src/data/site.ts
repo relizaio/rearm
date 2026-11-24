@@ -117,7 +117,7 @@ export const integrations = [
   { file: 'microsoft_sentinel.png', url: '#', title: 'Microsoft sentinel' },
 ];
 
-export const clientsPartners = [
+export const clientsPartners: { file: string; url: string; title: string; badge?: boolean }[] = [
   { file: 'investottawa.png', url: 'https://www.investottawa.ca/', title: 'Invest Ottawa' },
   { file: 'kdm.png', url: 'https://kdmanalytics.com', title: 'KDM Analytics' },
   { file: 'iq.png', url: 'https://www.iqinnovationhub.com', title: 'IQ Innovation Hub' },
@@ -125,7 +125,19 @@ export const clientsPartners = [
   { file: 'wicwac.png', url: 'https://wicwac.com', title: 'WicWac' },
   { file: 'semperis.png', url: 'https://www.semperis.com', title: 'Semperis' },
   { file: 'medware_cyber.png', url: 'https://medwarecyber.com/', title: 'MedWare Cyber' },
+  // Official NVIDIA Inception member badge, unmodified (its SVG canvas includes
+  // the required clear space). Sized by .logo-badge so the visible badge stays
+  // at least 30px tall, and carries NVIDIA's legal line below the section.
+  { file: 'nvidia-inception-program-badge.svg', url: 'https://www.nvidia.com/', title: 'NVIDIA Inception Program', badge: true },
 ];
+
+// NVIDIA's required legal attribution, shown wherever the Inception badge is used.
+export const nvidiaLegalLine =
+  '\u00a9 2026 NVIDIA and the NVIDIA logo are trademarks and/or registered trademarks of NVIDIA Corporation in the U.S. and other countries.';
+
+// Shown under the logos on its own line: our marks, then everyone else's.
+export const ownTrademarksLine =
+  'ReARM, Reliza and their logos are trademarks of Reliza Incorporated. All other trademarks and logos are the property of their respective owners.';
 
 export const teaLink = 'https://github.com/cyclonedx/transparency-exchange-api';
 export const demoVideo = 'https://cdn.rearmhq.com/ReARM_Tutorial_V2_2.mp4';
