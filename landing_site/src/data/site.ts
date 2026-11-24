@@ -135,6 +135,10 @@ export const clientsPartners: { file: string; url: string; title: string; badge?
 export const nvidiaLegalLine =
   '\u00a9 2026 NVIDIA and the NVIDIA logo are trademarks and/or registered trademarks of NVIDIA Corporation in the U.S. and other countries.';
 
+// Shown under the logos on its own line: our marks, then everyone else's.
+export const ownTrademarksLine =
+  'ReARM, Reliza and their logos are trademarks of Reliza Incorporated. All other trademarks and logos are the property of their respective owners.';
+
 export const teaLink = 'https://github.com/cyclonedx/transparency-exchange-api';
 export const demoVideo = 'https://cdn.rearmhq.com/ReARM_Tutorial_V2_2.mp4';
 

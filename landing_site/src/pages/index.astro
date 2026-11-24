@@ -5,7 +5,7 @@ import Shot from '../components/Shot.astro';
 import CtaBand from '../components/CtaBand.astro';
 import {
   links, caps, useCasePanels, questions, fullChain, pageHrefs,
-  integrations, clientsPartners, nvidiaLegalLine, teaLink, demoVideo, regulations, extraQuestions,
+  integrations, clientsPartners, nvidiaLegalLine, ownTrademarksLine, teaLink, demoVideo, regulations, extraQuestions,
 } from '../data/site';
 
 const allQuestions = [...questions, ...extraQuestions];
@@ -165,7 +165,10 @@ const allQuestions = [...questions, ...extraQuestions];
           </a>
         ))}
       </div>
-      {clientsPartners.some((l) => l.badge) && <p class="logo-legal">{nvidiaLegalLine}</p>}
+      <p class="logo-legal">
+        {clientsPartners.some((l) => l.badge) && <>{nvidiaLegalLine}<br /></>}
+        {ownTrademarksLine}
+      </p>
     </div>
   </section>
 
