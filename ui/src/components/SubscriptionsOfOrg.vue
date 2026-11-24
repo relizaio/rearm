@@ -186,6 +186,13 @@
                                 after opting in. A filter naming it on a subscription that also selects a non-release
                                 event type is refused at save unless guarded with <code>has(event.componentKind)</code>.
                             </div>
+                            <div v-if="advancedFilter" class="field-hint" data-testid="cel-help-numbers">
+                                Numbers: <code>event.cvssScore &gt;= 7</code> and <code>event.epssScore &gt; 0.5</code> both work.
+                                Scores are decimals (CVSS 0 to 10, EPSS 0 to 1) and a vulnerability without a score reads as 0;
+                                counts such as <code>event.addedCount</code> are whole numbers. Either kind can be compared with a
+                                whole or a decimal number. In arithmetic keep both sides of one kind:
+                                <code>event.epssScore * 100.0 &gt; 50</code>, not <code>* 100</code>.
+                            </div>
 
                         <n-grid :cols="2" :x-gap="12">
                             <n-gi v-if="severityApplies">
