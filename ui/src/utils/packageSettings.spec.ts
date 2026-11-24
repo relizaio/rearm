@@ -37,13 +37,13 @@ describe('parts and options (row 20)', () => {
         }
     })
 
-    it('the artifact types are the CE ArtifactType enum, labelled with spaces', () => {
-        expect(values(PACKAGE_ARTIFACT_TYPE_OPTIONS)).toEqual(enumValuesOf(ceSchema, 'ArtifactType'))
+    it('the artifact types are the CE ArtifactType enum without UNKNOWN, labelled with spaces', () => {
+        expect(values(PACKAGE_ARTIFACT_TYPE_OPTIONS)).toEqual(enumValuesOf(ceSchema, 'ArtifactType').filter(v => v !== 'UNKNOWN'))
         expect(PACKAGE_ARTIFACT_TYPE_OPTIONS.find(o => o.value === 'USER_DOCUMENT')!.label).toBe('USER DOCUMENT')
     })
 
-    it.runIf(proSchema)('the lists equal the Pro enums, and every part label is a PackagePart and back', () => {
-        expect(values(PACKAGE_ARTIFACT_TYPE_OPTIONS)).toEqual(enumValuesOf(proSchema!, 'ArtifactType'))
+    it.runIf(proSchema)('the lists equal the Pro enums (artifact types without UNKNOWN), and every part label is a PackagePart and back', () => {
+        expect(values(PACKAGE_ARTIFACT_TYPE_OPTIONS)).toEqual(enumValuesOf(proSchema!, 'ArtifactType').filter(v => v !== 'UNKNOWN'))
         expect(Object.keys(PACKAGE_PART_LABELS).sort()).toEqual(enumValuesOf(proSchema!, 'PackagePart').sort())
         expect(values(PACKAGE_SUPPRESSED_FINDINGS_OPTIONS).sort()).toEqual(enumValuesOf(proSchema!, 'SuppressedFindings').sort())
         expect(values(PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS).sort()).toEqual(enumValuesOf(proSchema!, 'InTriageFindings').sort())
