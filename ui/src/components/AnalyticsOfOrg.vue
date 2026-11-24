@@ -68,7 +68,9 @@ export default defineComponent({
                     metric: key === 'vcs' ? 'VCS Repositories'
                         : key === 'admin_and_write_users' ? 'Admin & Write Users'
                             : key === 'read_only_users' ? 'Read-Only Users'
-                                : key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
+                                // members whose effective permission here is NONE; not "inactive", which reads as deactivated
+                                : key === 'users_without_role' ? 'Users Without a Role'
+                                    : key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
                     value
                 }))
                 .sort((a, b) => a.metric.localeCompare(b.metric));

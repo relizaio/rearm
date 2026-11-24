@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,13 +29,16 @@ import io.reliza.model.AgentSessionData;
 import io.reliza.model.AgentTaskData;
 import io.reliza.model.AgentTaskData.DesignCheckpoint;
 import io.reliza.model.AgentTaskData.DesignCheckpointState;
+import io.reliza.model.AgentTaskData.DesignCheckpointWaiver;
 import io.reliza.model.AgentTaskData.SignOffOutcome;
 import io.reliza.model.AgentTaskData.TaskStatus;
 import io.reliza.model.AgentTaskInput.InputKind;
+import io.reliza.model.AgentTaskInput.InputResolution;
 import io.reliza.model.AgentTaskInput.InputScope;
 import io.reliza.model.AgentTaskInput.RequiredInput;
 import io.reliza.model.AgentTaskRoleConfigData.AgentCapability;
 import io.reliza.model.AgentTaskRoleConfigData.HumanGate;
+import io.reliza.model.BoardReviewItemIndex.BoardReviewItemStatus;
 import io.reliza.model.AgentTaskRoleConfigData.ProducedOutput;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData.ComponentType;
@@ -73,6 +77,8 @@ abstract class AgentDesignCheckpointTestBase {
 	static final RearmSpecificationType DD = RearmSpecificationType.DETAILED_DESIGN;
 	static final String CHECKPOINT = "design checkpoint before coder";
 	static final String SENT_ON = "at the design checkpoint";
+	/** The waiver INFO's mark (task TPF-152, 4.3). */
+	static final String WAIVED = "waived by";
 	static final long ARCHITECT_HOP = 1_000L;
 	static final long CODER_HOP = 10_000L;
 	static final AtomicInteger ISSUE = new AtomicInteger(8100);
@@ -105,6 +111,14 @@ abstract class AgentDesignCheckpointTestBase {
 	}
 
 	/**
+	 * The TPF board's shape (task TPF-161, 7.1, F-8): as {@link #reviewed()}, but functional_reviewer reads ARCHITECTURE
+	 * only, and every design input is floored at ASSEMBLED with LATEST_PASSING ({@link #inputAt}).
+	 */
+	Rig reviewedTpf() throws RelizaException {
+		return rig(true, true, HumanGate.NONE, null, true);
+	}
+
+	/**
 	 * The unflagged board of task SPLIT-9's tests: architect -> coder -> tester with no checkpoint, the coder holding
 	 * {@code CODE_PUSH}, so the coder is the build boundary (D2's second arm) and the design is the architect's.
 	 */
@@ -124,6 +138,12 @@ abstract class AgentDesignCheckpointTestBase {
 	/** As above, the coder holding {@code coderCapabilities} (null for none). */
 	Rig rig(boolean reviewers, boolean checkpoint, HumanGate architectGate, List<AgentCapability> coderCapabilities)
 			throws RelizaException {
+		return rig(reviewers, checkpoint, architectGate, coderCapabilities, false);
+	}
+
+	/** As above; {@code tpfInputs} gives the TPF board's design inputs ({@link #reviewedTpf()}). */
+	Rig rig(boolean reviewers, boolean checkpoint, HumanGate architectGate, List<AgentCapability> coderCapabilities,
+			boolean tpfInputs) throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		Component target = componentService.createComponent("checkpoint_" + UUID.randomUUID(), org.getUuid(),
 				ComponentType.PRODUCT, "semver", "Branch.Micro", null, WU);
@@ -133,12 +153,16 @@ abstract class AgentDesignCheckpointTestBase {
 				List.of(produces(ARCH), produces(TM)), ARCHITECT_HOP, null, null), true, WU);
 		if (reviewers) {
 			for (String name : List.of("functional_reviewer", "security_reviewer")) {
-				agentBoardService.upsertRoleConfig(board, role(name, "functional_reviewer".equals(name) ? 20 : 30,
-						HumanGate.NONE, List.of(input(ARCH), input(TM)),
+				boolean functional = "functional_reviewer".equals(name);
+				List<RequiredInput> reads = !tpfInputs ? List.of(input(ARCH), input(TM))
+						: functional ? List.of(inputAt(ARCH)) : List.of(inputAt(ARCH), inputAt(TM));
+				agentBoardService.upsertRoleConfig(board, role(name, functional ? 20 : 30,
+						HumanGate.NONE, reads,
 						List.of(produces(RearmSpecificationType.BOARD_REVIEW_ITEMS)), null, null, null), true, WU);
 			}
 		}
-		agentBoardService.upsertRoleConfig(board, role("coder", 40, HumanGate.NONE, List.of(input(ARCH), input(TM)),
+		List<RequiredInput> coderReads = tpfInputs ? List.of(inputAt(ARCH), inputAt(TM)) : List.of(input(ARCH), input(TM));
+		agentBoardService.upsertRoleConfig(board, role("coder", 40, HumanGate.NONE, coderReads,
 				List.of(produces(DD)), CODER_HOP, checkpoint ? Boolean.TRUE : null, coderCapabilities), true, WU);
 		agentBoardService.upsertRoleConfig(board, role("tester", 50, HumanGate.NONE, List.of(input(DD)),
 				List.of(produces(RearmSpecificationType.BOARD_TEST_REPORT)), null, null, null), true, WU);
@@ -160,6 +184,12 @@ abstract class AgentDesignCheckpointTestBase {
 
 	static RequiredInput input(RearmSpecificationType spec) {
 		return new RequiredInput(InputKind.DOCUMENT, spec, InputScope.TASK, null, null, null);
+	}
+
+	/** A design input as the TPF board declares it (task TPF-161, 7.1): floor ASSEMBLED, LATEST_PASSING. */
+	static RequiredInput inputAt(RearmSpecificationType spec) {
+		return new RequiredInput(InputKind.DOCUMENT, spec, InputScope.TASK, null, ReleaseData.ReleaseLifecycle.ASSEMBLED,
+				InputResolution.LATEST_PASSING);
 	}
 
 	static ProducedOutput produces(RearmSpecificationType spec) {
@@ -274,6 +304,59 @@ abstract class AgentDesignCheckpointTestBase {
 		return agentTaskService.signOff(t.getUuid(), w.sessionUuid(), outcome, note, outputs, WU);
 	}
 
+	/**
+	 * A PASSED sign-off with {@code --no-split} (task TPF-152): the ten-argument service call with {@code noSplit} true
+	 * and {@code noChange} as given; no seen-inputs check.
+	 */
+	AgentTaskData signOffNoSplit(Worker w, AgentTaskData t, String note, List<UUID> outputs, Boolean noChange)
+			throws RelizaException {
+		return agentTaskService.signOff(t.getUuid(), w.sessionUuid(), SignOffOutcome.PASSED, note, outputs, null,
+				noChange, null, Boolean.TRUE, WU);
+	}
+
+	AgentTaskData signOffNoSplit(Worker w, AgentTaskData t, String note, List<UUID> outputs) throws RelizaException {
+		return signOffNoSplit(w, t, note, outputs, null);
+	}
+
+	/** As {@link #design}, the architect passing {@code --no-split} with {@code note}. */
+	List<ReleaseData> designNoSplit(Rig r, AgentTaskData t, String note) throws RelizaException {
+		assign(r, t, r.architect());
+		ReleaseData arch = publish(r.architect(), t, ARCH);
+		ReleaseData tm = publish(r.architect(), t, TM);
+		signOffNoSplit(r.architect(), t, note, List.of(arch.getUuid(), tm.getUuid()));
+		return List.of(arch, tm);
+	}
+
+	/** As {@link #redesign} for ARCHITECTURE, the architect passing {@code --no-split} with {@code note}. */
+	ReleaseData redesignNoSplit(Rig r, AgentTaskData t, String note) throws RelizaException {
+		assign(r, t, r.architect());
+		ReleaseData round = publish(r.architect(), t, ARCH);
+		signOffNoSplit(r.architect(), t, note, List.of(round.getUuid()));
+		return round;
+	}
+
+	DesignCheckpointWaiver waiver(AgentTaskData t) {
+		return reload(t).getDesignCheckpointWaiver();
+	}
+
+	/** The waiver INFOs on the board naming the task. */
+	List<String> waivedInfos(Rig r, AgentTaskData t) {
+		return messages(r, BoardEventKind.INFO, WAIVED).stream().filter(m -> m.contains(t.label())).toList();
+	}
+
+	/** A person sets the board's architectCheckpointWaiver through the board form; null restores the default, on. */
+	void waiverSwitch(Rig r, Boolean value) throws RelizaException {
+		Map<String, Object> settings = new HashMap<>();
+		settings.put("architectCheckpointWaiver", value);
+		agentBoardService.updateSettingsFromInput(r.board().getUuid(), settings, WU);
+	}
+
+	/** The waiver INFO of 4.3, for the given round label, lifecycle and note (null: the blind board's form, F-14). */
+	static String waiverInfo(AgentTaskData t, String round, String lifecycle, String note) {
+		return "Task " + t.label() + ": design checkpoint before coder waived by architect on " + round + " ("
+				+ lifecycle + ")" + (null == note ? "" : ": \"" + note + "\"") + "; queued for coder";
+	}
+
 	/** The architect takes the task, publishes both design documents and passes with {@code note}. */
 	List<ReleaseData> design(Rig r, AgentTaskData t, String note) throws RelizaException {
 		assign(r, t, r.architect());
@@ -342,6 +425,23 @@ abstract class AgentDesignCheckpointTestBase {
 
 	AgentTaskData authorize(Rig r, AgentTaskData t, String role, AgentActor by) throws RelizaException {
 		return agentTaskService.authorize(t.getUuid(), board(r), role, 10, null, null, null, null, by, WU);
+	}
+
+	/** The coder, holding the task, asks about the ARCHITECTURE and signs off REJECTED with question q1. */
+	ReleaseData codersQuestion(Rig r, AgentTaskData t) throws RelizaException {
+		assign(r, t, r.coder());
+		ReleaseData q = index(r.coder(), reload(t), RearmSpecificationType.BOARD_QUESTIONS, "REJECTED", ARCH, "q1", 1,
+				"OPEN");
+		signOff(r.coder(), t, SignOffOutcome.REJECTED, "which store?", List.of(q.getUuid()));
+		return q;
+	}
+
+	/** The status of each item of the task's newest round of {@code spec}. */
+	Map<String, BoardReviewItemStatus> latestItems(AgentTaskData t, RearmSpecificationType spec) {
+		ReleaseData rd = agentDocumentService.latestRoundRelease(reload(t), spec).orElseThrow();
+		Map<String, BoardReviewItemStatus> out = new LinkedHashMap<>();
+		rd.getDocument().reviewItems().reviewItems().forEach(i -> out.put(i.id(), i.status()));
+		return out;
 	}
 
 	/** The ALERT the checkpoint posts, as T-1 reads it, for the given rounds and note. */

@@ -167,6 +167,7 @@ public class ProgrammaticPersonSurfaceOrderTest {
 				board("agentTaskRegister", "mutation($b: ID!) { agentTaskRegister(boardUuid: $b, input: { title: \"t\" }) { uuid } }"),
 				board("agentTaskCommission", "mutation($b: ID!) { agentTaskCommission(input: { boardUuid: $b, role: \"coder\", title: \"t\" }) { uuid } }"),
 				task("agentTaskAuthorize", "mutation($t: ID!) { agentTaskAuthorize(taskUuid: $t, role: \"coder\") { uuid } }"),
+				task("agentTaskConfirmAnswer", "mutation($t: ID!) { agentTaskConfirmAnswer(taskUuid: $t, verdict: CONFIRMED) { uuid } }"),
 				task("agentTaskOrder", "mutation($t: ID!) { agentTaskOrder(taskUuid: $t, orderIndex: 1) { uuid } }"),
 				task("agentTaskSetBudget", "mutation($t: ID!) { agentTaskSetBudget(taskUuid: $t, budgetMicros: 1) { uuid } }"),
 				task("agentTaskSetWorkLevel", "mutation($t: ID!) { agentTaskSetWorkLevel(taskUuid: $t, workLevel: 1) { uuid } }"),
@@ -209,12 +210,12 @@ public class ProgrammaticPersonSurfaceOrderTest {
 		programmatic.addAll(roots.getOrDefault("Mutation", Set.of()));
 		Set<String> expected = new TreeSet<>(declared);
 		expected.retainAll(programmatic);
-		assertEquals(34, expected.size(), expected.toString());
+		assertEquals(35, expected.size(), expected.toString());
 		// classify first through authorizePersonCtx (agentBoardsOfOrg, the two ApplySpec fields), or a
 		// static catalogue served with no credential (elementCheckCatalogue)
 		expected.removeAll(Set.of("agentBoardsOfOrg", "agentBoardApplySpec", "agentRolePresetsApplySpec",
 				"elementCheckCatalogue"));
-		assertEquals(30, expected.size(), expected.toString());
+		assertEquals(31, expected.size(), expected.toString());
 		assertEquals(expected, new TreeSet<>(rows().map(Row::field).toList()));
 	}
 

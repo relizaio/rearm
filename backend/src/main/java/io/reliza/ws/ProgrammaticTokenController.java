@@ -216,7 +216,7 @@ public class ProgrammaticTokenController {
 		} catch (CliSessionService.SessionEnded e) {
 			return softError(OAuthErrors.INVALID_GRANT, e.getMessage());
 		}
-		if (or.isEmpty()) return softError(OAuthErrors.INVALID_GRANT, "unknown, expired or revoked refresh token, the key behind the session is inactive, or its user left the org or no longer owns or holds the key; log in again");
+		if (or.isEmpty()) return softError(OAuthErrors.INVALID_GRANT, "unknown, expired or revoked refresh token, the key behind the session is inactive, or its user left the org, no longer owns or holds the key, or is outside the licensed number of users; log in again");
 		CliSession s = or.get().session();
 		Optional<ApiKey> oak = apiKeyService.getApiKey(s.getApiKey());
 		if (oak.isEmpty() || ApiKeyData.dataFromRecord(oak.get()).getStatus() != ApiKeyStatus.ACTIVE) {

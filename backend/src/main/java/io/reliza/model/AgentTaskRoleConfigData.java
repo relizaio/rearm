@@ -7,6 +7,7 @@ package io.reliza.model;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -63,7 +64,8 @@ public class AgentTaskRoleConfigData extends RelizaDataParent implements RelizaO
 	 * cannot be COMPLETED unless its most recent sign-off in this role
 	 * is PASSED — enforced at completion, so routing stays free but
 	 * "done" needs the stamp. Cancel and split parents (whose children
-	 * are each individually enforced) are exempt.
+	 * are each individually enforced) are exempt. OPTIONAL roles may
+	 * carry runWhen (task TPF-155); a REQUIRED role never does.
 	 */
 	public enum RoleNecessity { OPTIONAL, REQUIRED }
 
@@ -309,6 +311,56 @@ public class AgentTaskRoleConfigData extends RelizaDataParent implements RelizaO
 	/** Who this role may commission for a report (task RD4-12); null when it commissions nobody. */
 	@JsonProperty
 	private Commissions commissions;
+
+	/**
+	 * When routing's own walk queues this role (task TPF-155): on a task carrying any key of {@code taggedAny} (when
+	 * it names any) and none of {@code taggedNone} (when it names any). Tag keys, lower case, values never read.
+	 * OPTIONAL roles only; null runs the role on every task, as before. Routing's own choice only: an explicit
+	 * authorize, liftHold or reopen naming the role runs it whatever the task's tags.
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record RunWhen(List<String> taggedAny, List<String> taggedNone) implements Serializable {
+		private static final long serialVersionUID = 20261105L;
+
+		public RunWhen {
+			if (null == taggedAny) taggedAny = List.of();
+			if (null == taggedNone) taggedNone = List.of();
+		}
+
+		/** Whether it names any key; a record naming none is stored as null. Not a property: Jackson would write it as empty. */
+		@JsonIgnore
+		public boolean isEmpty() {
+			return taggedAny.isEmpty() && taggedNone.isEmpty();
+		}
+
+		/**
+		 * Why the task's tags fail the condition, or null when they meet it. Keys compare case-insensitively, values
+		 * are ignored; when both sides fail, the taggedAny reason wins.
+		 */
+		public String unmet(List<CommonVariables.TagRecord> tags) {
+			List<String> keys = new ArrayList<>();
+			if (null != tags) {
+				for (CommonVariables.TagRecord t : tags) {
+					if (null != t && null != t.key()) keys.add(t.key().strip().toLowerCase(Locale.ROOT));
+				}
+			}
+			if (!taggedAny.isEmpty() && taggedAny.stream().noneMatch(k -> carries(keys, k))) {
+				return "runWhen not met: no " + String.join(" or ", taggedAny) + " tag";
+			}
+			for (String k : taggedNone) {
+				if (carries(keys, k)) return "runWhen not met: tagged " + k;
+			}
+			return null;
+		}
+
+		private static boolean carries(List<String> keys, String key) {
+			return null != key && keys.stream().anyMatch(k -> k.equalsIgnoreCase(key.strip()));
+		}
+	}
+
+	/** This role's tag condition (task TPF-155); null when it runs on every task. */
+	@JsonProperty
+	private RunWhen runWhen;
 
 	/** Whether this role may be asked for an investigation: it produces BOARD_INVESTIGATION_REPORT at TASK scope. */
 	@JsonIgnore

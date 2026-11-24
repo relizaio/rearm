@@ -1,4 +1,4 @@
-<!-- orientation section: publishing · core 2026-10-25 -->
+<!-- orientation section: publishing · core 2026-11-10 -->
 ### 2.5a Publishing documents (task boards)
 
 On a task board, a hop ends with a **document**, not just a sign-off note. If
@@ -40,7 +40,11 @@ answer -- a design consequence the architect amends, say -- publish the
 amendment on that task with `doc publish --advisory`. It has to be a prose type
 a role you have held on this board produces, on a task still being worked. The
 round is assembled at once, the board posts an INFO event, and the holder's
-inputs lead with it; routing does not move. Without `--advisory`, publishing on
+inputs lead with it; routing does not move. An advisory ARCHITECTURE round
+carries no sign-off, so it cannot waive a design checkpoint: on a board with
+one, the task stops at the coordinator before the coder's next hop; answer
+through a hop and sign off --no-split when the task should keep moving. Without
+`--advisory`, publishing on
 a task you do not hold is refused, and an index type (BOARD_REVIEW_ITEMS,
 BOARD_TEST_REPORT, BOARD_QUESTIONS) is never advisory.
 
@@ -107,7 +111,7 @@ documents pinned as its inputs) to `READY_TO_SHIP`, which on a board means
 reviewed; a rejection promotes nothing.
 
 > **CLI version.** `agent doc publish` and the `--outputs` flag need
-> the `26.10.17` pinned in §1.2 (`rearm_cli_min`) or later.
+> the `26.11.5` pinned in §1.2 (`rearm_cli_min`) or later.
 > If either reports an unknown command or flag, do not conclude anything
 > from that alone — check what you have:
 >

@@ -43,6 +43,8 @@ spec:
             {{- end}}
             - name: MAX_BODY_SIZE
               value: {{ .Values.max_upload_size_in_MB }}M
+            - name: PROGRAMMATIC_API_TIMEOUT
+              value: {{ .Values.programmatic_api_timeout_in_seconds | quote }}
             - name: KEYCLOAK_ADMIN_ACCESS
               value: ""
             - name: KEYCLOAK_RELIZA_ADMIN_ACCESS

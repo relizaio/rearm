@@ -204,5 +204,9 @@ use `.env`.
   them.
 - **Upgrades**: pull a compose file tagged to a newer ReARM release
   (image digests are pinned per release), then `docker compose up -d`.
+  A database first created on a Debian-based `rearm-postgres` (0.1.0 to
+  0.1.4) logs `collation version mismatch` after moving to 0.1.7; run
+  the one-time step in
+  [Moving to rearm-postgres 0.1.7](https://docs.rearmhq.com/installation/#rearm-postgres-0-1-7).
 - **Logs**: `docker compose logs -f rearm-core` (or `rearm-ui`,
   `keycloak`, `traefik`, ...).

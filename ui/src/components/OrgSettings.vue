@@ -534,29 +534,35 @@
                                 </n-tooltip>
                             </div>
                         </template>
-                        <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
-                            <ScopedPermissions
-                                v-model="userScopedPermissions"
-                                :org-uuid="orgResolved"
-                                :approval-roles="myorg.approvalRoles || []"
-                                :perspectives="perspectives"
-                                :products="orgProducts"
-                                :components="orgComponents"
-                                :instances="orgInstances"
-                                :clusters="orgClusters"
-                                :boards="orgBoards"
-                                :lock-org-type="selectedUser.uuid === myUser.uuid"
-                                :show-admin-approvals="true"
-                            />
-                            <n-space style="margin-top: 20px;" v-if="userPermissionsDirty">
-                                <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
-                                <n-button type="warning" @click="editUser(selectedUser.email)">Reset Changes</n-button>
-                            </n-space>
-                            <div v-if="canInactivateUsers && selectedUser.uuid !== myUser.uuid" style="margin-top: 30px; border-top: 2px solid #e74c3c; padding-top: 16px;">
-                                <h5 style="color: #e74c3c;">Danger Zone</h5>
-                                <n-button type="error" @click="inactivateUser(selectedUser.uuid)">Inactivate User</n-button>
-                            </div>
-                        </div>
+                        <n-tabs type="line" v-model:value="userModalTab" data-testid="user-modal-tabs">
+                            <n-tab-pane name="permissions" tab="Permissions">
+                                <div style="height: 650px; overflow-y: auto; padding-right: 8px;">
+                                    <ScopedPermissions
+                                        v-model="userScopedPermissions"
+                                        :org-uuid="orgResolved"
+                                        :approval-roles="myorg.approvalRoles || []"
+                                        :perspectives="perspectives"
+                                        :products="orgProducts"
+                                        :components="orgComponents"
+                                        :instances="orgInstances"
+                                        :clusters="orgClusters"
+                                        :boards="orgBoards"
+                                        :lock-org-type="selectedUser.uuid === myUser.uuid"
+                                        :show-admin-approvals="true"
+                                    />
+                                    <n-space style="margin-top: 20px;" v-if="userPermissionsDirty">
+                                        <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
+                                        <n-button type="warning" @click="editUser(selectedUser.email)">Reset Changes</n-button>
+                                    </n-space>
+                                </div>
+                            </n-tab-pane>
+                            <n-tab-pane v-if="showUserDangerZone" name="danger" tab="Danger zone" data-testid="user-modal-danger-zone">
+                                <div style="padding-top: 16px;">
+                                    <p>An inactivated user can no longer access the system. They can be reactivated later from the inactive users list.</p>
+                                    <n-button type="error" @click="inactivateUser(selectedUser.uuid)">Inactivate User</n-button>
+                                </div>
+                            </n-tab-pane>
+                        </n-tabs>
                     </n-modal>
                     <div v-if="myorg.type !== 'DEFAULT'">
                         <h6>Pending Invites</h6>
@@ -1227,6 +1233,25 @@
                                     </span>
                                 </div>
 
+                                <!-- License seats (TPF-168): read by the server from the DEFAULT
+                                     organization only, so the control shows only there. -->
+                                <div v-if="myorg?.type === 'DEFAULT'" style="margin-top: 18px;" data-testid="sso-users-without-role-block">
+                                    <h4 style="margin-bottom: 2px;">SSO users without a role</h4>
+                                    <n-radio-group v-model:value="ssoUsersWithoutRole" :disabled="savingOrgSettings"
+                                        name="ssoUsersWithoutRole" style="margin: 8px 0 4px;">
+                                        <n-space>
+                                            <n-radio v-for="o in SSO_USERS_WITHOUT_ROLE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</n-radio>
+                                        </n-space>
+                                    </n-radio-group>
+                                    <span class="text-muted" style="display: block; max-width: 760px;">
+                                        What a first single sign-on whose groups claim matches no
+                                        SSO-connected user group of this organization, and who holds no
+                                        pending invitation, does. Refuse: no account is created and the
+                                        person is told no ReARM role is assigned. Create: the account is
+                                        created with no role; it holds no license seat.
+                                    </span>
+                                </div>
+
                                 <n-divider style="margin: 22px 0 10px;" />
 
                                 <n-form-item>
@@ -1515,6 +1540,7 @@ import { Icon } from '@vicons/utils'
 import commonFunctions from '@/utils/commonFunctions'
 import { FDA_PROSE_FIELDS, FDA_PROSE_MAX_LENGTH, proseDiff, proseBaselineFrom } from '@/utils/fdaProseInput'
 import { organizationToCommit, supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
+import { SSO_USERS_WITHOUT_ROLE_OPTIONS, SsoUsersWithoutRole, ssoUsersWithoutRoleInput, ssoUsersWithoutRoleOf } from '@/utils/licenseSeats'
 import { addPerspectiveToComponent } from '@/utils/perspectiveMembership'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { Marked } from '@ts-stack/markdown'
@@ -2439,6 +2465,11 @@ const usersEmptyText = computed(() => usersSearchTerm.value ? `No users match "$
 const canInactivateUsers = computed(() => {
     return isGlobalAdmin.value || (isOrgAdmin.value && myorg.value?.type === 'DEFAULT')
 })
+// The user permissions modal: a Permissions tab, and a Danger zone tab holding Inactivate User,
+// shown only when inactivating the selected user is an option (never for yourself).
+const userModalTab = ref('permissions')
+const showUserDangerZone = computed(() => canInactivateUsers.value && !!selectedUser.value?.uuid
+    && selectedUser.value.uuid !== myUser.value?.uuid)
 
 // User Groups
 const showInactiveGroups = ref(false)
@@ -3390,34 +3421,28 @@ const userFields = [
         render(row: any) {
             let el = h('div')
             let els: any[] = []
-            if (isOrgAdmin.value) {
-                // Your own row: editable -- a sole admin otherwise has no way to take an approval role
-                // -- but not removable, and the dialog keeps your organization-wide level fixed.
-                const editIcon = h(
-                    NIcon,
-                    {
-                        title: row.uuid === myUser.value.uuid ? 'Modify my approval roles' : 'Modify user permissions',
-                        class: 'icons clickable',
-                        size: 25,
-                        onClick: () => editUser(row.email)
-                    }, { default: () => h(EditIcon) }
-                )
-                if (row.uuid === myUser.value.uuid) {
-                    els = [editIcon]
-                } else {
-                    els = [
-                        editIcon,
-                        h(
-                            NIcon,
-                            {
-                                title: 'Remove User From Organization',
-                                class: 'icons clickable',
-                                size: 25,
-                                onClick: () => removeUser(row.uuid)
-                            }, { default: () => h(Trash) }
-                        )
-                    ]
-                }
+            // Your own row has no controls: you can neither edit your own permissions nor remove yourself.
+            if (isOrgAdmin.value && row.uuid !== myUser.value.uuid) {
+                els = [
+                    h(
+                        NIcon,
+                        {
+                            title: 'Modify user permissions',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => editUser(row.email)
+                        }, { default: () => h(EditIcon) }
+                    ),
+                    h(
+                        NIcon,
+                        {
+                            title: 'Remove User From Organization',
+                            class: 'icons clickable',
+                            size: 25,
+                            onClick: () => removeUser(row.uuid)
+                        }, { default: () => h(Trash) }
+                    )
+                ]
             }
             el = h('div', els)
         
@@ -4226,6 +4251,9 @@ function markDeclaredLicenseUnsupported () {
 
 const supportInjectionEnabled: Ref<boolean> = ref(false)
 const supportInjectionBaseline: Ref<boolean> = ref(false)
+// License seats (TPF-168): the default organization's ssoUsersWithoutRole, absent = REFUSE.
+const ssoUsersWithoutRole: Ref<SsoUsersWithoutRole> = ref(SsoUsersWithoutRole.REFUSE)
+const ssoUsersWithoutRoleBaseline: Ref<SsoUsersWithoutRole> = ref(SsoUsersWithoutRole.REFUSE)
 
 async function loadOrgSettings() {
     await loadOrgDefaultView()
@@ -4244,6 +4272,8 @@ async function loadOrgSettings() {
     // this build does not know -- reads as off, which matches the server's own default rule.
     supportInjectionEnabled.value = supportInjectionFromSettings(s)
     supportInjectionBaseline.value = supportInjectionEnabled.value
+    ssoUsersWithoutRole.value = ssoUsersWithoutRoleOf(s)
+    ssoUsersWithoutRoleBaseline.value = ssoUsersWithoutRole.value
     const seeded = proseBaselineFrom(s)
     for (const f of FDA_PROSE_FIELDS) {
         orgSettings[f] = seeded[f]
@@ -4292,6 +4322,7 @@ async function saveOrgSettings() {
                             fdaPatchesMayCeaseStatement
                             fdaRiskTransferProcessRef
                             fdaRiskIncreasesNotice
+                            ssoUsersWithoutRole
                         }
                     }
                 }`,
@@ -4316,7 +4347,10 @@ async function saveOrgSettings() {
                     ...(supportInjectionSupported.value
                         && supportInjectionEnabled.value !== supportInjectionBaseline.value
                         ? { supportInjection: supportInjectionEnabled.value ? 'ENABLED' : 'DISABLED' }
-                        : {})
+                        : {}),
+                    // Default organization only, and only when changed (PATCH).
+                    ...ssoUsersWithoutRoleInput(myorg.value?.type === 'DEFAULT',
+                        ssoUsersWithoutRole.value, ssoUsersWithoutRoleBaseline.value)
                 }
             },
             fetchPolicy: 'no-cache'
@@ -4365,6 +4399,8 @@ async function saveOrgSettings() {
             // the toggle is supported, and a rejected mutation lands in the catch below with
             // the baseline untouched.
             supportInjectionBaseline.value = supportInjectionEnabled.value
+            ssoUsersWithoutRole.value = ssoUsersWithoutRoleOf(savedSettings)
+            ssoUsersWithoutRoleBaseline.value = ssoUsersWithoutRole.value
             const refreshed = proseBaselineFrom(savedSettings)
             for (const f of FDA_PROSE_FIELDS) {
                 orgSettings[f] = refreshed[f]
@@ -4519,6 +4555,7 @@ async function editUser(email: string) {
     }
     userScopedPermissionsOriginal.value = commonFunctions.deepCopy(userScopedPermissions.value)
 
+    userModalTab.value = 'permissions'
     showOrgSettingsUserPermissionsModal.value = true
 }
 async function genFreeFormApiKey() {

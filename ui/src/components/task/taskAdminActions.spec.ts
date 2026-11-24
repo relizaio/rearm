@@ -112,5 +112,26 @@ describe('task page hints', () => {
         expect(open.find('[data-testid="reopen"]').attributes('disabled')).toBeUndefined()
         expect(hintOf(open, 'reopen')).toBeNull()
     })
+
+    // The enabled button is a popconfirm's trigger: a click has to open the confirm, and confirming sends the
+    // reopen. It once rendered as a fragment, which dropped the click, so nothing happened and nothing was sent.
+    it('opens the Reopen confirm on click and reopens on confirming, for a delivery and a completed task', async () => {
+        for (const status of ['DELIVERING', 'COMPLETED']) {
+            const w = mount(TaskActions, { attachTo: document.body,
+                props: { task: richTask({ status, hold: null }), roles: fixtureRoles, board: {}, canReopen: true, admin: true } })
+            ;(w.vm as any).reopenRole = 'coder'
+            ;(w.vm as any).reopenReason = 'the base moved; the PR no longer merges'
+            await w.vm.$nextTick()
+            await w.find('[data-testid="reopen"]').trigger('click')
+            await new Promise(r => setTimeout(r, 50))
+            const confirm = Array.from(document.body.querySelectorAll('.n-popconfirm__action button')).pop() as HTMLElement | undefined
+            expect(confirm, status).toBeDefined()
+            confirm!.click()
+            await w.vm.$nextTick()
+            expect(w.emitted('reopen')?.[0]?.[0], status).toMatchObject({ role: 'coder', reason: 'the base moved; the PR no longer merges' })
+            w.unmount()
+            document.body.innerHTML = ''
+        }
+    })
 })
 

@@ -121,6 +121,14 @@ describe('unselectable options without a backend implementation', () => {
         }
     })
 
+    // TPF-168 U7 (TPF-165 D9): the license seat event, labelled and Pro-only; it carries a fixed
+    // severity on the server, so a minimum-severity gate applies to it.
+    it('offers LICENSE_SEAT_EVENT labelled License seats, flagged proOnly, severity-bearing', () => {
+        expect(option(eventTypeOptions, 'LICENSE_SEAT_EVENT')).toEqual({ label: 'License seats', value: 'LICENSE_SEAT_EVENT', proOnly: true })
+        expect(severityAppliesTo(['LICENSE_SEAT_EVENT'])).toBe(true)
+        expect(boardDocumentsApplyTo(['LICENSE_SEAT_EVENT'])).toBe(false)
+    })
+
 })
 
 const CE_BACKEND_SRC_PATH = fileURLToPath(new URL(
@@ -575,7 +583,7 @@ describe('severity gating', () => {
     it('lists exactly the severity-bearing event types', () => {
         expect([...SEVERITY_BEARING_EVENT_TYPES].sort())
             .toEqual(['AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_QUEUE_AGE', 'AGENT_TASK_RETURNED',
-                'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED',
+                'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED', 'LICENSE_SEAT_EVENT',
                 'NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED'])
     })
 

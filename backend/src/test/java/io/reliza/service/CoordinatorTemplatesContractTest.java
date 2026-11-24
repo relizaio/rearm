@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import static io.reliza.service.RoleTemplates.template;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -72,13 +73,41 @@ class CoordinatorTemplatesContractTest {
 					+ " `designCheckpoint.state PENDING` has its design reviewed."), name);
 			assertTrue(doc.contains("Do not authorize without reading: that is the silent pass the checkpoint exists to"
 					+ " stop."), name);
-			assertTrue(doc.contains("A child of a split stops here too, on its own reviewed round: read the child's delta"
-					+ " round (it names the parent sections it builds) and send it on with `task authorize <child> --role"
-					+ " coder`, unless that round recommends a further split."), name + ": the child sentence");
+			// task TPF-161 (D11, F-12): a child marked designFromParent carries the parent's rounds, and when to mark one
+			assertTrue(doc.contains("A child of a split stops here too, on its own reviewed round, unless the split marked"
+					+ " it `designFromParent`: then it carries the parent's rounds, goes to coder on authorize, and stops here"
+					+ " only on a round of its own."), name + ": the child sentence");
+			assertTrue(doc.contains("Mark a child `designFromParent` only when it is one of the children the carried design"
+					+ " lists (section 5) and its title and description add nothing that design does not cover; a child that"
+					+ " adds scope runs its own design stage."), name + ": the coordinator sentence");
+			assertTrue(doc.contains("A child that stops here: read its delta round (it names the parent sections it builds)"
+					+ " and send it on with `task authorize <child> --role coder`, unless that round recommends a further"
+					+ " split."), name + ": the delta round");
 			assertTrue(doc.contains("The ALERT also comes when the design changed under a task already sent on, after a"
 					+ " coder's question answered with a new round or an advisory round: read the new round."),
 					name + ": the changed-under sentence");
+			// task TPF-152 (6.3, F-14): a waived checkpoint, the note read on the task on a blind board, operator-only switch
+			assertTrue(doc.contains("**A waived checkpoint.** A task whose architect signed off `--no-split` does not stop:"),
+					name + ": the waived paragraph");
+			assertTrue(doc.contains("(on a board with a blind role the feed carries no note: read it on the task,"
+					+ " `designCheckpointWaiver.note`, as you read a return's description there)"), name + ": the blind board");
+			assertTrue(doc.contains("If this board should see every design, the operator sets"
+					+ " `settings.architectCheckpointWaiver: false` (operator-only; you cannot)."), name + ": the switch");
 		}
+	}
+
+	/** Task TPF-161 (D11, T-21): the child and coordinator sentences are word for word the same in both templates. */
+	@Test
+	void theCarriedDesignSentencesAreTwins() throws IOException {
+		String board = template("coordinator-board-truth.md");
+		String tracker = template("coordinator-tracker.md");
+		String start = "A child of a split stops here too";
+		String end = "unless that round recommends a further split.";
+		String fromBoard = board.substring(board.indexOf(start), board.indexOf(end, board.indexOf(start)) + end.length());
+		String fromTracker = tracker.substring(tracker.indexOf(start),
+				tracker.indexOf(end, tracker.indexOf(start)) + end.length());
+		assertEquals(fromBoard, fromTracker);
+		assertTrue(fromBoard.contains("`designFromParent`"), fromBoard);
 	}
 
 	@Test
@@ -98,6 +127,30 @@ class CoordinatorTemplatesContractTest {
 			assertTrue(doc.indexOf("**A split request.**") > doc.indexOf("**The design checkpoint.**")
 					&& doc.indexOf("**A split request.**") < doc.indexOf("3. **Task-level strength: raise only.**"),
 					name + ": after the checkpoint paragraph, in the splitting item");
+		}
+	}
+
+	@Test
+	void theCoordinatorTemplatesSayWhatAConditionalRoleIs() throws IOException {
+		// task TPF-155 (7.4, T-92 a): routing passes an OPTIONAL role over when the task's tags do not meet its runWhen;
+		// the seat tags before it authorizes, and runs a skipped role now with the verb the task's state admits.
+		for (String name : new String[] {"coordinator-board-truth.md", "coordinator-tracker.md"}) {
+			String doc = template(name);
+			assertTrue(doc.contains("**Conditional roles.** An OPTIONAL role with `runWhen` (`taggedAny` / `taggedNone`, tag"
+					+ " keys) runs only on tasks whose tags meet it; routing passes it over otherwise, with no hop, no event,"
+					+ " and the skip on the task (`rolesSkippedByCondition`, and `passed over <role>` on the QUEUED row)."),
+					name + ": the first sentence");
+			assertTrue(doc.contains("a tag added after the skip does nothing until routing next reaches the role"),
+					name + ": a tag added later");
+			assertTrue(doc.contains("while QUEUED, `task hold <key> --reason '<why>'` then `task lifthold <key> --role"
+					+ " <role>`; while it waits on you, `task authorize <key> --role <role>`; once completed, `task reopen"
+					+ " <key> --role <role> --reason '<why>'`. Each runs the role whatever its tags, for that round."),
+					name + ": the verb per state");
+			assertTrue(doc.contains("and the role carrying the coordinator checkpoint, never carry one"),
+					name + ": REQUIRED and the checkpoint role never carry one");
+			assertTrue(doc.indexOf("**Conditional roles.**") > doc.indexOf("**A split request.**")
+					&& doc.indexOf("**Conditional roles.**") < doc.indexOf("3. **Task-level strength: raise only.**"),
+					name + ": after the split request paragraph, before item 3");
 		}
 	}
 

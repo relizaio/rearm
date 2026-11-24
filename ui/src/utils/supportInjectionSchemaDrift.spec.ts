@@ -19,21 +19,15 @@ const errorsAgainst = (schema: GraphQLSchema, doc: any) =>
 
 describe('the organizations query survives a backend without supportInjection', () => {
     /**
-     * THE ONE THAT MATTERS. Every page derives myorg from this query, so a document CE cannot
-     * answer takes the whole app down -- not just the setting. CORE is what the fallback
-     * serves, and it must be answerable by the mirror as it stands today.
+     * Every page derives myorg from this query, so a document the backend cannot answer takes the
+     * whole app down. Both documents select Settings.ssoUsersWithoutRole (TPF-168), which the CE
+     * schema declares, so neither may carry any error against CE.
      */
-    it('CORE is valid against the CE schema, so the app never blanks', () => {
+    it('CORE is valid against the CE schema', () => {
         expect(errorsAgainst(ceSchema, ORGANIZATIONS_CORE)).toEqual([])
     })
 
-    /**
-     * NOTE: this used to assert FULL was still ahead of CE. The 2026-09 CE sync (#368) brought
-     * supportInjection over, so that canary was retired. The fallback stays for a backend
-     * without the field (in practice a Pro build older than it); with FULL valid on both
-     * schemas, what keeps it honest is that CORE still leaves the field out.
-     */
-    it('FULL is valid against the CE schema too', () => {
+    it('FULL is valid against the CE schema', () => {
         expect(errorsAgainst(ceSchema, ORGANIZATIONS_FULL)).toEqual([])
     })
 

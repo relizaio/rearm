@@ -11,16 +11,29 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.model.Organization;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 public interface OrganizationRepository extends CrudRepository<Organization, UUID> {
 	@Override
 	List<Organization> findAll();
+
+	/**
+	 * The uuids of the organizations the license seat census counts (TPF-167 D1): every one not ARCHIVED,
+	 * the rule of OrganizationService.listAllOrganizationData, read as uuids and never as entities. COMMIT
+	 * flush mode (T-4).
+	 */
+	@QueryHints(@QueryHint(name = "org.hibernate.flushMode", value = "COMMIT"))
+	@Query(
+			value = VariableQueries.CENSUS_ORGANIZATION_UUIDS,
+			nativeQuery = true)
+	List<UUID> censusOrganizationUuids();
 
 	/**
 	 * TPF-139: the five Statistics totals that stay live (components, products, vcs, branches,

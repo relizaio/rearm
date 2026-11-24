@@ -1,11 +1,14 @@
-FROM golang:1.26.10-alpine3.24@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS build-stage
+FROM golang:1.26.11-alpine3.24@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab AS build-stage
 WORKDIR /build
 ENV CGO_ENABLED=0
 COPY go.mod go.sum ./
 COPY ./internal/imports ./internal/imports
 RUN go build ./internal/imports
 COPY . .
-RUN go version
+# Go 1.26.11 fixes CVE-2026-97054 in the standard library; the build fails on an older toolchain (the golang
+# image sets GOTOOLCHAIN=local, so go.mod's toolchain line alone would not stop it).
+RUN v=$(go env GOVERSION) && echo "$v" && [ "$(printf '%s\n%s\n' go1.26.11 "$v" | sort -V | head -n 1)" = go1.26.11 ] || \
+    { echo "Go toolchain $v is older than go1.26.11 (CVE-2026-97054)" >&2; exit 1; }
 # Run the package tests in the build. Nothing else does: the workflow only
 # invokes the image build, so a test not run here is a test that never runs.
 RUN go test ./...

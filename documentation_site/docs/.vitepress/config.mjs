@@ -40,10 +40,12 @@ function sidebar() {
           {text: 'Programmatic Access', link: '/configure/programmatic-access'},
           {text: 'Component Ownership', link: '/configure/component-ownership'},
           {text: 'Notifications', link: '/configure/notifications'},
-          {text: 'Approval Queues', link: '/configure/approval-queues'},
-          {text: 'Branding Presets (ReARM Pro)', link: '/configure/branding'}
+          {text: 'Approval Queues', link: '/configure/approval-queues'}
         ]},
         {text: 'Transparency Exchange API', link: '/tea/' },
+        {text: 'Cyber Resilience Act', items: [
+          {text: 'EU CRA Compliance', link: '/cra/eu-cra-compliance'}
+        ]},
         {text: 'Integrations', link: '/integrations/',
           items: [
             {text: 'ReARM CLI', link: '/integrations/rearmcli'},

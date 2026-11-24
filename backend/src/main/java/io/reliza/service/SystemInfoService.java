@@ -448,6 +448,20 @@ public class SystemInfoService {
 		saveSystemInfo(sysInfo, sd);
 	}
 
+	/**
+	 * Sets or clears (null) the licensed seat limits without a signed license (TPF-167, TPF-165 D16).
+	 * A Java method with no GraphQL exposure, for tests: they set limits relative to a fresh census and
+	 * restore both to null afterwards. Touches no seat snapshot on purpose.
+	 */
+	@Transactional
+	public void setLicensedMaxUsers(Integer maxWriteUsers, Integer maxReadUsers) {
+		SystemInfo sysInfo = this.repository.findSystemInfo();
+		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
+		sd.setLicensedMaxWriteUsers(maxWriteUsers);
+		sd.setLicensedMaxReadUsers(maxReadUsers);
+		saveSystemInfo(sysInfo, sd);
+	}
+
 	public AzureCreds getAzureCredentials(){
 		var sysInfo = findSystemInfo();
 		AzureCreds encAzureCreds = sysInfo.getAzureCredentials();

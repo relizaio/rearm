@@ -46,10 +46,66 @@ const { page } = Astro.props;
               : <span class="step-cap step-cap--plain">↳ {s.cap}</span>}
           </div>
         ))}
+        {page.seeAlso && (
+          <a class="step-card see-also-card" href={page.seeAlso.href}>
+            <div class="step-num">{page.seeAlso.eyebrow}</div>
+            <h3>{page.seeAlso.title}</h3>
+            <p>{page.seeAlso.body}</p>
+            <span class="step-cap">{page.seeAlso.cta} →</span>
+          </a>
+        )}
       </div>
       {page.note && <p class="page-note">NOTE: {page.note}</p>}
     </div>
   </section>
+
+  {page.mapping && (() => {
+    const m = page.mapping;
+    const [before, after] = m.introLink ? m.intro.split(m.introLink.text) : [m.intro, undefined];
+    return (
+      <section class="mapping">
+        <div class="container">
+          <div class="eyebrow eyebrow--muted steps-label">{m.label}</div>
+          <p class="mapping-intro">
+            {before}{m.introLink && after !== undefined && <><a href={m.introLink.href}>{m.introLink.text}</a>{after}</>}
+          </p>
+          {m.groups.map((g) => (
+            <div class="map-group">
+              <div class="map-group-head">
+                <h2>{g.title}</h2>
+                <span class="map-section">{g.section}</span>
+              </div>
+              <div class="map-table" role="table" aria-label={g.title}>
+                <div class="map-row map-row--head" role="row">
+                  <span role="columnheader">ITEM</span>
+                  <span role="columnheader">THE CHECKLIST ASKS FOR</span>
+                  <span role="columnheader">COVERAGE</span>
+                  <span role="columnheader">HOW ReARM HELPS</span>
+                </div>
+                {g.rows.map((r) => (
+                  <div class="map-row" role="row">
+                    <span class="map-items" role="cell">{r.items}</span>
+                    <span class="map-asks" role="cell">{r.asks}</span>
+                    <span role="cell"><span class:list={['cov', r.coverage === 'Partial' ? 'cov--partial' : 'cov--ok']}>{r.coverage}</span></span>
+                    <span class="map-how" role="cell">{r.how}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div class="map-scope">
+            <h2>{m.outOfScopeTitle}</h2>
+            <ul>{m.outOfScope.map((o) => <li>{o}</li>)}</ul>
+          </div>
+          <p class="map-disclaimer">{m.disclaimer}</p>
+          <div class="map-links">
+            <a href={m.docsHref}>{m.docsText} ↗</a>
+            <span class="map-source">Source: <a href={m.sourceHref} rel="noopener">{m.sourceText}</a></span>
+          </div>
+        </div>
+      </section>
+    );
+  })()}
 
   {page.shot && (
     <section class="wide-shot">
@@ -68,6 +124,7 @@ const { page } = Astro.props;
         </div>
       </div>
       <div class="evidence">{page.evidence}</div>
+      {page.stripNote && <p class="strip-note">{page.stripNote}</p>}
     </div>
   </section>
 
@@ -110,8 +167,48 @@ const { page } = Astro.props;
   .std { color: var(--body-2); font-size: 14.5px; }
   .std--primary { color: var(--navy); font-weight: 700; font-size: 16px; }
   .evidence { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.1em; color: var(--muted-1); }
+  .strip-note { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted-1); }
+
+  .mapping { padding: 8px 0 40px; }
+  .mapping-intro { font-size: 15px; line-height: 1.7; color: var(--body-2); max-width: 760px; margin-bottom: 28px; }
+  .map-group { margin-bottom: 32px; }
+  .map-group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+  .map-group-head h2, .map-scope h2 { font-size: 19px; font-weight: 700; color: var(--navy); }
+  .map-section { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.08em; color: var(--muted-1); text-transform: uppercase; }
+  .map-table { border: 1px solid var(--border-card); }
+  .map-row {
+    display: grid; grid-template-columns: 132px minmax(0, 1.1fr) 104px minmax(0, 1.6fr); gap: 18px;
+    padding: 14px 18px; border-top: 1px solid var(--border-rule); align-items: start;
+  }
+  .map-row--head {
+    border-top: none; background: var(--surface-strip); padding-top: 10px; padding-bottom: 10px;
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; color: var(--muted-1);
+  }
+  .map-items { font-family: var(--font-mono); font-size: 12.5px; color: var(--orange-text); font-weight: 600; }
+  .map-asks { font-size: 14px; line-height: 1.55; color: var(--navy); font-weight: 600; }
+  .map-how { font-size: 14px; line-height: 1.6; color: var(--body-2); }
+  .cov { display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; border: 1px solid; }
+  .cov--ok { color: var(--green); border-color: var(--green); }
+  .cov--partial { color: var(--orange-text); border-color: var(--orange-text); }
+  .map-scope { border: 1px solid var(--border-card); background: var(--surface-strip); padding: 22px 26px; margin-bottom: 18px; }
+  .map-scope ul { margin: 12px 0 0; padding-left: 20px; }
+  .map-scope li { font-size: 14px; line-height: 1.65; color: var(--body-2); margin-bottom: 6px; }
+  .map-disclaimer { font-size: 13px; line-height: 1.6; color: var(--muted-1); max-width: 760px; margin-bottom: 14px; }
+  .map-links { display: flex; gap: 24px; flex-wrap: wrap; align-items: baseline; font-size: 14px; }
+  .map-links > a { font-weight: 600; }
+  .map-source { color: var(--muted-1); font-size: 13px; }
+
+  .see-also-card {
+    display: block; text-decoration: none; color: inherit;
+    background: linear-gradient(135deg, rgba(91,124,250,0.06), rgba(240,138,75,0.06));
+  }
+  .see-also-card h3 { color: var(--navy); }
+  .see-also-card .step-cap { color: var(--orange-text); }
+  .see-also-card:hover h3 { text-decoration: underline; }
 
   @media (max-width: 900px) {
+    .map-row { grid-template-columns: 1fr; gap: 6px; }
+    .map-row--head { display: none; }
     .uc-hero h1 { font-size: 27px; }
     .steps-grid { grid-template-columns: 1fr; }
     .standards-inner { flex-direction: column; align-items: flex-start; }

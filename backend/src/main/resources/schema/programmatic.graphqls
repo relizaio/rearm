@@ -553,6 +553,15 @@ extend type Mutation {
 	"""
 	agentTaskLiftHoldProgrammatic(taskUuid: ID!, sessionUuid: ID!, role: String, note: String): AgentTask
 	"""
+	The coordinator seat's verdict on an answer signed off --no-change (task TPF-171), while the task waits on the
+	coordinator with a PENDING answerConfirmations entry. CONFIRMED: the answer rounds change nothing, the earlier
+	passes stand, and the task goes on to the first role without a current pass (the asker, unless another pass is
+	stale, which is reviewed first). REFUSED: the rounds are reviewed as a change. Both are recorded on the entry and
+	as a status-history row before routing. CONFIRMED is refused when the seat's agent gave the answer, and when the
+	asker could not read its inputs. note, optionally: kept on the entry.
+	"""
+	agentTaskConfirmAnswerProgrammatic(taskUuid: ID!, sessionUuid: ID!, verdict: AgentTaskAnswerVerdict!, note: String): AgentTask
+	"""
 	Declare that a delivery unit of a task landed, or never will (task 18c5c293): unit is a linked PR's
 	URL, or on a board delivering without PRs a branch or release; commit is the merged or pushed sha
 	(required for DELIVERED). The coordinator seat, or a session that worked this task in a role that
@@ -631,12 +640,18 @@ extend type Mutation {
 	skips the check.
 	noChange (task RD4-13): on a PASSED that answers a review item about the signing role's own document, the new
 	round changes nothing to build, so the task goes back to the filer rather than to the role that builds
-	from the round. Recorded on the sign-off; refused on REJECTED.
+	from the round. On a PASSED that answers a question (task TPF-171), the answer changes nothing: the task stops at
+	the coordinator for confirmation instead of going through the roles whose pass the round would make stale; absent,
+	the answer is treated as a change. Recorded on the sign-off; refused on REJECTED.
 	noCode (task RD4-2): the round changed no code (a note-only round). A PASSED sign-off by a role holding
 	CODE_PUSH is refused when no linked PR in play moved since the assignment ("no linked PR moved since your
 	assignment"); noCode passes it and is recorded on the sign-off. Refused on REJECTED.
+	noSplit (task TPF-152): on a PASSED by the role that produced the design, the design fits one coder pass, so a
+	coordinatorCheckpoint before the next building role does not stop the task; recorded on the sign-off and as the
+	task's designCheckpointWaiver for that ARCHITECTURE round, and ignored where the board's architectCheckpointWaiver
+	is off. Refused on REJECTED and on a sign-off by any other role.
 	"""
-	agentTaskSignOffProgrammatic(taskUuid: ID!, sessionUuid: ID!, outcome: AgentSignOffOutcome!, note: String, outputs: [ID!], seenInputs: [ID!], noChange: Boolean, noCode: Boolean): AgentTask
+	agentTaskSignOffProgrammatic(taskUuid: ID!, sessionUuid: ID!, outcome: AgentSignOffOutcome!, note: String, outputs: [ID!], seenInputs: [ID!], noChange: Boolean, noCode: Boolean, noSplit: Boolean): AgentTask
 
 	# A return may carry outputs too, and nothing is required: an agent that
 	# returns because the task was unclear has nothing to publish, and
@@ -727,6 +742,12 @@ extend type Mutation {
 	AWAITING_COORDINATOR. Strength is set separately, with agentTaskSetStrength.
 	"""
 	agentTaskAuthorize(taskUuid: ID!, role: String!, orderIndex: Int, dependsOn: [ID!], producesComponent: ID, workLevel: Int, requiredInputs: [AgentTaskPrerequisiteInput]): AgentTask
+	"""
+	A person's verdict on an answer signed off --no-change (task TPF-171), as agentTaskConfirmAnswerProgrammatic gives
+	it for the seat: BOARD_WRITE on the board. With a personal key, CONFIRMED is refused when the key's owner owns a
+	USER key the answering agent runs on; REFUSED is always allowed.
+	"""
+	agentTaskConfirmAnswer(taskUuid: ID!, verdict: AgentTaskAnswerVerdict!, note: String): AgentTask
 	"""Set a task's order. Recorded as orderSetBy; the coordinator may reorder after you."""
 	agentTaskOrder(taskUuid: ID!, orderIndex: Int!): AgentTask
 	"""Set or clear (null) what a task may spend, in USD micros. Org admin. A raise does not release a budget hold."""

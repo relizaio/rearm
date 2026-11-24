@@ -140,7 +140,8 @@ public class ReleaseNotificationSupport {
 				commitUri,
 				commitMessage,
 				updatedByName,
-				updatedByEmail);
+				updatedByEmail,
+				cd.getKind() != null ? cd.getKind().name() : null);
 	}
 
 	/**

@@ -233,3 +233,46 @@ Once you sign in and unseal the system, your user will automatically become the 
 ## Upgrading
 
 Before you upgrade an installation of 26.10.52 or earlier, or one that ran a build of the main branch, run the read-only checks in [Upgrading to the release after 26.10.52](../workflows/exporting-compliance-artifacts#who-may-upload-a-new-version-of-an-sbom), at the end of that subsection. One of them is for every installation: this release's backend does not start while an agent task board has two tasks with the same number.
+
+### Moving to rearm-postgres 0.1.7 {#rearm-postgres-0-1-7}
+
+The databases now run PostgreSQL 17.12 on the `rearm-postgres` 0.1.7 image. It is the same major version, so no dump and restore is needed; each database pod or container restarts once.
+
+A database first created on a Debian-based `rearm-postgres` (0.1.0 to 0.1.4, including the Dependency-Track chart's 0.1.3) logs `collation version mismatch` on every new connection after moving to 0.1.7, because the operating system's glibc moves from 2.41 to 2.39. The data and sort order are unaffected. Run the step below once per database server: it rebuilds the indexes and records the new collation version in every database that accepts connections, `postgres` and `template1` included. A database created on 0.1.6 needs nothing.
+
+The step reads the password from the container's own environment. Applications, Dependency-Track included, keep running while it runs. On a large database, replace `REINDEX DATABASE` with `REINDEX DATABASE CONCURRENTLY` to avoid long locks; if a concurrent run fails, it can leave invalid indexes behind, so run it again.
+
+Helm, with the release and namespace from [Installing the chart](/installation/#installing-the-chart) (`rearm`):
+
+| Database | Pod | Container |
+|---|---|---|
+| ReARM | `rearm-postgresql-0` | `postgresql` |
+| Keycloak | `rearm-keycloak-postgres-0` | `rearm-keycloak-postgres` |
+| Rebom | `rearm-rebom-postgres-0` | `postgres-container` |
+| Dependency-Track ([dtrack5 chart](/integrations/dtrackChart), release and namespace `dtrack5`) | `dtrack5-postgres-0` | `dtrack5-postgres` |
+
+```bash
+kubectl -n rearm exec rearm-postgresql-0 -c postgresql -- sh -c '
+export PGPASSWORD="${POSTGRESQL_POSTGRES_PASSWORD:-${POSTGRESQL_PASSWORD:-$POSTGRES_PASSWORD}}"
+psql -h 127.0.0.1 -U postgres -d postgres -Atc "SELECT datname FROM pg_database WHERE datallowconn" |
+while IFS= read -r db; do
+  psql -h 127.0.0.1 -U postgres -d "$db" -v ON_ERROR_STOP=1 \
+    -c "REINDEX DATABASE \"$db\"" -c "ALTER DATABASE \"$db\" REFRESH COLLATION VERSION" </dev/null || exit 1
+done'
+```
+
+Repeat with the namespace, pod and container of each database in the table.
+
+Docker Compose, from the directory of `docker-compose.yml`:
+
+```bash
+for svc in rearm-postgresql keycloak-postgres rebom-postgresql; do
+  docker compose exec -T "$svc" sh -c '
+export PGPASSWORD="${POSTGRESQL_POSTGRES_PASSWORD:-${POSTGRESQL_PASSWORD:-$POSTGRES_PASSWORD}}"
+psql -h 127.0.0.1 -U postgres -d postgres -Atc "SELECT datname FROM pg_database WHERE datallowconn" |
+while IFS= read -r db; do
+  psql -h 127.0.0.1 -U postgres -d "$db" -v ON_ERROR_STOP=1 \
+    -c "REINDEX DATABASE \"$db\"" -c "ALTER DATABASE \"$db\" REFRESH COLLATION VERSION" </dev/null || exit 1
+done'
+done
+```

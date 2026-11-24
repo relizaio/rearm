@@ -27,14 +27,14 @@ server {
         try_files $uri $uri/ /index.html;
 
         # Security headers for the SPA shell + static assets. HSTS is intentionally
-        # NOT set here — TLS terminates at the Traefik ingress / upstream LB, which
+        # NOT set here -- TLS terminates at the Traefik ingress / upstream LB, which
         # owns Strict-Transport-Security. The backend (/api, /graphql) and Keycloak
         # (/kauth) emit their own headers, so these live only on the static app.
         add_header X-Frame-Options "SAMEORIGIN" always;
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
         # CSP ships in Report-Only first so it can be validated in a browser before
-        # enforcing — switch the directive name to Content-Security-Policy to enforce.
+        # enforcing -- switch the directive name to Content-Security-Policy to enforce.
         # 'unsafe-eval' is required by Vega (vega/vega-lite compile expressions via
         # Function); 'unsafe-inline' in style-src covers Vue's runtime-injected
         # <style> blocks and inline style attributes; img-src allows data:/blob: for
@@ -65,6 +65,23 @@ server {
         proxy_connect_timeout 90;
         proxy_read_timeout 90;
         proxy_send_timeout 90;
+    }
+
+    # Programmatic API (PFA-2): the calls of the CLI and of API keys, among them batch uploads the
+    # backend answers only when the whole batch is committed. The read and send timeouts are
+    # PROGRAMMATIC_API_TIMEOUT seconds (nginx_start.sh: 600 when unset, the 10 minutes the rearm CLI
+    # waits for a call); every other /api route keeps the 90 above. No error_page and no
+    # proxy_intercept_errors here: the server block's lines below are inherited (see the comment there).
+    location /api/programmatic {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host            $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
+        proxy_connect_timeout 90;
+        proxy_read_timeout ${PROGRAMMATIC_API_TIMEOUT};
+        proxy_send_timeout ${PROGRAMMATIC_API_TIMEOUT};
     }
 
     location /tea {

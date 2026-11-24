@@ -3,6 +3,7 @@ import Swal from 'sweetalert2'
 import graphqlClient from './graphql'
 import { parseGraphQLError } from './graphqlErrorText'
 import { brandingState } from './branding'
+import { showSeatRefusal } from './seatRefusalModal'
 
 function translatePermissionName(type: string): string {
     switch (type) {
@@ -363,7 +364,10 @@ function formatSpecVersion(specVersion: string): string {
 
 async function handleFetchUserResult(fetchUserResult: any): Promise<void> {
     if (!fetchUserResult) return
-    if (fetchUserResult._unauthorized) {
+    if (fetchUserResult._seatRefused) {
+        // License seat refusal (TPF-168): the server's text verbatim, and Sign out as the only way on.
+        await showSeatRefusal({ reason: fetchUserResult._seatRefused, message: fetchUserResult._errorMessage })
+    } else if (fetchUserResult._unauthorized) {
         await Swal.fire({
             title: 'Account Inactive',
             text: `Your account is inactive. Please contact your System Administrator or support at ${brandingState.supportEmail}`,

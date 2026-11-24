@@ -219,7 +219,7 @@ public class AgentTaskBookkeepingStampTest {
 				List.of(new Promotion(UUID.randomUUID(), ReleaseLifecycle.ASSEMBLED, null),
 						new Promotion(UUID.randomUUID(), null, "guard-" + UUID.randomUUID())),
 				Boolean.TRUE, UUID.randomUUID(), Boolean.FALSE,
-				Map.of("rearm-saas", new BaseHead(UUID.randomUUID(), "main", "0123abcd", at)));
+				Map.of("rearm-saas", new BaseHead(UUID.randomUUID(), "main", "0123abcd", at)), Boolean.TRUE);
 		SignOff other = new SignOff(real.role(), real.roleUuid(), UUID.randomUUID(), foreign, at.minusHours(2),
 				at.minusHours(1), SignOffOutcome.REJECTED, "note-" + UUID.randomUUID(), "prompt-" + UUID.randomUUID(),
 				AgentActor.ofUser(UUID.randomUUID(), "operator-" + UUID.randomUUID()),
@@ -227,7 +227,7 @@ public class AgentTaskBookkeepingStampTest {
 				List.of(UUID.randomUUID()), List.of(UUID.randomUUID()),
 				List.of(new Promotion(UUID.randomUUID(), null, "guard-" + UUID.randomUUID())),
 				Boolean.FALSE, UUID.randomUUID(), Boolean.TRUE,
-				Map.of("rearm", new BaseHead(UUID.randomUUID(), "main", "89abcdef", at.minusHours(1))));
+				Map.of("rearm", new BaseHead(UUID.randomUUID(), "main", "89abcdef", at.minusHours(1))), Boolean.TRUE);
 		TaskReturn ret = new TaskReturn(real.role(), real.roleUuid(), real.agent(), real.session(), TaskReturnReason.OTHER,
 				"desc-" + UUID.randomUUID(), at, HopUsage.empty(), List.of(UUID.randomUUID()));
 		td.setSignOffs(List.of(full, other));
@@ -283,7 +283,7 @@ public class AgentTaskBookkeepingStampTest {
 				List.of(UUID.randomUUID()), List.of(UUID.randomUUID()),
 				List.of(new Promotion(UUID.randomUUID(), null, "guard-" + UUID.randomUUID())),
 				Boolean.TRUE, UUID.randomUUID(), Boolean.FALSE,
-				Map.of("rearm-saas", new BaseHead(UUID.randomUUID(), "main", "0123abcd", real.signedOffAt())));
+				Map.of("rearm-saas", new BaseHead(UUID.randomUUID(), "main", "0123abcd", real.signedOffAt())), Boolean.TRUE);
 	}
 
 	private TaskReturn returnInWindow(SignOff real, UUID agent, UUID session, ZonedDateTime at, String description) {

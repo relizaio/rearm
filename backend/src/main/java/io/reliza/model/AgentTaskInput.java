@@ -8,6 +8,7 @@ import java.io.Serializable;
 import java.util.List;
 import java.util.UUID;
 
+import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 
 /**
@@ -76,6 +77,14 @@ public class AgentTaskInput {
 			this(kind, specification, scope, component, minLifecycle, resolution, null);
 		}
 
+		/**
+		 * This requirement resolved to one release (task TPF-161, D5): the same kind, specification, scope, component,
+		 * floor and resolution, pinned to {@code release}.
+		 */
+		public RequiredInput pinnedTo(UUID release) {
+			return new RequiredInput(kind, specification, scope, component, minLifecycle, resolution, release);
+		}
+
 		/** One release, pinned by uuid (task RD4-12). */
 		public static RequiredInput pinned(InputKind kind, RearmSpecificationType specification, UUID release) {
 			return new RequiredInput(kind, specification, null, null, null, null, release);
@@ -105,14 +114,30 @@ public class AgentTaskInput {
 	 * @param producesComponent the component this child builds, if it differs from the parent's
 	 * @param dependsOnSiblingIndexes positions in THIS split's list that must complete first,
 	 *        which is how a coordinator encodes an ordering before the children have uuids
+	 * @param designFromParent build this child from the parent's reviewed design (task TPF-161, D1): its design-stage
+	 *        roles are recorded as passed through the carried rounds and it goes to the build role; null or false
+	 *        leaves the split as before
 	 */
 	public static record SplitChild(String title, String externalRef, String sourceUrl,
 			Integer workLevel, UUID producesComponent, List<Integer> dependsOnSiblingIndexes, String description,
-			String group, List<io.reliza.common.CommonVariables.TagRecord> tags)
+			String group, List<TagRecord> tags, Boolean designFromParent)
 			implements Serializable {
 
 		public SplitChild {
 			if (null == dependsOnSiblingIndexes) dependsOnSiblingIndexes = List.of();
+		}
+
+		/** Without designFromParent (task TPF-161): every caller from before it. */
+		public SplitChild(String title, String externalRef, String sourceUrl, Integer workLevel,
+				UUID producesComponent, List<Integer> dependsOnSiblingIndexes, String description, String group,
+				List<TagRecord> tags) {
+			this(title, externalRef, sourceUrl, workLevel, producesComponent, dependsOnSiblingIndexes, description, group,
+					tags, null);
+		}
+
+		/** Whether the coordinator marked this child to build from the parent's reviewed design (task TPF-161). */
+		public boolean carriesDesign() {
+			return Boolean.TRUE.equals(designFromParent);
 		}
 
 		/**

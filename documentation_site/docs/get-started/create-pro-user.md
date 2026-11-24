@@ -17,7 +17,13 @@ Click `Create` to create the user.
 
 Once the user is created, open the `Credentials` tab on top. Click `Credential Reset`. Select `Update Password` as the `Reset action` and click `Send Email`. The user will receive an email with a link to set their password.
 
-The user will then need to log in with their new password to the ReARM instance. Once they log in and accept terms and conditions, they will automatically join your main organization in ReARM. However, they will have no allocated permissions in ReARM. To set permissions, in ReARM, in the left menu, click on the `Organization Settings` section, then click on the `Users` tab on top. Click on the pencil icon next to the user and assign desired permissions.
+The user will then need to log in with their new password to the ReARM instance. What happens at their first login depends on the **SSO users without a role** setting of your main organization (`Organization Settings` > `Admin Settings` > `General`), and on whether the user is in a Keycloak group connected to a ReARM user group:
+
+- If one of the user's Keycloak groups is connected to a ReARM user group of your main organization (the `Connected SSO groups` of the user group, read from the `groups` claim set up in [Configure Client Group Mapper](/integrations/identityProviders/microsoft.md#rearm-part-configure-client-group-mapper)), the user joins your main organization with that group's permissions.
+- Otherwise, with the default setting, **Refuse sign-in**, the login is refused with a message that no ReARM role is assigned (reference `NO-ROLE`), unless the user holds a pending invitation to an organization. Add the user to a connected Keycloak group in the `Groups` step above, or switch the setting to **Create account without a role**.
+- With **Create account without a role**, once they log in and accept terms and conditions, they join your main organization with no allocated permissions. To set permissions, in ReARM, in the left menu, click on the `Organization Settings` section, then click on the `Users` tab on top. Click on the pencil icon next to the user and assign desired permissions.
+
+The **SSO users without a role** setting applies to ReARM Pro only: ReARM Community Edition creates such an account without a role.
 
 
 ### User Deletion

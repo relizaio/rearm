@@ -16,8 +16,11 @@ function source (file: string): string {
 describe('OrgSettings own row', () => {
     const code = source('./OrgSettings.vue')
 
-    it('can be edited but not removed, with the organization-wide level locked', () => {
-        expect(code).toMatch(/if \(row\.uuid === myUser\.value\.uuid\) \{\s*els = \[editIcon\]/)
+    // License seats review follow-up: your own row has no controls (no edit icon, no remove); the
+    // dialog still locks the organization-wide level should it ever open on your own account.
+    it('has no controls, and the dialog keeps the organization-wide level locked for yourself', () => {
+        expect(code).toContain('if (isOrgAdmin.value && row.uuid !== myUser.value.uuid) {')
+        expect(code).not.toContain('Modify my approval roles')
         expect(code).toContain(':lock-org-type="selectedUser.uuid === myUser.uuid"')
         expect(code).toContain(':show-admin-approvals="true"')
     })

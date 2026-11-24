@@ -30,6 +30,7 @@ import org.springframework.web.context.request.ServletWebRequest;
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.LogSafe;
+import io.reliza.exceptions.AccountRefusedException;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ReleaseData;
@@ -255,7 +256,14 @@ public class ArtifactWs {
      */
     private Gate userGate(UUID uuid, ServletWebRequest request) {
         JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
-        Optional<UserData> oud = userService.getUserDataByAuth(auth);
+        Optional<UserData> oud;
+        try {
+            oud = userService.getUserDataByAuth(auth);
+        } catch (AccountRefusedException e) {
+            // a refused account (e.g. outside the licensed number of users) gets this controller's 403, no body
+            logRefusal(uuid, "jwt", request, e.getMessage());
+            return Gate.refused(forbidden());
+        }
         if (oud.isEmpty()) return Gate.refused(unauthorized(ProgrammaticAuthenticationFilter.INVALID_CREDENTIAL_CHALLENGE,
             ProgrammaticAuthenticationFilter.INVALID_CREDENTIAL_BODY));
         UserData ud = oud.get();

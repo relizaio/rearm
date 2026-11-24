@@ -37,6 +37,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
 import io.github.bucket4j.TimeMeter;
+import io.reliza.exceptions.AccountRefusedException;
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.LogSafe;
 import io.reliza.common.OAuthQueryGuard;
@@ -164,9 +165,14 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         // 1) If authenticated user -> user uuid
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof JwtAuthenticationToken jwtAuth) {
-            var oud = userService.getUserDataByAuth(jwtAuth);
-            if (oud.isPresent()) {
-                return "user:" + oud.get().getUuid();
+            try {
+                var oud = userService.getUserDataByAuth(jwtAuth);
+                if (oud.isPresent()) {
+                    return "user:" + oud.get().getUuid();
+                }
+            } catch (AccountRefusedException e) {
+                // never answered here; the resolver that follows refuses, this keys on the rest
+                log.debug("Rate limit key: caller's account refused, keying on the request instead");
             }
         }
 

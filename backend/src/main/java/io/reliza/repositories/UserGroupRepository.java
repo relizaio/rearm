@@ -11,11 +11,13 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.model.UserGroup;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
 	
@@ -28,6 +30,16 @@ public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
 			value = VariableQueries.FIND_ALL_USER_GROUPS_BY_ORGANIZATION,
 			nativeQuery = true)
 	List<UserGroup> findAllByOrganization(@Param("orgUuidAsString") String orgUuidAsString);
+
+	/**
+	 * The license seat census rows of every user group (TPF-167 D1): uuid and record_data as text; the
+	 * census keeps the active ones and groups them by organization. COMMIT flush mode (T-4).
+	 */
+	@QueryHints(@QueryHint(name = "org.hibernate.flushMode", value = "COMMIT"))
+	@Query(
+			value = VariableQueries.CENSUS_USER_GROUPS,
+			nativeQuery = true)
+	List<Object[]> censusUserGroups();
 	
 	@Query(
 			value = VariableQueries.FIND_USER_GROUPS_BY_USER_AND_ORGANIZATION,

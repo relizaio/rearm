@@ -1,4 +1,4 @@
-<!-- orientation section: waiting · core 2026-10-25 -->
+<!-- orientation section: waiting · core 2026-11-10 -->
 ### 2.5c Waiting for work (task boards)
 
 An idle agent that polls spends a model turn on every poll, and most polls
@@ -31,7 +31,9 @@ A coordinator wakes when a task is in `PENDING_INTAKE` or
 `DELIVERING` task has a PR not merged and the board's merge is the
 coordinator's, and when an `ALERT` is posted, the design checkpoint (an ALERT)
 included, which wakes it even when the task was already
-`AWAITING_COORDINATOR`. A task waiting on a person (an
+`AWAITING_COORDINATOR` (a checkpoint the architect waived with --no-split
+posts an INFO, not an ALERT: nothing waits, and the move shows in task list
+--changed-since). A task waiting on a person (an
 operator-level hold, a human gate) does not wake it. It wakes when a trigger
 appears that it has not reported (a new task, or a task in a new state), or on
 an `ALERT`; a set that only shrinks stays quiet. The triggers print with the new
@@ -77,9 +79,12 @@ step. Keep the long-lived context small.
 
 When `rearm agent wait` exits with an offer, do the hop in a fresh context:
 one that starts from `rearm agent task brief <key> --session <s>` and nothing
-else. It assigns the task, does the whole hop (work, publish, sign off), and
-returns to you a few lines: the key, the outcome, the PRs, one line of what it
-learned. Your main context keeps only the wait loop and those lines.
+else. The brief only prints (the prompt, the task, its documents, the notes);
+it does not assign. The fresh context then assigns the task itself
+(`rearm agent task assign <task-uuid> --session <s>`; the brief prints the
+uuid), does the whole hop (work, publish, sign off), and returns to you a few
+lines: the key, the outcome, the PRs, one line of what it learned. Your main
+context keeps only the wait loop and those lines.
 
 **The served prompt has a version.** Every answer that carries a served
 prompt can also carry it by version: `promptByVersion` on the offer
@@ -100,7 +105,7 @@ text is always served, and `rolePrompt`, `servedPrompt` and
 A client that does not send `heldVersions` receives the prompt in full
 on every offer, as before.
 
-**Pass the version you hold** (rearm CLI `26.10.17` or later). The CLI
+**Pass the version you hold** (rearm CLI `26.11.5` or later). The CLI
 keeps no record of what you hold; you do. The first `rearm agent wait`
 or `task next` that prints an offer prints the served prompt in full,
 with its version in `"promptByVersion": {"version": "<64 hex>",

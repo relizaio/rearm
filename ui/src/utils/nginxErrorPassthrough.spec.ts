@@ -44,10 +44,10 @@ const { directives, locations } = directivesOf(template)
 const innermost = (d: Directive) => d.block[d.block.length - 1]
 const inLocation = (d: Directive) => d.block.some(b => b.startsWith('location '))
 
-// The fourteen locations that proxy, in file order: the main server's twelve (architecture 3.3), then
-// the TEA-only server's two for custom domains (TPF-148).
+// The fifteen locations that proxy, in file order: the main server's thirteen (architecture 3.3, and
+// /api/programmatic from PFA-2), then the TEA-only server's two for custom domains (TPF-148).
 const PROXIED = [
-    '/v1', '/api', '/tea', '/.well-known/tea', '/graphql',
+    '/v1', '/api', '/api/programmatic', '/tea', '/.well-known/tea', '/graphql',
     '/kauth', '/kauth/admin/Reliza', '/kauth/admin/realms/Reliza', '/kauth/admin/serverinfo',
     '/kauth/realms/Reliza', '/kauth/resources', '/kauth/js',
     '^~ /tea/', '= /.well-known/tea',
@@ -62,7 +62,7 @@ describe('the UI nginx template passes upstream answers through (TPF-49)', () =>
         expect(found[0].args).toBe('off')
     })
 
-    it('proxies from exactly the fourteen locations, none with its own intercept switch or error_page', () => {
+    it('proxies from exactly the fifteen locations, none with its own intercept switch or error_page', () => {
         const proxied = directives.filter(d => d.name === 'proxy_pass').map(d => innermost(d))
         expect(proxied).toEqual(PROXIED.map(p => `location ${p}`))
         for (const location of locations) {
@@ -87,6 +87,31 @@ describe('the UI nginx template passes upstream answers through (TPF-49)', () =>
     it('serves the SPA for any unknown UI route', () => {
         const tryFiles = directives.filter(d => d.name === 'try_files' && innermost(d) === 'location /')
         expect(tryFiles.map(d => d.args)).toEqual(['$uri $uri/ /index.html'])
+    })
+})
+
+describe('the programmatic API location waits PROGRAMMATIC_API_TIMEOUT seconds (PFA-2)', () => {
+    const own = (location: string) => directives
+        .filter(d => innermost(d) === `location ${location}`)
+        .map(d => `${d.name} ${d.args}`)
+
+    it('proxies /api/programmatic like /api, with the read and send timeouts from the variable', () => {
+        expect(own('/api/programmatic')).toEqual(expect.arrayContaining([
+            'proxy_pass http://backend',
+            'proxy_connect_timeout 90',
+            'proxy_read_timeout ${PROGRAMMATIC_API_TIMEOUT}',
+            'proxy_send_timeout ${PROGRAMMATIC_API_TIMEOUT}',
+        ]))
+        expect(own('/api')).toEqual(expect.arrayContaining(['proxy_read_timeout 90', 'proxy_send_timeout 90']))
+    })
+
+    it('uses the placeholder in those two directives only', () => {
+        const users = directives.filter(d => d.args.includes('PROGRAMMATIC_API_TIMEOUT'))
+        expect(users.map(d => [innermost(d), d.name])).toEqual([
+            ['location /api/programmatic', 'proxy_read_timeout'],
+            ['location /api/programmatic', 'proxy_send_timeout'],
+        ])
+        expect(template.split('${PROGRAMMATIC_API_TIMEOUT}')).toHaveLength(3)
     })
 })
 

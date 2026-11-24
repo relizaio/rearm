@@ -82,6 +82,14 @@ public enum AdvisoryLockKey {
 	 */
 	TEA_ACT_DRAIN(49),
 	/**
+	 * The one instance-wide transaction lock over license seats (TPF-167, TPF-165 D4), taken with the
+	 * two-key form whose second key is hashtext('license-seats') through UserRepository.lockLicenseSeats.
+	 * Always the FIRST lock of a granting transaction, before any row lock; not a scheduler lock.
+	 * 53, not the 50 the design named: 50 and 51 are claimed by FDAW-30 and 52 by FDAW-15/50 on their
+	 * own branches.
+	 */
+	LICENSE_SEATS(53),
+	/**
 	 * Serialises SAFETY_CONTEXT imports and manual accepts that touch the same coarse key (org,
 	 * scope target, component purl, scheme), so the ACTIVE-record upsert and the downgrade check
 	 * see a stable baseline. Two-key form. 60: 54 to 57 are claimed on other branches.

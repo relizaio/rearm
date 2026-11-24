@@ -45,7 +45,14 @@ public record NotificationSubscriptionInput(
          * NotificationSubscriptionData.ownedByTeam. Null = unscoped, which is
          * every subscription written before this field existed.
          */
-        UUID ownedByTeam) {
+        UUID ownedByTeam,
+        /*
+         * TPF-158: the board-document opt-in -- see
+         * NotificationSubscriptionData.includeBoardDocuments. The mutation
+         * replaces the row, so an omitted key stores null (= excluded), also
+         * on an edit of a row that held true.
+         */
+        Boolean includeBoardDocuments) {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record FilterInput(

@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +54,7 @@ public class CliSessionService {
 	@Autowired private CliSessionRepository repository;
 	@Autowired private ApiKeyService apiKeyService;
 	@Autowired private UserService userService;
+	@Autowired @Lazy private SeatGate seatGate;
 	@Autowired private RelizaConfigProps relizaConfigProps;
 
 	/** What the CLI gets back when it starts a login. */
@@ -335,8 +337,9 @@ public class CliSessionService {
 		if (verdict == RefreshVerdict.CURRENT || verdict == RefreshVerdict.PREVIOUS_IN_GRACE) {
 			Optional<ApiKey> oak = s.getApiKey() == null ? Optional.empty() : apiKeyService.getApiKey(s.getApiKey());
 			ApiKeyData akd = oak.map(ApiKeyData::dataFromRecord).orElse(null);
+			// TPF-167 (D7 point 4, F-24): and the backing user must be admitted, for a personal and a Free Form key
 			boolean keyUsable = akd != null && akd.getStatus() == ApiKeyStatus.ACTIVE
-					&& owner(s).filter(u -> backs(u, oak.get(), akd)).isPresent();
+					&& owner(s).filter(u -> backs(u, oak.get(), akd) && !outsideLicense(u)).isPresent();
 			if (!keyUsable) return Optional.empty();
 		}
 		switch (verdict) {
@@ -427,8 +430,38 @@ public class CliSessionService {
 		return user.isGlobalAdmin() || user.getOrganizations().contains(org);
 	}
 
+	/**
+	 * Whether the backing user of a CLI session is outside the licensed number of users (TPF-167, D7 point 4,
+	 * F-24): judged on the user, whatever key backs the session, so a Free Form-backed session of an OUTSIDE
+	 * holder dies too. Global admins and installs without limits are admitted; a census failure propagates.
+	 */
+	public boolean outsideLicense(UserData user) {
+		return seatGate.outsideLicense(user);
+	}
+
 	/** Owner of a session for the actor claim and the listing; empty when the user is gone. */
 	public Optional<UserData> owner(CliSession s) {
-		return s.getUser() == null ? Optional.empty() : userService.getUserData(s.getUser()).filter(u -> u.getStatus() == UserStatus.ACTIVE);
+		return activeUser(s.getUser());
+	}
+
+	/**
+	 * The person who could stand behind a CLI login on this key now, if any (TPF-174): a personal key's owner or
+	 * a Free Form key's holder, when that user is ACTIVE, backs the key and is not outside the licensed number of
+	 * users -- the three conditions the programmatic filter and refresh apply to the user of a live session.
+	 * Judged on who could log in, not on whether a session exists. The caller checks that the key is ACTIVE.
+	 * Empty for any other key type, for a key with no owner or holder, and for a user who is gone.
+	 */
+	public Optional<UserData> backerOf(ApiKey ak, ApiKeyData akd) {
+		UUID candidate = null;
+		if (ApiTypeEnum.USER == ak.getObjectType()) {
+			candidate = ak.getObjectUuid();
+		} else if (ApiTypeEnum.FREEFORM == ak.getObjectType()) {
+			candidate = akd.getHolder();
+		}
+		return activeUser(candidate).filter(u -> backs(u, ak, akd) && !outsideLicense(u));
+	}
+
+	private Optional<UserData> activeUser(UUID uuid) {
+		return null == uuid ? Optional.empty() : userService.getUserData(uuid).filter(u -> u.getStatus() == UserStatus.ACTIVE);
 	}
 }

@@ -136,6 +136,14 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		@JsonProperty
 		private SupportInjectionSetting supportInjection;
 
+		/**
+		 * SSO users whose groups claim matches no SSO-connected user group and who hold no pending
+		 * invitation (TPF-167, TPF-165 D6). Read from the DEFAULT organization only; null is REFUSE.
+		 * Read through {@link #getSsoUsersWithoutRoleOrDefault()}.
+		 */
+		@JsonProperty
+		private SsoUsersWithoutRole ssoUsersWithoutRole;
+
 		/** Null is treated as {@link SidPurlMode#DISABLED} at resolution time. */
 		@JsonProperty
 		private SidPurlMode sidPurlMode;
@@ -382,6 +390,11 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 			return supportInjection != null ? supportInjection : SupportInjectionSetting.DISABLED;
 		}
 
+		/** @return the configured value, or {@link SsoUsersWithoutRole#REFUSE} if unset (existing orgs too). */
+		public SsoUsersWithoutRole getSsoUsersWithoutRoleOrDefault() {
+			return ssoUsersWithoutRole != null ? ssoUsersWithoutRole : SsoUsersWithoutRole.REFUSE;
+		}
+
 		/**
 		 * @return the configured sid PURL mode, or {@link SidPurlMode#DISABLED} if unset.
 		 */
@@ -550,6 +563,16 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		 */
 		@JsonProperty
 		private UUID ownerTeam;
+	}
+
+	/**
+	 * What a first SSO sign-in does when the groups claim matches no SSO-connected user group of the
+	 * default organization and no invitation is pending (TPF-167, TPF-165 D6): refuse it (no account,
+	 * NO_ROLE), or create the account without a role (NONE, no seat).
+	 */
+	public enum SsoUsersWithoutRole {
+		REFUSE,
+		CREATE_WITHOUT_ROLE
 	}
 
 	public static class InvitedObject {
@@ -857,6 +880,22 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	@JsonIgnore
 	public Settings getSettingsWithDefaults() {
 		return settings != null ? settings : Settings.getDefault();
+	}
+
+	/**
+	 * Whether this organization holds a non-expired invitation for the email, compared without case
+	 * (TPF-167, TPF-165 D6: a pending invitation counts as a role at a first SSO sign-in).
+	 */
+	public boolean hasPendingInvitationFor(String email) {
+		if (null == email || null == invitees) return false;
+		ZonedDateTime now = ZonedDateTime.now();
+		for (InvitedObject io : invitees) {
+			if (null != io && null != io.getEmail() && io.getEmail().equalsIgnoreCase(email)
+					&& (null == io.getChallengeExpiry() || io.getChallengeExpiry().isAfter(now))) {
+				return true;
+			}
+		}
+		return false;
 	}
 	
 	/**

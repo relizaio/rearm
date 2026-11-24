@@ -484,6 +484,7 @@ public class NotificationDataFetcher {
 					d.rateLimit() != null ? Utils.OM.writeValueAsString(d.rateLimit()) : null,
 					d.ownedByTeam(),
 					d.managedByTeam(),
+					d.includeBoardDocuments(),
 					sub.getRevision());
 		} catch (RuntimeException e) {
 			log.warn("Failed to render subscription {} for read: {}", sub.getUuid(), e.getMessage());
@@ -788,7 +789,7 @@ public class NotificationDataFetcher {
 		return new NotificationSubscriptionData(
 				input.org(), input.resourceGroup(), input.name(), input.status(),
 				eventTypes, filter, routes, input.dedupWindowMinutes(), rateLimit,
-				input.ownedByTeam());
+				input.ownedByTeam(), null, input.includeBoardDocuments());
 	}
 
 	private static FilterConfig toFilterConfig(NotificationSubscriptionInput.FilterInput in)

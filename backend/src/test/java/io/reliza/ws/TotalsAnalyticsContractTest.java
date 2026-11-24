@@ -48,7 +48,7 @@ import io.reliza.ws.oss.TestInitializer;
 
 /**
  * TPF-139 (architecture round 2, 6.7): the JSON the Statistics page receives from
- * {@code Query.totalsAnalytics} after the cache: exactly twelve keys, the four cached ones and
+ * {@code Query.totalsAnalytics} after the cache: exactly thirteen keys (TPF-166 adds users_without_role), the four cached ones and
  * counted_at present and null while pending, numbers and an ISO instant once counted, and the
  * organization read check in front of it unchanged. The contract of section 10 for TPF-140.
  */
@@ -58,7 +58,7 @@ class TotalsAnalyticsContractTest {
 	private static final WhoUpdated WU = WhoUpdated.getTestWhoUpdated();
 	private static final String TOTALS = "query($o: ID!) { totalsAnalytics(orgUuid: $o) }";
 	private static final List<String> NUMBER_KEYS = List.of("components", "products", "vcs", "branches",
-			"feature_sets", "admin_and_write_users", "read_only_users");
+			"feature_sets", "admin_and_write_users", "read_only_users", "users_without_role");
 	private static final List<String> CACHED_KEYS = List.of("releases", "artifacts", "commits", "deliverables");
 
 	@MockitoSpyBean private UserService userService;
@@ -118,11 +118,11 @@ class TotalsAnalyticsContractTest {
 
 	/** 6.7.1 */
 	@Test
-	void pendingCountsAreNullAndTheMapHasTwelveKeys() throws RelizaException {
+	void pendingCountsAreNullAndTheMapHasThirteenKeys() throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		Map<String, Object> m = totals(totalsAs(admin(org), org));
 		Set<String> keys = Set.of("components", "products", "vcs", "branches", "feature_sets", "admin_and_write_users",
-				"read_only_users", "releases", "artifacts", "commits", "deliverables", "counted_at");
+				"read_only_users", "users_without_role", "releases", "artifacts", "commits", "deliverables", "counted_at");
 		assertEquals(keys, m.keySet());
 		assertNumberKeys(m);
 		for (String key : CACHED_KEYS) {
@@ -143,7 +143,7 @@ class TotalsAnalyticsContractTest {
 		try {
 			assertEquals(List.of(), orgTotalsCacheService.countAndStampOrg(org.getUuid()));
 			Map<String, Object> m = totals(totalsAs(admin(org), org));
-			assertEquals(12, m.size(), m.toString());
+			assertEquals(13, m.size(), m.toString());
 			assertNumberKeys(m);
 			assertEquals(1L, ((Number) m.get("releases")).longValue());
 			for (String key : List.of("artifacts", "commits", "deliverables")) {
