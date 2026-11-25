@@ -6,7 +6,8 @@ import {
 } from './upstreamSourceQueries'
 import {
     CONFIRM_UPSTREAM_FOLLOW, GET_UPSTREAM_FOLLOW, GET_UPSTREAM_FOLLOWS, GET_UPSTREAM_FOLLOW_PREPARATION, GET_UPSTREAM_FOLLOW_PREPARATION_RELEASES,
-    GET_UPSTREAM_FOLLOW_PREPARATION_SCOPE, PREPARE_UPSTREAM_FOLLOW, confirmedFollowUuid,
+    GET_UPSTREAM_FOLLOW_PREPARATION_SCOPE, GET_UPSTREAM_INGEST_RUNS, GET_UPSTREAM_RELEASES, PREPARE_UPSTREAM_FOLLOW, RECONFIGURE_UPSTREAM_FOLLOW,
+    START_UPSTREAM_FOLLOW_RUN, UNFOLLOW_UPSTREAM_ITEM, confirmedFollowUuid,
 } from './upstreamFollowQueries'
 import { proSchema } from './schemaDriftSupport'
 
@@ -38,7 +39,16 @@ const FOLLOW_DOCUMENTS: Row[] = [
     ['GET_UPSTREAM_FOLLOW', GET_UPSTREAM_FOLLOW, 'upstreamFollow', 'query'],
 ]
 
-const ALL: Row[] = [...SOURCE_DOCUMENTS, ...FOLLOW_DOCUMENTS]
+// TPF-230 (design 3.9, sections 4 to 8): operating a follow, appended to the follow module.
+const OPERATE_DOCUMENTS: Row[] = [
+    ['GET_UPSTREAM_INGEST_RUNS', GET_UPSTREAM_INGEST_RUNS, 'upstreamIngestRuns', 'query'],
+    ['GET_UPSTREAM_RELEASES', GET_UPSTREAM_RELEASES, 'upstreamReleases', 'query'],
+    ['START_UPSTREAM_FOLLOW_RUN', START_UPSTREAM_FOLLOW_RUN, 'startUpstreamFollowRun', 'mutation'],
+    ['RECONFIGURE_UPSTREAM_FOLLOW', RECONFIGURE_UPSTREAM_FOLLOW, 'reconfigureUpstreamFollow', 'mutation'],
+    ['UNFOLLOW_UPSTREAM_ITEM', UNFOLLOW_UPSTREAM_ITEM, 'unfollowUpstreamItem', 'mutation'],
+]
+
+const ALL: Row[] = [...SOURCE_DOCUMENTS, ...FOLLOW_DOCUMENTS, ...OPERATE_DOCUMENTS]
 
 const operations = (doc: DocumentNode): OperationDefinitionNode[] =>
     doc.definitions.filter((d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION)
@@ -181,5 +191,31 @@ describe('the follow documents (TPF-229, design 3.7 to 3.9)', () => {
         expect(confirmedFollowUuid({ confirmUpstreamFollow: { uuid: 'f1' } })).toBe('f1')
         expect(confirmedFollowUuid({})).toBeNull()
         expect(confirmedFollowUuid(null)).toBeNull()
+    })
+})
+
+describe('the documents of operating a follow (TPF-230, design 3.9 sections 4 to 8)', () => {
+    it('readsTheNewestTwentyRunsWithTheFieldsOfTheLastRun', () => {
+        expect(argOf(GET_UPSTREAM_INGEST_RUNS, 'first')?.value).toEqual(expect.objectContaining({ kind: Kind.INT, value: '20' }))
+        expect(argOf(GET_UPSTREAM_INGEST_RUNS, 'follow')?.value.kind).toBe(Kind.VARIABLE)
+        const lastRun = rootField(GET_UPSTREAM_FOLLOW).selectionSet!.selections.find((x: any) => x.name.value === 'lastRun') as FieldNode
+        expect(print(rootField(GET_UPSTREAM_INGEST_RUNS).selectionSet!)).toBe(print(lastRun.selectionSet!))
+    })
+
+    it('readsTheReleasesOfAnItemFiftyAtATimeWithTheFieldsOfTheDesign', () => {
+        expect(argOf(GET_UPSTREAM_RELEASES, 'first')?.value).toEqual(expect.objectContaining({ kind: Kind.INT, value: '50' }))
+        for (const name of ['item', 'states', 'after']) expect(argOf(GET_UPSTREAM_RELEASES, name)?.value.kind, name).toBe(Kind.VARIABLE)
+        expect(selectedPaths(GET_UPSTREAM_RELEASES)).toEqual([
+            'uuid', 'upstreamUuid', 'upstreamVersion', 'upstreamDate', 'state', 'failure', 'message', 'integrity', 'presence', 'goneSince',
+            'drift', 'lineKey', 'release',
+        ].sort())
+    })
+
+    it('answersEachOperationWithTheFollowUuidOnly', () => {
+        for (const doc of [START_UPSTREAM_FOLLOW_RUN, RECONFIGURE_UPSTREAM_FOLLOW, UNFOLLOW_UPSTREAM_ITEM]) {
+            expect(selectedPaths(doc)).toEqual(['uuid'])
+            expect(argOf(doc, 'follow')?.value.kind).toBe(Kind.VARIABLE)
+        }
+        expect(argOf(RECONFIGURE_UPSTREAM_FOLLOW, 'input')?.value.kind).toBe(Kind.VARIABLE)
     })
 })
