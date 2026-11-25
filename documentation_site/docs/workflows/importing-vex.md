@@ -30,7 +30,7 @@ How broadly the VEX claim applies. Default is **Component** — most VEX claims 
 | **Branch** | The claim applies across all releases on one branch. |
 | **Release** | The claim applies to this release only. Pick this when the VEX is dogfooding one specific build's analysis. |
 
-You can pick narrower than the default; the import won't let you go wider than what your binding context supports. If you accept a VEX-driven analysis at one scope and a broader-scope analysis already exists with a *different suppression class* (e.g., the org-wide row says NOT_AFFECTED, the new VEX says EXPLOITABLE), the import flags the conflict and stages the proposal for review instead of silently overriding.
+Any scope can be picked; whether its statements take effect automatically depends on who uploads (see [Who can make an import take effect](#who-can-make-an-import-take-effect)). Organization scope applies a statement only to a package the organization has. Resource group is not supported. If you accept a VEX-driven analysis at one scope and a broader-scope analysis already exists with a *different suppression class* (e.g., the organization-wide row says NOT_AFFECTED, the new VEX says EXPLOITABLE), the import flags the conflict and stages the proposal for review instead of silently overriding. An existing analysis at the same scope and object with the other suppression class also stages the statement.
 
 ### Import mode
 
@@ -38,7 +38,7 @@ What happens to each statement after parsing.
 
 | Mode | Behaviour |
 |---|---|
-| **Auto-accept** (default) | Each parsed statement immediately becomes a Finding Analysis (or a Mitigation Attestation when conditional). The trust gate may still demote individual statements to STAGE if their issuer class warrants it, and so does the [severity resolver](#severity) when a statement has no rating and no fallback. |
+| **Auto-accept** (default) | Each parsed statement immediately becomes a Finding Analysis (or a Mitigation Attestation when conditional). The trust gate may still demote individual statements to STAGE if their issuer class warrants it, and so does the [severity resolver](#severity) when a statement has no rating and no fallback. A statement takes effect only when the uploader holds Finding Analysis write at the chosen scope (see [Who can make an import take effect](#who-can-make-an-import-take-effect)). |
 | **Stage for review** | Every statement lands as a `PENDING` proposal in the VEX Proposals inbox; you accept or reject each one. |
 | **Reject** | Used for malformed-batch testing — every statement is rejected without writing anything. |
 
@@ -46,21 +46,63 @@ The import mode and the trust gate compose with **least-permissive wins**: picki
 
 ### Issuer class
 
-Defaults to **Vendor**, the cautious choice. Vendor's "exploitable" claims auto-accept, but vendor's "not affected" claims stage for review — that catches cases where a vendor is downplaying a finding you actually care about. Switch to **Self** when you authored the VEX about your own code (your own suppressions auto-accept). Switch to **Third party** for fully-untrusted VEX — everything stages.
+The form defaults to **Vendor**, the cautious choice. Vendor's "exploitable" claims auto-accept, but vendor's "not affected" claims stage for review: that catches cases where a vendor is downplaying a finding you actually care about. **Self** is for VEX you authored about your own code (your own suppressions auto-accept). **Third party** is for fully untrusted VEX: everything stages.
 
-ReARM also derives an issuer class from binding context (see [Concepts → Issuer class](../concepts/#issuer-class)); the dropdown's value is what wins. Leave the dropdown blank to use the derived value instead.
+The upload also has its own class, from where the VEX is attached (see [Concepts: Issuer class](../concepts/#issuer-class)): Self for the release, its source code entry or an outbound deliverable (one the release ships); Vendor for any other deliverable, such as an inbound deliverable (something the release received). Third party is never derived from where a document is attached; it is only chosen in the dropdown.
+
+A less trusted class than the upload's own always applies, so the default Vendor on a release upload applies. A more trusted class applies only when the uploader holds Finding Analysis write at the chosen scope; otherwise the upload's own class is used and the import summary says `Issuer override <class> ignored: raising trust needs Finding Analysis write at the <scope> scope; the upload's own class <class> was used`. Leave the dropdown empty to use the upload's own class.
 
 ## What happens after upload
 
 The VEX document gets parsed (CycloneDX-VEX or OpenVEX, auto-detected from content). Each statement runs through the import pipeline:
 
 1. **Match** the statement's product PURL to releases in your org's inventory.
-2. **Resolve verdict** by composing the trust gate, your import-mode pick, and the broader-scope conflict guard.
+2. **Resolve verdict**, in this order: the trust gate and your import-mode pick; the broader-scope and same-scope conflict guards; a missing severity; a severity change; the uploader's permission (see [Who can make an import take effect](#who-can-make-an-import-take-effect)).
 3. **Commit** the verdict — auto-accept writes a Finding Analysis (or a Mitigation Attestation when the claim is conditional), stage creates a `PENDING` proposal, reject records the rejection without writing.
 
 Statements that don't match any release in your inventory are reported as `unmatched` and don't produce proposals. Doc-level parse errors abort the whole import.
 
 The VEX Proposals inbox lives as a tab on the **Finding Analysis** page (left nav → **Finding Analysis** → **VEX Statement Proposals** tab) and shows every staged proposal across the org. Per-release proposals also appear in the **VEX** tab on the release page; click the eye icon to review one — it opens in a new browser tab so you can keep the queue open while triaging.
+
+## Who can make an import take effect {#who-can-make-an-import-take-effect}
+
+Anyone who may add artifacts to the release can upload a VEX document. A statement is accepted automatically only when all of these hold:
+
+- the trust gate (see [Issuer class](#issuer-class)) and the import mode allow it;
+- no analysis at a broader scope, or at the same scope, has the other suppression class;
+- a severity is known (see [Severity](#severity));
+- the statement does not change the finding's severity, unless the issuer is Self;
+- the uploading credential itself holds Finding Analysis write that covers the import's target.
+
+Otherwise it is staged, and the proposal and the upload summary name the reasons:
+
+| Reason | Shown as |
+|---|---|
+| `NO_FINDING_ANALYSIS_WRITE` | staged: you need Finding Analysis write at this scope |
+| `SAME_SCOPE_CONFLICT` | staged: an existing analysis at this scope says otherwise |
+| `BROADER_SCOPE_CONFLICT` | staged: an analysis at a broader scope already exists with a different suppression class |
+| `SEVERITY_MISSING` | staged: the statement has no severity and none could be derived |
+| `SEVERITY_CHANGE` | staged: the statement changes the severity |
+
+The Finding Analysis write grant each scope needs:
+
+| Import scope | The import's target | A Finding Analysis write grant that covers it |
+|---|---|---|
+| Release | the upload's release | on that release; on its component, directly or through a perspective that contains it; or on the organization. A grant on a product covers only the product itself for writes |
+| Component | the release's component | on that component, directly or through a perspective that contains it; or on the organization |
+| Branch | the organization (the branch must be the release's own) | on the organization |
+| Organization | the organization | on the organization |
+| Resource group | none | none: a VEX upload records no import result; a SAFETY_CONTEXT upload is refused |
+
+An organization Administrator permission covers every target, and so does a global administrator user.
+
+The credential is judged, not the person behind it: a signed-in user by the user's own grants and the grants of the user's groups; a FREEFORM key by its grants; a personal (USER) key by what both the key and its owner hold at that moment; a federated key by its trust rule. Component keys and organization-wide read-write keys never hold Finding Analysis write, so CI that should auto-accept uses a FREEFORM key granted Finding Analysis write at the scope it imports to, and no wider. After `rearm login`, the key the session is bound to is judged.
+
+Accepting or rejecting a VEX proposal needs Finding Analysis write at the proposal's scope, with the same mapping.
+
+Organization administrators find an **Import audit** in the VEX Statement Proposals tab. It lists accepted statements at Organization or Branch scope, or with a suppressing state, whose accepting credential cannot be shown to hold Finding Analysis write there now. Its Yes column reads the grants the audit can see; it is not a statement that the accepting person is still active, so do not treat a Yes as proof.
+
+The same rule applies to SAFETY_CONTEXT imports: see [Safety Context: Who can make levels take effect](./safety-context#who-can-make-levels-take-effect).
 
 ## Severity
 

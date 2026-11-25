@@ -74,15 +74,15 @@ Artifact is a Metadata document that describes specific release. Here are the ty
 
 ## Issuer Class
 
-When a VEX (Vulnerability Exploitability eXchange) document arrives, ReARM classifies the issuer's relationship to the receiving org. This drives the default trust gate (whether the VEX claim auto-applies, gets staged for review, or is rejected) — see [Importing VEX](../workflows/importing-vex) for the workflow.
+When a VEX (Vulnerability Exploitability eXchange) document or a SAFETY_CONTEXT document (declared safety integrity levels) is imported, ReARM classifies the issuer's relationship to the receiving org. This drives the default trust gate (whether a statement or level auto-applies or is staged for review). See [Importing VEX](../workflows/importing-vex) and [Safety Context](../workflows/safety-context) for the workflows.
 
 | Issuer class | Meaning | Examples |
 |---|---|---|
-| **SELF** | Your org's own assertion about your own software | VEX bound to one of your releases, your own SCE, or an outbound deliverable you ship |
-| **VENDOR** | Vendor-supplied VEX bundled with software you consume | A VEX file your supplier shipped alongside their deliverable |
-| **THIRD_PARTY** | Standalone VEX from an external party not tied to a delivery | A research org's VEX about a CVE in some library |
+| **SELF** | Your org's own assertion about your own software | VEX or safety statement bound to one of your releases, your own SCE, or an outbound deliverable you ship |
+| **VENDOR** | Vendor-supplied VEX or safety statement bundled with software you consume | A VEX file your supplier shipped alongside their deliverable |
+| **THIRD_PARTY** | Standalone VEX or safety statement from an external party not tied to a delivery | A research org's VEX about a CVE in some library (choose it with the issuer override) |
 
-The default classification is heuristic-driven from the artifact's binding: RELEASE / DELIVERABLE / SCE bindings default to SELF, anything else to THIRD_PARTY. VENDOR is not auto-detected — pick it explicitly at upload time when the VEX came from a vendor whose software you consume.
+The default comes from where the document is attached: Self for the release, its source code entry or an outbound deliverable (one the release ships); Vendor for any other deliverable, such as an inbound deliverable (something the release received). Third party is never derived; it is only chosen with the issuer override. An override to a less trusted class always applies; one to a more trusted class needs Finding Analysis write at the import scope, otherwise the upload's own class is used. See [Importing VEX: Issuer class](../workflows/importing-vex#issuer-class) and [Safety Context: Uploading](../workflows/safety-context#uploading).
 
 ## Source Code Entry
 Source Code Entry is a pointer to a specific commit or revision in a version control system. Unlike commit in a distributed VCS, Source Code Entry also points to a specific VCS repository to ensure auditability.
