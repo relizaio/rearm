@@ -1,7 +1,7 @@
 // T-500 (TPF-185 design 3.2 and 3.5): the edition gate of the upstream sources feature, the uuid
 // test for values put into a route, the reading of a refused request and the forbidden rule.
 import { describe, expect, it } from 'vitest'
-import { isForbidden, isUuid, refusalOf, upstreamSourcesAvailable } from './upstream'
+import { isForbidden, isSnapshotArtifact, isUuid, refusalOf, upstreamSourcesAvailable } from './upstream'
 import { networkSentence } from './upstreamLabels'
 
 const UUID = '3f9a1c2e-5b6d-4e7f-8a9b-0c1d2e3f4a5b'
@@ -99,5 +99,18 @@ describe('refusalOf and isForbidden', () => {
         const err: any = new Error('Response not successful')
         err.networkError = { result: { errors: [{ message: 'Not authorized' }] } }
         expect(isForbidden(refusalOf(err))).toBe(true)
+    })
+})
+
+// T-583: the one decision of the release view's artifact table, so the spec does not need the view.
+describe('isSnapshotArtifact', () => {
+    const IN = 'aaaaaaaa-0000-4000-8000-000000000001'
+    const OUT = 'aaaaaaaa-0000-4000-8000-000000000002'
+
+    it('isTrueOnlyForAnArtifactTheSnapshotNames', () => {
+        expect(isSnapshotArtifact(IN, new Set([IN]))).toBe(true)
+        expect(isSnapshotArtifact(OUT, new Set([IN]))).toBe(false)
+        expect(isSnapshotArtifact(IN, new Set())).toBe(false)
+        expect(isSnapshotArtifact(IN, undefined)).toBe(false)
     })
 })

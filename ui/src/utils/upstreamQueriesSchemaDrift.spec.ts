@@ -12,6 +12,10 @@ import {
 import {
     CHOOSE_UPSTREAM_ONE_OFF, GET_UPSTREAM_ONE_OFF, GET_UPSTREAM_ONE_OFFS, REFRESH_UPSTREAM_ONE_OFF, RESOLVE_UPSTREAM_TEI,
 } from './upstreamOneOffQueries'
+import {
+    GET_ARTIFACT_VEX_IMPORT, GET_COMPONENT_INGESTED_FROM, GET_MARKER_FOLLOWS, GET_RELEASE_INGESTED_FROM, GET_VEX_PROPOSAL_ORIGIN,
+    GET_VEX_PROPOSAL_ORIGINS,
+} from './upstreamMarkerQueries'
 import { proSchema } from './schemaDriftSupport'
 
 // T-502 (TPF-185 design 3.4): every document of the upstream sources feature against the Pro
@@ -60,7 +64,17 @@ const ONE_OFF_DOCUMENTS: Row[] = [
     ['REFRESH_UPSTREAM_ONE_OFF', REFRESH_UPSTREAM_ONE_OFF, 'refreshUpstreamOneOff', 'mutation'],
 ]
 
-const ALL: Row[] = [...SOURCE_DOCUMENTS, ...FOLLOW_DOCUMENTS, ...OPERATE_DOCUMENTS, ...ONE_OFF_DOCUMENTS]
+// Design 3.11 and 3.12: the markers, the snapshot and the source of supplier VEX statements.
+const MARKER_DOCUMENTS: Row[] = [
+    ['GET_COMPONENT_INGESTED_FROM', GET_COMPONENT_INGESTED_FROM, 'component', 'query'],
+    ['GET_RELEASE_INGESTED_FROM', GET_RELEASE_INGESTED_FROM, 'release', 'query'],
+    ['GET_MARKER_FOLLOWS', GET_MARKER_FOLLOWS, 'upstreamFollows', 'query'],
+    ['GET_ARTIFACT_VEX_IMPORT', GET_ARTIFACT_VEX_IMPORT, 'artifact', 'query'],
+    ['GET_VEX_PROPOSAL_ORIGINS', GET_VEX_PROPOSAL_ORIGINS, 'getVexStatementProposals', 'query'],
+    ['GET_VEX_PROPOSAL_ORIGIN', GET_VEX_PROPOSAL_ORIGIN, 'getVexStatementProposal', 'query'],
+]
+
+const ALL: Row[] = [...SOURCE_DOCUMENTS, ...FOLLOW_DOCUMENTS, ...OPERATE_DOCUMENTS, ...ONE_OFF_DOCUMENTS, ...MARKER_DOCUMENTS]
 
 const operations = (doc: DocumentNode): OperationDefinitionNode[] =>
     doc.definitions.filter((d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION)
@@ -252,5 +266,44 @@ describe('the one-off documents (TPF-231, design 3.10)', () => {
         for (const name of ['org', 'tei', 'source']) expect(argOf(RESOLVE_UPSTREAM_TEI, name)?.value.kind, name).toBe(Kind.VARIABLE)
         for (const name of ['oneOff', 'upstreamRelease', 'source']) expect(argOf(CHOOSE_UPSTREAM_ONE_OFF, name)?.value.kind, name).toBe(Kind.VARIABLE)
         expect(argOf(REFRESH_UPSTREAM_ONE_OFF, 'oneOff')?.value.kind).toBe(Kind.VARIABLE)
+    })
+})
+
+describe('the marker documents (design 3.11 and 3.12)', () => {
+    it('selectsTheFieldsOfTheDesignOnAComponentAndARelease', () => {
+        expect(selectedPaths(GET_COMPONENT_INGESTED_FROM)).toEqual([
+            'uuid', 'ingestedFrom',
+            ...['uuid', 'source', 'kind', 'upstreamUuid', 'upstreamName', 'depth', 'depthOrigin', 'mapping', 'updateState'].map(f => 'ingestedFrom.' + f),
+        ].sort())
+        const files = ['number', 'outcome', 'reason', 'message', 'artifact', 'conflictArtifact', 'upstreamArtifactName', 'upstreamArtifactType',
+            'documentClass', 'mediaType', 'sizeBytes', 'sha256']
+        const collections = ['version', 'upstreamCreatedDate', 'updateReasonType', 'updateReasonComment', 'ingestedDate', 'files',
+            ...files.map(f => 'files.' + f)]
+        expect(selectedPaths(GET_RELEASE_INGESTED_FROM)).toEqual([
+            'uuid', 'ingestedFrom',
+            ...['uuid', 'item', 'source', 'upstreamUuid', 'upstreamVersion', 'upstreamDate', 'state', 'integrity', 'updateState', 'presence',
+                'goneSince', 'lineKey', 'oneOff', 'collections', ...collections.map(f => 'collections.' + f)].map(f => 'ingestedFrom.' + f),
+        ].sort())
+        for (const name of ['uuid', 'org']) expect(argOf(GET_RELEASE_INGESTED_FROM, name === 'uuid' ? 'releaseUuid' : 'orgUuid')?.value.kind, name).toBe(Kind.VARIABLE)
+    })
+
+    it('readsTheActiveFollowsOfOneSourceWithTheirItemsAndLastRun', () => {
+        expect(print(argOf(GET_MARKER_FOLLOWS, 'statuses')!.value)).toBe('[ACTIVE]')
+        for (const name of ['org', 'source']) expect(argOf(GET_MARKER_FOLLOWS, name)?.value.kind, name).toBe(Kind.VARIABLE)
+        expect(selectedPaths(GET_MARKER_FOLLOWS)).toEqual([
+            'uuid', 'item', 'item.uuid', 'components', 'components.uuid', 'lastRun', 'lastRun.state', 'lastRun.stopReason', 'lastRun.finishedDate',
+        ].sort())
+    })
+
+    it('readsTheVexImportOfAnArtifactAndTheOriginOfAProposal', () => {
+        expect(selectedPaths(GET_ARTIFACT_VEX_IMPORT)).toEqual([
+            'uuid', 'vexImport',
+            ...['state', 'reason', 'modeUsed', 'storedDate', 'finishedDate', 'statementsTotal', 'proposalsStaged', 'proposalsAccepted',
+                'statementsUnmatched', 'statementsErrored'].map(f => 'vexImport.' + f),
+        ].sort())
+        const origin = ['uuid', 'ingested', ...['source', 'upstreamRelease', 'collectionVersion', 'number', 'presence'].map(f => 'ingested.' + f)].sort()
+        expect(selectedPaths(GET_VEX_PROPOSAL_ORIGINS)).toEqual(origin)
+        expect(selectedPaths(GET_VEX_PROPOSAL_ORIGIN)).toEqual(origin)
+        for (const name of ['org', 'status']) expect(argOf(GET_VEX_PROPOSAL_ORIGINS, name)?.value.kind, name).toBe(Kind.VARIABLE)
     })
 })

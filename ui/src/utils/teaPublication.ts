@@ -16,7 +16,8 @@ export interface TeaPublishNames {
 
 /** The Swal options of a confirmation; showCancelButton is always set, so Cancel sends nothing. */
 export interface TeaConfirm {
-    title: string
+    title?: string
+    titleText?: string
     text: string
     icon?: 'warning'
     showCancelButton: true
@@ -82,7 +83,7 @@ export function teaPublishConfirm (view: any, names: TeaPublishNames): TeaConfir
             : 'Its ' + n + ' component releases are published with it unless their own TEA profile forbids it.')
     }
     const confirm: TeaConfirm = {
-        title: verb + ' ' + (names?.component ?? '') + ' ' + (names?.version ?? '') + ' on TEA?',
+        titleText: verb + ' ' + (names?.component ?? '') + ' ' + (names?.version ?? '') + ' on TEA?',
         text: parts.join(' '),
         showCancelButton: true,
         confirmButtonText: verb,

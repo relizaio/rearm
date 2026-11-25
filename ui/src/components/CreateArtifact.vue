@@ -341,9 +341,9 @@ const onSubmit = async () => {
     // new version used to wipe the stored artifact; the Pro backend refuses both since
     // rearm-saas#608 (CE with its next backend sync). Say so here before sending anything.
     if (artifact.value.storedIn === constants.ArtifactStoredIn.REARM && !chosenUploadFile(fileList.value)) {
-        Swal.fire('Error!', props.isUpdateExistingBom
+        Swal.fire({ titleText: 'Error!', text: props.isUpdateExistingBom
             ? 'Choose a file to upload as the new version of this artifact.'
-            : 'Choose a file to upload, or use External storage with a download link.', 'error')
+            : 'Choose a file to upload, or use External storage with a download link.', icon: 'error' })
         return
     }
 
@@ -428,11 +428,7 @@ const onSubmit = async () => {
         }
 
     }   catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         isUploading.value = false
     }

@@ -1,6 +1,10 @@
 <template>
     <n-spin :show="loading">
         <n-card v-if="proposal" :title="`VEX Proposal — ${proposal.findingId}`">
+            <div v-if="originLine" style="margin-bottom: 12px;" data-testid="vex-proposal-origin">
+                {{ originLine }}
+                <router-link v-if="originReleaseLink" :to="originReleaseLink" data-testid="vex-proposal-origin-release">open the release</router-link>
+            </div>
 
             <n-alert v-if="sameScopeAnalyses.length > 0" type="info" style="margin-bottom: 12px;">
                 <template #header>Finding-analysis row exists at this scope</template>
@@ -196,12 +200,16 @@ export default {
 <script lang="ts" setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useStore } from 'vuex'
 import {
     NAlert, NButton, NCard, NCode, NDataTable, NDescriptions, NDescriptionsItem, NDivider,
     NForm, NFormItem, NGi, NGrid, NH4, NInput, NList, NListItem, NSelect, NSpace, NSpin, NTag, NText, useMessage
 } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import { useOrgUsersIndex } from '@/utils/userLookup'
+import { isUuid, upstreamSourcesAvailable } from '@/utils/upstream'
+import { GET_VEX_PROPOSAL_ORIGIN } from '@/utils/upstreamMarkerQueries'
+import { GET_UPSTREAM_SOURCE } from '@/utils/upstreamSourceQueries'
 import {
     ACCEPT_VEX_PROPOSAL, GET_MITIGATION_ATTESTATION, GET_VEX_PROPOSAL,
     GET_VULN_ANALYSIS_BY_LOCATION_AND_FINDING, REJECT_VEX_PROPOSAL, UPDATE_VEX_PROPOSAL
@@ -393,6 +401,43 @@ async function fetchAttestation () {
 }
 
 onMounted(fetchProposal)
+
+// Upstream sources (ReARM Pro): a supplier's statement says where it came from, read by documents
+// of the feature, only behind the edition gate. A failed read shows nothing and is not an error.
+const store = useStore()
+const upstreamAvailable = computed((): boolean => upstreamSourcesAvailable(store.getters.myuser?.installationType))
+const origin = ref<any | null>(null)
+const originSourceName = ref('')
+
+async function fetchOrigin () {
+    if (!upstreamAvailable.value || !uuid.value) return
+    try {
+        const r: any = await graphqlClient.query({ query: GET_VEX_PROPOSAL_ORIGIN, variables: { uuid: uuid.value }, fetchPolicy: 'no-cache' })
+        origin.value = r?.data?.getVexStatementProposal?.ingested ?? null
+    } catch {
+        return
+    }
+    if (!origin.value) return
+    try {
+        const r: any = await graphqlClient.query({ query: GET_UPSTREAM_SOURCE, variables: { uuid: origin.value.source }, fetchPolicy: 'no-cache' })
+        originSourceName.value = r?.data?.upstreamSource?.name ?? ''
+    } catch {
+        // read access to the whole organization is needed: "an upstream source" stands in
+    }
+}
+
+onMounted(fetchOrigin)
+
+const originLine = computed((): string => {
+    const o = origin.value
+    if (!o) return ''
+    const line = 'Supplier statement from ' + (originSourceName.value || 'an upstream source') + ', collection version ' + o.collectionVersion
+    return o.presence === 'GONE' ? line + ', gone upstream' : line
+})
+
+const originReleaseLink = computed(() => (origin.value && isUuid(proposal.value?.scopeReleaseUuid)
+    ? { name: 'ReleaseView', params: { uuid: proposal.value.scopeReleaseUuid } }
+    : null))
 
 function formatJson (s: string): string {
     try { return JSON.stringify(JSON.parse(s), null, 2) } catch { return s }

@@ -88,3 +88,28 @@ describe('the single sender of the confirm', () => {
         expect(hits).toEqual(['utils/upstreamFollowQueries.ts'])
     })
 })
+
+// T-584 (design 3.2 and 3.11, threat model row 12): the fields the Pro schema adds to a component,
+// a release, an artifact and a VEX proposal are selected by the marker query module only, and that
+// module is imported by the marker and the two VEX proposal views only. The documents CE also
+// runs stay as they are.
+describe('the Pro-only selections of the markers', () => {
+    const files = filesUnder(SRC)
+    const rel = (f: string) => f.slice(SRC.length).split('\\').join('/')
+
+    it.each([
+        ['ingestedFrom', /\bingestedFrom\b/],
+        ['vexImport {', /\bvexImport\s*\{/],
+        ['ingested {', /\bingested\s*\{/],
+    ])('selects %s in the marker query module only', (_what, pattern) => {
+        const hits = files.filter(f => pattern.test(readFileSync(f, 'utf8'))).map(rel)
+        expect(hits).toEqual(['utils/upstreamMarkerQueries.ts'])
+    })
+
+    it('hasTheMarkerQueryModuleImportedByTheMarkerAndTheTwoVexProposalViewsOnly', () => {
+        const hits = files.filter(f => /from ['"][^'"]*upstreamMarkerQueries['"]/.test(readFileSync(f, 'utf8'))).map(rel).sort()
+        expect(hits).toEqual([
+            'components/VexProposalReview.vue', 'components/VexProposalsInbox.vue', 'components/upstream/UpstreamIngestedMarker.vue',
+        ])
+    })
+})
