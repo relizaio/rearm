@@ -14,7 +14,9 @@ function navbar() {
 function sidebar() {
     return [
         {text: 'Getting Started', link: '/get-started/'},
-        {text: 'Installation', link: '/installation/'},
+        {text: 'Installation', link: '/installation/', items: [
+          {text: 'Egress Policy of the rebom Pod', link: '/installation/rebom-egress'}
+        ]},
         {text: 'Concepts', link: '/concepts/'},        
         {text: 'Workflows', link: '/workflows/', items: [
           {text: 'Bootstrap an AI Agent', link: '/workflows/agentic'},

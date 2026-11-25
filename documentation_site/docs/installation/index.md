@@ -91,6 +91,8 @@ As with the compose installation, a [Dependency-Track](https://dependencytrack.o
 
 Note: below shows quick installation method and assumes stack running on http://rearm.localhost. For various options and hardening refer to the values file of ReARM helm chart in the [GitHub repository](https://github.com/relizaio/rearm).
 
+The chart can restrict where the rebom pod may connect to; see [Egress Policy of the rebom Pod](./rebom-egress).
+
 Create your local values file `rearm-values.yaml` specifying custom parameters, especially the hostname and where artifacts are stored.
 
 As with the compose stack, the chart can run a bundled [zot](https://zotregistry.dev) registry in the cluster, so no external registry or credentials are needed. Unlike compose it is **off by default**, because switching it on for an existing installation would repoint it away from the registry it already uses. The two options are shown below - pick one.
