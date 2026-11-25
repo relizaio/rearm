@@ -31,6 +31,8 @@ export const EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS = new Set([
     'AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_RETURNED', 'AGENT_TASK_QUEUE_AGE',
     // license seat events are about accounts and seats, never a component (TPF-165 D9)
     'LICENSE_SEAT_EVENT',
+    // upstream alerts are about a source and a follow, never an affected component (TPF-185)
+    'UPSTREAM_ALERT',
 ])
 
 /**
