@@ -20,7 +20,9 @@ const { archiveSourceStatement, forbiddenSentence } = await import('@/utils/upst
 
 const ORG = '11111111-2222-3333-4444-555555555555'
 const SEALED = 'System is sealed. Please unseal the system first.'
-const global = { stubs: { Modal: { props: ['show'], template: '<div v-if="show" class="modal"><slot/></div>' } } }
+// The row action Follows is a router link; the stub shows its target as JSON.
+const RouterLink = { name: 'RouterLink', props: ['to'], template: '<a class="rl" :data-to="JSON.stringify(to)"><slot/></a>' }
+const global = { stubs: { Modal: { props: ['show'], template: '<div v-if="show" class="modal"><slot/></div>' }, RouterLink } }
 
 function source (n: number, name: string, credential: any) {
     return {
@@ -167,21 +169,40 @@ describe('UpstreamSourcesPanel', () => {
 describe('UpstreamSourcesPanel administrator controls', () => {
     const headers = (w: any): string[] => w.findAll('th').map((t: any) => t.text())
 
-    it('aMemberGetsNoActionsColumn', async () => {
+    // From TPF-229 on (design 3.6, the row action Follows of child 2) the Actions column is there
+    // for every member, and for a member it holds the Follows link only.
+    it('aMemberGetsTheActionsColumnWithFollowsOnly', async () => {
         const { w } = await mountPanel(false)
         expect(headers(w)).toContain('Name')
-        expect(headers(w)).not.toContain('Actions')
+        expect(headers(w)).toContain('Actions')
+        expect(w.findAll('[data-testid="upstream-action-follows"]')).toHaveLength(2)
+        for (const id of testids) expect(w.find(`[data-testid="${id}"]`).exists()).toBe(false)
         w.unmount()
     })
 
-    it('theActionsCellDrawsNothingForAMemberOnItsOwn', async () => {
+    it('theActionsCellDrawsOnlyFollowsForAMemberOnItsOwn', async () => {
         const member = await mountPanel(false)
-        expect((member.w.vm as any).actionsCell(SOURCES[0])).toBeNull()
+        const memberHtml = mount({ render: () => (member.w.vm as any).actionsCell(SOURCES[0]) }, { global }).html()
+        expect(memberHtml).toContain('Follows')
+        for (const label of ['Edit', 'Probe', 'Sync now', 'Archive']) expect(memberHtml).not.toContain(label)
         member.w.unmount()
         const admin = await mountPanel(true)
         expect(headers(admin.w)).toContain('Actions')
-        expect((admin.w.vm as any).actionsCell(SOURCES[0])).not.toBeNull()
+        const adminHtml = mount({ render: () => (admin.w.vm as any).actionsCell(SOURCES[0]) }, { global }).html()
+        for (const label of ['Follows', 'Edit', 'Probe', 'Sync now', 'Archive']) expect(adminHtml).toContain(label)
         admin.w.unmount()
+    })
+
+    it('theRowActionFollowsLeadsToTheFollowsOfTheSourceForEveryRow', async () => {
+        const archived = { ...source(3, 'Initech TEA', { kind: 'NONE', keyId: null, setDate: null }), status: 'ARCHIVED', archivedDate: '2026-11-02T10:00:00Z' }
+        const { w } = await mountPanel(false, { data: { upstreamSources: [SOURCES[0], archived] } })
+        const links = w.findAll('[data-testid="upstream-action-follows"]')
+        expect(links).toHaveLength(2)
+        expect(JSON.parse(links[0].attributes('data-to')!)).toEqual({
+            name: 'UpstreamOfOrg', params: { orguuid: ORG }, query: { tab: 'follows', source: SOURCES[0].uuid },
+        })
+        expect(JSON.parse(links[1].attributes('data-to')!).query.source).toBe(archived.uuid)
+        w.unmount()
     })
 
     it('anArchivedRowHasNoAction', async () => {

@@ -77,6 +77,7 @@ import { navKeyOf } from '@/utils/leftNavKey'
 import { useStore } from 'vuex'
 import { HomeOutlined as HomeIcon, CloudServerOutlined, BugOutlined } from '@vicons/antd'
 import { Adjustments, Folder, Stack2, BrandGit, Key, ChartBar, GitPullRequest, Robot, Truck } from '@vicons/tabler'
+import { CloudDownload } from '@vicons/tabler'
 
 
 function renderIcon (icon: Component) {
@@ -225,6 +226,22 @@ const menuOptions = function (org : string, myuser: any) : MenuOption[] {
                 ),
             key: 'secrets',
             icon: renderIcon(Key)
+        },
+        // Upstream sources (ReARM Pro): follows and one-offs of the organization.
+        {
+            label: () =>
+                h(
+                    RouterLink,
+                    {
+                        to: {
+                            name: 'UpstreamOfOrg',
+                            params: {orguuid: org}
+                        }
+                    },
+                    { default: () => 'Upstream' }
+                ),
+            key: 'upstream',
+            icon: renderIcon(CloudDownload)
         },
     ]
 
