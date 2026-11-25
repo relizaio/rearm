@@ -1314,6 +1314,8 @@
                 <n-alert v-if="teaBanner" data-testid="tea-public-banner" type="error" :closable="false" style="margin: 4px 0;">
                     {{ teaBanner }}
                 </n-alert>
+                <upstream-ingested-marker v-if="upstreamMarkerAvailable && upstreamMarkerOrg" subject="RELEASE" :org-uuid="upstreamMarkerOrg"
+                                          :uuid="releaseUuid" :is-org-admin="isOrgAdmin" @snapshot-artifacts="onSnapshotArtifacts" />
             </div>
         </div>
 
@@ -2431,6 +2433,8 @@ import { resolveApprovalRoles } from '@/utils/approvalRoles'
 import { isLockedByOwnVote, isVotingClosed, myVotes, othersVoteCounts, VOTING_CLOSED_TITLE } from '@/utils/approvalMatrix'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
 import { lifecycleLabel } from '@/utils/lifecycle'
+import UpstreamIngestedMarker from '@/components/upstream/UpstreamIngestedMarker.vue'
+import { isSnapshotArtifact, upstreamSourcesAvailable } from '@/utils/upstream'
 import { PackageURL } from 'packageurl-js'
 
 const route = useRoute()    
@@ -2994,6 +2998,16 @@ const pullRequest: ComputedRef<any> = computed((): any => {
 
 const releaseUuid: Ref<string> = ref(props.uuidprop ?? route.params.uuid.toString())
 const release: Ref<any> = ref({})
+
+// Upstream sources (ReARM Pro): the marker of a release an upstream source ingested, shown only
+// behind the edition gate; it reads its own data and names the artifacts of the ingested snapshot,
+// which the artifact table keeps read-only.
+const upstreamMarkerAvailable = computed((): boolean => upstreamSourcesAvailable(store.getters.myuser?.installationType))
+const upstreamMarkerOrg = computed((): string => release.value?.orgDetails?.uuid || release.value?.org || '')
+const snapshotArtifacts: Ref<ReadonlySet<string>> = ref(new Set<string>())
+function onSnapshotArtifacts (artifacts: string[]) {
+    snapshotArtifacts.value = new Set(artifacts)
+}
 /** A document round's release (RD2-24): shown as the round, without the software panels. */
 const isDocumentRound = computed(() => !!release.value?.document)
 const roundTask = ref<any>(null)
@@ -8264,11 +8278,14 @@ const artifactsTableFields: DataTableColumns<any> = [
         title: 'Actions',
         render: (row: any) => {
             let els: any[] = renderArtifactActionIcons(row)
-            els.push(h(NIcon, { title: 'Upload New Artifact Version', class: 'icons clickable', size: 25, onClick: () => uploadNewBomVersion(row) }, () => h(Edit)))
-            if (isWritable.value) els.push(h(NIcon, { title: 'Edit Artifact Tags', class: 'icons clickable', size: 25, onClick: () => openEditArtifactTagsModal(row) }, () => h(Tag)))
+            // An artifact of the ingested snapshot is read-only: the three actions that would change it are left out.
+            const ingested = isSnapshotArtifact(row.uuid, snapshotArtifacts.value)
+            if (ingested) els.push(h(NTag, { size: 'small', type: 'info', title: 'Part of the ingested snapshot: read-only', 'data-testid': 'artifact-ingested' }, () => 'Ingested'))
+            if (!ingested) els.push(h(NIcon, { title: 'Upload New Artifact Version', class: 'icons clickable', size: 25, onClick: () => uploadNewBomVersion(row) }, () => h(Edit)))
+            if (!ingested && isWritable.value) els.push(h(NIcon, { title: 'Edit Artifact Tags', class: 'icons clickable', size: 25, onClick: () => openEditArtifactTagsModal(row) }, () => h(Tag)))
             renderArtifactDtrackActions(row, els)
             // Add delete icon for Draft releases
-            if (release.value.lifecycle === 'DRAFT' && row.belongsTo === 'Release') {
+            if (!ingested && release.value.lifecycle === 'DRAFT' && row.belongsTo === 'Release') {
                 els.push(h(NIcon, { title: 'Delete Artifact from Release', class: 'icons clickable', size: 25, onClick: () => deleteArtifactFromRelease(row.uuid) }, () => h(Trash)))
             }
             if (!els.length) els.push(h('span', 'N/A'))

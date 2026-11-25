@@ -25,11 +25,15 @@ export default {
 <script lang="ts" setup>
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useStore } from 'vuex'
 import { NButton, NCard, NDataTable, NIcon, NTabs, NTabPane, NTag, NTooltip } from 'naive-ui'
 import { Eye } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
 import { useOrgUsersIndex } from '@/utils/userLookup'
 import { GET_VEX_PROPOSALS } from '@/graphql/vexImport'
+import { upstreamSourcesAvailable } from '@/utils/upstream'
+import { GET_VEX_PROPOSAL_ORIGINS } from '@/utils/upstreamMarkerQueries'
+import { GET_UPSTREAM_SOURCES } from '@/utils/upstreamSourceQueries'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,7 +43,63 @@ const statusFilter = ref<'PENDING' | 'ACCEPTED' | 'REJECTED' | 'SUPERSEDED' | 'E
 const proposals = ref<any[]>([])
 const loading = ref(false)
 
+// Upstream sources (ReARM Pro): where a supplier's statement came from. Read by documents of the
+// feature, only behind the edition gate, joined to the list by proposal uuid. A failed read leaves
+// the column empty and is not an error: the inbox works as before.
+const store = useStore()
+const upstreamAvailable = computed((): boolean => upstreamSourcesAvailable(store.getters.myuser?.installationType))
+const UNKNOWN_SOURCE = 'an upstream source'
+/** Proposal uuid to its origin (null: uploaded); null while unread or when the read failed. */
+const origins = ref<Record<string, any> | null>(null)
+/** Source uuid to its name; empty when the sources could not be read. */
+const sourceNames = ref<Record<string, string>>({})
+let originsRead = 0
+
+async function fetchOrigins () {
+    const mine = ++originsRead
+    origins.value = null
+    if (!upstreamAvailable.value || !orgUuid.value) return
+    try {
+        const r: any = await graphqlClient.query({
+            query: GET_VEX_PROPOSAL_ORIGINS,
+            variables: { org: orgUuid.value, status: statusFilter.value },
+            fetchPolicy: 'no-cache'
+        })
+        const byUuid: Record<string, any> = {}
+        for (const p of r?.data?.getVexStatementProposals ?? []) if (p?.uuid) byUuid[p.uuid] = p.ingested ?? null
+        if (mine === originsRead) origins.value = byUuid
+    } catch {
+        // the column stays empty
+    }
+}
+
+async function fetchSourceNames () {
+    if (!upstreamAvailable.value || !orgUuid.value) return
+    try {
+        const r: any = await graphqlClient.query({
+            query: GET_UPSTREAM_SOURCES,
+            variables: { org: orgUuid.value, statuses: ['ACTIVE', 'ARCHIVED'] },
+            fetchPolicy: 'no-cache'
+        })
+        const names: Record<string, string> = {}
+        for (const s of r?.data?.upstreamSources ?? []) if (s?.uuid) names[s.uuid] = s.name
+        sourceNames.value = names
+    } catch {
+        // read access to the whole organization is needed: "an upstream source" stands in
+    }
+}
+
+/** The Source cell: the source's name (or "an upstream source"), "gone upstream" when it is gone, "Uploaded" for an upload. */
+function originText (row: any): string {
+    if (!origins.value || !(row.uuid in origins.value)) return ''
+    const o = origins.value[row.uuid]
+    if (!o) return 'Uploaded'
+    const name = sourceNames.value[o.source] || UNKNOWN_SOURCE
+    return o.presence === 'GONE' ? name + ', gone upstream' : name
+}
+
 async function fetchProposals () {
+    fetchOrigins()
     loading.value = true
     try {
         const r = await graphqlClient.query({
@@ -54,6 +114,7 @@ async function fetchProposals () {
 }
 
 onMounted(fetchProposals)
+onMounted(fetchSourceNames)
 watch([statusFilter, orgUuid], fetchProposals)
 
 // Scope display: the backend resolves scope+scopeUuid into component / branch /
@@ -114,6 +175,9 @@ const columns = computed(() => {
             key: 'scope',
             render: (r: any) => renderScope(r)
         },
+        ...(upstreamAvailable.value
+            ? [{ title: 'Source', key: 'upstreamSource', render: (r: any) => h('span', { 'data-testid': 'vex-proposal-source' }, originText(r)) }]
+            : []),
         {
             title: 'Status',
             key: 'status',

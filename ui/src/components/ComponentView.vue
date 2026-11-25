@@ -59,6 +59,8 @@
                         <n-alert v-if="teaBanner" data-testid="tea-public-banner" type="error" :closable="false" style="margin: 4px 0;">
                             {{ teaBanner }}
                         </n-alert>
+                        <upstream-ingested-marker v-if="upstreamMarkerAvailable && orguuid" subject="ITEM" :org-uuid="orguuid" :uuid="componentUuid"
+                                                  :is-org-admin="upstreamMarkerOrgAdmin" />
                         <div class="componentIconsAndSettings">
                             <n-space v-cloak :size="0">
                                 <n-icon v-if="componentData && componentData.type === 'COMPONENT' && isWritable && !isDocument" @click="genApiKey('rlz')" class="clickable icons" title="Generate Component API Key" size="24"><LockOpen /></n-icon>
@@ -1438,6 +1440,8 @@ import LatestReleasesOfComponent from './LatestReleasesOfComponent.vue'
 import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import DeployedToWidget from './DeployedToWidget.vue'
 import DocumentComponentPanel from './DocumentComponentPanel.vue'
+import UpstreamIngestedMarker from './upstream/UpstreamIngestedMarker.vue'
+import { upstreamSourcesAvailable } from '@/utils/upstream'
 import { isDocumentComponent } from '@/utils/agentDocumentsView'
 import { BranchArchiveResult, chunk, confirmText, keepFailedSelected, rowClickAction, selectableBranch, selectableKeys, summarizeOutcomes, unsentAfter } from '@/utils/branchBulkArchive'
 import { DashboardView } from '@/utils/dashboardView'
@@ -1628,6 +1632,12 @@ if (route.params.orguuid) {
 }
 
 const componentUuid: string = route.params.compuuid.toString()
+
+// Upstream sources (ReARM Pro): the marker of a product or component an upstream source ingested,
+// shown only behind the edition gate; it reads its own data.
+const upstreamMarkerAvailable: ComputedRef<boolean> = computed((): boolean => upstreamSourcesAvailable(store.getters.myuser?.installationType))
+const upstreamMarkerOrgAdmin: ComputedRef<boolean> = computed((): boolean =>
+    commonFunctions.getUserPermission(orguuid.value, store.getters.myuser).org === 'ADMIN')
 
 // TEA profile (TEA-2): the red banner when the component's effective profile is PUBLIC, read once
 // on load and again after the TEA tab saves or removes the override. TEA-13 keeps the whole view

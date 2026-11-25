@@ -61,3 +61,12 @@ export const NOT_AUTHORIZED = 'Not authorized'
 export function isForbidden (refusal: UpstreamRefusal): boolean {
     return refusal.text === NOT_AUTHORIZED && refusal.code === null
 }
+
+/**
+ * Whether an artifact of the release belongs to the snapshot an upstream source ingested: the
+ * artifacts its collection versions name. The release view leaves the actions that would change
+ * such an artifact out of its row; the backend refuses them anyway.
+ */
+export function isSnapshotArtifact (artifactUuid: string, snapshotUuids: ReadonlySet<string> | null | undefined): boolean {
+    return !!snapshotUuids && typeof artifactUuid === 'string' && snapshotUuids.has(artifactUuid)
+}
