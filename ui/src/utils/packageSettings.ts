@@ -41,7 +41,11 @@ export const PACKAGE_VEX_FORMAT_OPTIONS: Option[] = [
     opt('OPENVEX', 'OpenVEX'),
 ]
 
-/** Every ArtifactType value of the schema (both schemas agree; the drift spec pins it). */
+/**
+ * Every ArtifactType value of the schema except UNKNOWN (both schemas agree; the drift spec pins it).
+ * UNKNOWN marks a stored type the server version does not know and is never accepted as input, so it
+ * is not offered; a stored UNKNOWN in a part shows as its raw value and the server refuses to save it.
+ */
 export const ARTIFACT_TYPES = ['BOM', 'ATTESTATION', 'VDR', 'BOV', 'VEX', 'SAFETY_CONTEXT', 'USER_DOCUMENT', 'DEVELOPMENT_DOCUMENT',
     'PROJECT_DOCUMENT', 'MARKETING_DOCUMENT', 'TEST_REPORT', 'CODE_SCANNING_RESULT', 'SARIF', 'BUILD_META',
     'CERTIFICATION', 'FORMULATION', 'LICENSE', 'RELEASE_NOTES', 'SECURITY_TXT', 'THREAT_MODEL', 'SIGNATURE',
