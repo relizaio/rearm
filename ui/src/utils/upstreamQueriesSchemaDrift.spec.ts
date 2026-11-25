@@ -4,6 +4,10 @@ import {
     ARCHIVE_UPSTREAM_SOURCE, CREATE_UPSTREAM_SOURCE, GET_UPSTREAM_SOURCE, GET_UPSTREAM_SOURCES, GET_UPSTREAM_SYNCS, PROBE_UPSTREAM_SOURCE,
     SYNC_UPSTREAM_SOURCE_NOW, UPDATE_UPSTREAM_SOURCE,
 } from './upstreamSourceQueries'
+import {
+    CONFIRM_UPSTREAM_FOLLOW, GET_UPSTREAM_FOLLOW, GET_UPSTREAM_FOLLOWS, GET_UPSTREAM_FOLLOW_PREPARATION, GET_UPSTREAM_FOLLOW_PREPARATION_RELEASES,
+    GET_UPSTREAM_FOLLOW_PREPARATION_SCOPE, PREPARE_UPSTREAM_FOLLOW, confirmedFollowUuid,
+} from './upstreamFollowQueries'
 import { proSchema } from './schemaDriftSupport'
 
 // T-502 (TPF-185 design 3.4): every document of the upstream sources feature against the Pro
@@ -23,7 +27,18 @@ const SOURCE_DOCUMENTS: Row[] = [
     ['ARCHIVE_UPSTREAM_SOURCE', ARCHIVE_UPSTREAM_SOURCE, 'archiveUpstreamSource', 'mutation'],
 ]
 
-const ALL: Row[] = [...SOURCE_DOCUMENTS]
+// TPF-229 (design 3.7 to 3.9): the follows, the start of a follow, the confirmation and the read of a follow.
+const FOLLOW_DOCUMENTS: Row[] = [
+    ['GET_UPSTREAM_FOLLOWS', GET_UPSTREAM_FOLLOWS, 'upstreamFollows', 'query'],
+    ['PREPARE_UPSTREAM_FOLLOW', PREPARE_UPSTREAM_FOLLOW, 'prepareUpstreamFollow', 'mutation'],
+    ['GET_UPSTREAM_FOLLOW_PREPARATION', GET_UPSTREAM_FOLLOW_PREPARATION, 'upstreamFollowPreparation', 'query'],
+    ['GET_UPSTREAM_FOLLOW_PREPARATION_RELEASES', GET_UPSTREAM_FOLLOW_PREPARATION_RELEASES, 'upstreamFollowPreparationReleases', 'query'],
+    ['GET_UPSTREAM_FOLLOW_PREPARATION_SCOPE', GET_UPSTREAM_FOLLOW_PREPARATION_SCOPE, 'upstreamFollowPreparationScope', 'query'],
+    ['CONFIRM_UPSTREAM_FOLLOW', CONFIRM_UPSTREAM_FOLLOW, 'confirmUpstreamFollow', 'mutation'],
+    ['GET_UPSTREAM_FOLLOW', GET_UPSTREAM_FOLLOW, 'upstreamFollow', 'query'],
+]
+
+const ALL: Row[] = [...SOURCE_DOCUMENTS, ...FOLLOW_DOCUMENTS]
 
 const operations = (doc: DocumentNode): OperationDefinitionNode[] =>
     doc.definitions.filter((d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION)
@@ -78,7 +93,7 @@ describe('upstream documents vs the Pro schema', () => {
             'createdDate', 'lastUpdatedDate', 'archivedDate', 'syncIntervalMinutes', 'nextSync', 'syncFailures',
             'lastSync', ...sync.map(f => 'lastSync.' + f), 'documentReServing',
         ].sort())
-        for (const [name, doc] of ALL.filter(r => r[2] !== 'upstreamSyncs')) {
+        for (const [name, doc] of SOURCE_DOCUMENTS.filter(r => r[2] !== 'upstreamSyncs')) {
             expect(print(rootField(doc).selectionSet!), name).toBe(print(rootField(GET_UPSTREAM_SOURCE).selectionSet!))
         }
     })
@@ -96,5 +111,75 @@ describe('upstream documents vs the Pro schema', () => {
                 expect(selected, `${name} selects ${secret}`).not.toContain(secret)
             }
         }
+    })
+})
+
+/** Every field path under the root field, as a.b.c, sorted. */
+function selectedPaths (doc: DocumentNode): string[] {
+    const paths: string[] = []
+    const walk = (sel: readonly any[], prefix: string) => {
+        for (const s of sel) {
+            const path = prefix + s.name.value
+            paths.push(path)
+            if (s.selectionSet) walk(s.selectionSet.selections, path + '.')
+        }
+    }
+    walk(rootField(doc).selectionSet!.selections, '')
+    return paths.sort()
+}
+
+const argOf = (doc: DocumentNode, name: string) => rootField(doc).arguments!.find(a => a.name.value === name)
+
+describe('the follow documents (TPF-229, design 3.7 to 3.9)', () => {
+    it('selectsTheFieldsOfTheDesignOnAProposal', () => {
+        const lines = ['lineKey', 'branchName', 'releases', 'lowestVersion', 'highestVersion', 'newestDate']
+        const proposal = [
+            'kind', 'upstreamUuid', 'upstreamName', 'rearmName', 'nameCollides',
+            'existingItem', ...['uuid', 'component', 'depth', 'depthOrigin', 'updateState'].map(f => 'existingItem.' + f),
+            'adoptionCandidates', ...['component', 'name', 'releases', 'releasesWithUpstreamVersion'].map(f => 'adoptionCandidates.' + f),
+            'releases', 'finalReleases', 'preReleases', 'releasesNotStatingPreRelease', 'releasesWithDate', 'releasesWithUnusableVersion',
+            'preReleaseRecognition', 'proposedDepth', 'depthBasis',
+            'depths', ...['depth', 'fit', 'lineCount', 'unplaceable', 'linesTruncated', 'lines', ...lines.map(l => 'lines.' + l)].map(f => 'depths.' + f),
+            'failure',
+        ]
+        expect(selectedPaths(GET_UPSTREAM_FOLLOW_PREPARATION)).toEqual([
+            'uuid', 'org', 'source', 'state', 'failure', 'sourceFailure', 'message', 'createdDate', 'finishedDate', 'expires',
+            'componentsTruncated', 'maxBackfillReleases',
+            'item', ...proposal.map(f => 'item.' + f), 'components', ...proposal.map(f => 'components.' + f),
+        ].sort())
+    })
+
+    it('selectsTheFieldsOfTheDesignOnTheScope', () => {
+        const lines = ['lineKey', 'branchName', 'releases', 'lowestVersion', 'highestVersion', 'newestDate']
+        expect(selectedPaths(GET_UPSTREAM_FOLLOW_PREPARATION_SCOPE)).toEqual([
+            'releases', 'withinLimit', 'onBaseBranch', 'skippedPreReleases', 'linesTruncated', 'lines', ...lines.map(l => 'lines.' + l),
+        ].sort())
+    })
+
+    it('selectsNoPendingRowsInTheListOfFollows', () => {
+        expect(selectedPaths(GET_UPSTREAM_FOLLOWS)).not.toContain('pending')
+        expect(selectedPaths(GET_UPSTREAM_FOLLOWS)).toContain('pendingCount')
+    })
+
+    it('readsTheReleasesOfAPreparationFiftyAtATimeAndAFollowsOldestFiftyPending', () => {
+        expect(argOf(GET_UPSTREAM_FOLLOW_PREPARATION_RELEASES, 'first')?.value).toEqual(expect.objectContaining({ kind: Kind.INT, value: '50' }))
+        expect(argOf(GET_UPSTREAM_FOLLOW_PREPARATION_RELEASES, 'after')?.value.kind).toBe(Kind.VARIABLE)
+        const pending = rootField(GET_UPSTREAM_FOLLOW).selectionSet!.selections.find((s: any) => s.name.value === 'pending') as FieldNode
+        expect(pending.arguments![0].value).toEqual(expect.objectContaining({ kind: Kind.INT, value: '50' }))
+    })
+
+    it('scopesAndConfirmsWithTheDepthAndStartingPointAsVariables', () => {
+        for (const doc of [GET_UPSTREAM_FOLLOW_PREPARATION_SCOPE]) {
+            expect(argOf(doc, 'depth')?.value.kind).toBe(Kind.VARIABLE)
+            expect(argOf(doc, 'backfill')?.value.kind).toBe(Kind.VARIABLE)
+        }
+        expect(argOf(CONFIRM_UPSTREAM_FOLLOW, 'follow')?.value.kind).toBe(Kind.VARIABLE)
+        expect(selectedPaths(CONFIRM_UPSTREAM_FOLLOW)).toEqual(['uuid'])
+    })
+
+    it('readsTheConfirmedFollowFromTheAnswer', () => {
+        expect(confirmedFollowUuid({ confirmUpstreamFollow: { uuid: 'f1' } })).toBe('f1')
+        expect(confirmedFollowUuid({})).toBeNull()
+        expect(confirmedFollowUuid(null)).toBeNull()
     })
 })

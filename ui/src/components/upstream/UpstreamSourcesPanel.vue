@@ -50,14 +50,16 @@
 // The Sources tab of Organization Settings (ReARM Pro, TPF-185 design 3.6): the organization's
 // upstream sources with their last probe and their schedule, and for an administrator create,
 // edit, probe, sync now and archive. Every member with READ on the organization sees the list; the
-// form is not mounted for anyone else, so their page holds no credential field. The backend
+// form is not mounted for anyone else, so their page holds no credential field. Every member has
+// the row action Follows, a router link to the follows of the source. The backend
 // decides who may do what; this component only decides which controls to draw.
 import { computed, h, onBeforeUnmount, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import type { DataTableColumns } from 'naive-ui'
 import { NButton, NDataTable, NModal, NSpace, NSpin, NSwitch, NTag } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
-import { isForbidden, refusalOf } from '@/utils/upstream'
+import { isForbidden, isUuid, refusalOf } from '@/utils/upstream'
 import {
     ARCHIVE_UPSTREAM_SOURCE, GET_UPSTREAM_SOURCE, GET_UPSTREAM_SOURCES, GET_UPSTREAM_SYNCS, PROBE_UPSTREAM_SOURCE, SYNC_UPSTREAM_SOURCE_NOW,
 } from '@/utils/upstreamSourceQueries'
@@ -323,13 +325,24 @@ function nameCell (row: any) {
     return h('div', parts)
 }
 
+/** The row action Follows, for every member: the Upstream page with the follows of this source. */
+function followsLink (row: any) {
+    if (!isUuid(row.uuid) || !isUuid(props.orgUuid)) return null
+    return h(RouterLink, {
+        to: { name: 'UpstreamOfOrg', params: { orguuid: props.orgUuid }, query: { tab: 'follows', source: row.uuid } },
+        'data-testid': 'upstream-action-follows',
+    }, { default: () => 'Follows' })
+}
+
 function actionsCell (row: any) {
-    if (!props.isOrgAdmin || row.status !== 'ACTIVE') return null
+    const follows = followsLink(row)
+    if (!props.isOrgAdmin || row.status !== 'ACTIVE') return h(NSpace, { size: 'small' }, { default: () => [follows] })
     const disabled = !!busy.value[row.uuid]
     const button = (label: string, testid: string, onClick: () => void, type: 'default' | 'warning' = 'default') =>
         h(NButton, { size: 'tiny', type, disabled, 'data-testid': testid, onClick }, { default: () => label })
     return h(NSpace, { size: 'small' }, {
         default: () => [
+            follows,
             button('Edit', 'upstream-action-edit', () => openEdit(row)),
             button('Probe', 'upstream-action-probe', () => probe(row)),
             button('Sync now', 'upstream-action-sync', () => syncNow(row)),
@@ -367,7 +380,7 @@ const columns = computed((): DataTableColumns<any> => {
         { key: 'probe', title: 'Last probe', render: (row: any) => h(UpstreamProbeResult, { probe: row.probe, credentialKind: row.credential?.kind }) },
         { key: 'sync', title: 'Sync', render: syncCell },
     ]
-    if (props.isOrgAdmin) cols.push({ key: 'actions', title: 'Actions', render: actionsCell })
+    cols.push({ key: 'actions', title: 'Actions', render: actionsCell })
     return cols
 })
 </script>

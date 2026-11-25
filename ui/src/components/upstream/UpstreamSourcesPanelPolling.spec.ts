@@ -17,7 +17,9 @@ const { GET_UPSTREAM_SOURCE } = await import('@/utils/upstreamSourceQueries')
 
 const ORG = '11111111-2222-3333-4444-555555555555'
 const UUID = 'aaaaaaaa-0000-4000-8000-000000000001'
-const global = { stubs: { Modal: { props: ['show'], template: '<div v-if="show" class="modal"><slot/></div>' } } }
+// The row action Follows is a router link; the stub shows its target as JSON.
+const RouterLink = { name: 'RouterLink', props: ['to'], template: '<a class="rl" :data-to="JSON.stringify(to)"><slot/></a>' }
+const global = { stubs: { Modal: { props: ['show'], template: '<div v-if="show" class="modal"><slot/></div>' }, RouterLink } }
 
 function row (over: Record<string, any> = {}) {
     return {

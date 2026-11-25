@@ -65,3 +65,26 @@ describe('the files of the upstream sources feature', () => {
         expect(FORBIDDEN.filter(([, p]) => p.test(sample)).map(([w]) => w)).toEqual(['v-html', 'an href attribute or binding', 'a src binding'])
     })
 })
+
+// T-526 (TPF-229, design 3.8, threat model row 6): no screen but the confirmation page follows
+// anything. The confirm document is imported by that page only, and its field is named in the
+// query module only.
+describe('the single sender of the confirm', () => {
+    const files = filesUnder(SRC)
+    const rel = (f: string) => f.slice(SRC.length).split('\\').join('/')
+
+    it('readsTheWholeSourceTree', () => {
+        expect(files.length).toBeGreaterThan(100)
+        expect(files.some(f => f.endsWith('router.ts'))).toBe(true)
+    })
+
+    it('hasTheConfirmDocumentInTheQueryModuleAndTheConfirmationPageOnly', () => {
+        const hits = files.filter(f => /\bCONFIRM_UPSTREAM_FOLLOW\b/.test(readFileSync(f, 'utf8'))).map(rel).sort()
+        expect(hits).toEqual(['components/upstream/UpstreamFollowPreparationPage.vue', 'utils/upstreamFollowQueries.ts'])
+    })
+
+    it('namesTheConfirmFieldInTheQueryModuleOnly', () => {
+        const hits = files.filter(f => /\bconfirmUpstreamFollow\b/.test(readFileSync(f, 'utf8'))).map(rel)
+        expect(hits).toEqual(['utils/upstreamFollowQueries.ts'])
+    })
+})

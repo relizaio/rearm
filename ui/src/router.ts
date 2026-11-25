@@ -253,6 +253,26 @@ const routes : any[] = [
         component: () => import('@/components/VexProposalReview.vue')
     },
     {
+        // Upstream sources (ReARM Pro): the follows of the organization. The page shows itself only
+        // on Pro; on CE it renders one line and sends no request.
+        path: '/upstreamOfOrg/:orguuid',
+        name: 'UpstreamOfOrg',
+        component: () => import('@/components/upstream/UpstreamOfOrg.vue'),
+        meta: { nav: 'upstream' }
+    },
+    {
+        path: '/upstreamFollowPreparation/:orguuid/:uuid',
+        name: 'UpstreamFollowPreparation',
+        component: () => import('@/components/upstream/UpstreamFollowPreparationPage.vue'),
+        meta: { nav: 'upstream' }
+    },
+    {
+        path: '/upstreamFollow/:orguuid/:uuid',
+        name: 'UpstreamFollow',
+        component: () => import('@/components/upstream/UpstreamFollowPage.vue'),
+        meta: { nav: 'upstream' }
+    },
+    {
         // Same as above — Mitigation Attestations is now a tab in Finding Analysis.
         path: '/mitigationAttestationsOfOrg/:orguuid',
         redirect: (to: RouteLocationNormalized) => ({
