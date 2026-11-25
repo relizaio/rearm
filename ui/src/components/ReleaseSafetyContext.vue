@@ -4,15 +4,17 @@
         <n-alert type="info" :show-icon="false" data-testid="safety-context-not-verified">
             {{ DECLARED_NOT_VERIFIED }} Levels come from SAFETY_CONTEXT (CycloneDX 2.0) artifacts uploaded
             to this release, or to other releases of the same component, branch or organization, for packages
-            this release contains. A level set for this release overrides one set more broadly. Where assets
-            declare different levels for one component and scheme, the most stringent is marked.
+            this release contains. A level set for this release overrides one set more broadly; the row names the
+            level it overrides. A package version without a level shows the level of its previous version,
+            marked carried, until one is declared. Where assets declare different levels for one component
+            and scheme, the most stringent is marked.
         </n-alert>
         <n-checkbox v-model:checked="includeSuperseded">Show superseded levels</n-checkbox>
         <n-data-table
             :columns="recordColumns"
             :data="records"
             :loading="loading"
-            :row-key="(row: any) => row.uuid"
+            :row-key="(row: any) => row.carried ? `${row.uuid}|${row.shownForPurl}` : row.uuid"
             :pagination="{ pageSize: 25 }"
             data-testid="safety-context-records"
         />
@@ -71,8 +73,21 @@ async function fetchRecords () {
 onMounted(fetchRecords)
 watch([includeSuperseded, () => props.releaseUuid], fetchRecords)
 
+const SCOPE_LABELS: Record<string, string> = {
+    RELEASE: 'This release', BRANCH: 'Branch', COMPONENT: 'Component', ORG: 'Organization'
+}
+function scopeLabel (scope: string): string {
+    return SCOPE_LABELS[scope] || scope
+}
+
+function purlVersion (purl: string): string {
+    const at = (purl || '').indexOf('@')
+    if (at < 0) return purl
+    return purl.slice(at + 1).split(/[?#]/)[0]
+}
+
 function activeLevelsFor (r: any): number {
-    return records.value.filter((x: any) => x.recordStatus === 'ACTIVE' && x.componentPurl === r.componentPurl
+    return records.value.filter((x: any) => x.recordStatus === 'ACTIVE' && !x.carried && x.componentPurl === r.componentPurl
         && x.schemeKey === r.schemeKey).length
 }
 
@@ -84,13 +99,18 @@ const recordColumns = [
         title: 'Applies via',
         key: 'scope',
         render: (r: any) => {
-            const where = r.scope === 'RELEASE' ? 'This release' : r.scope === 'BRANCH' ? 'Branch'
-                : r.scope === 'COMPONENT' ? 'Component' : r.scope === 'ORG' ? 'Organization' : r.scope
+            const where = scopeLabel(r.scope)
             const fromOther = r.releaseUuid && r.releaseUuid !== props.releaseUuid
-            return fromOther
-                ? h('span', {}, [where, h('br'), h(RouterLink, { to: `/release/show/${r.releaseUuid}` },
-                    () => `uploaded on ${r.sourceReleaseVersion || 'another release'}`)])
-                : where
+            const parts: any[] = [where]
+            if (fromOther) {
+                parts.push(h('br'), h(RouterLink, { to: `/release/show/${r.releaseUuid}` },
+                    () => `uploaded on ${r.sourceReleaseVersion || 'another release'}`))
+            }
+            if (r.overridesScope) {
+                parts.push(h('br'), h('span', { 'data-testid': 'safety-overrides' },
+                    `overrides ${scopeLabel(r.overridesScope)}: ${r.overridesLevel}`))
+            }
+            return parts.length > 1 ? h('span', {}, parts) : where
         }
     },
     {
@@ -99,9 +119,18 @@ const recordColumns = [
         render: (r: any) => {
             const label = h('strong', {}, r.levelNormalized || r.levelRaw)
             // Marked only where several active levels exist for the component and scheme.
-            return r.componentMostConservative && activeLevelsFor(r) > 1
-                ? h('span', {}, [label, ' ', h(NTag, { size: 'small', type: 'warning', round: true }, () => 'most stringent')])
-                : label
+            const stringent = r.componentMostConservative && activeLevelsFor(r) > 1
+            if (!stringent && !r.carried) return label
+            const parts: any[] = [label]
+            if (stringent) parts.push(' ', h(NTag, { size: 'small', type: 'warning', round: true }, () => 'most stringent'))
+            if (r.carried) {
+                parts.push(' ', h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'small', round: true, type: 'info', 'data-testid': 'safety-carried' },
+                        () => `carried from ${purlVersion(r.componentPurl)}`),
+                    default: () => `declared for ${r.componentPurl}; no level declared yet for ${r.shownForPurl}`
+                }))
+            }
+            return h('span', {}, parts)
         }
     },
     {
