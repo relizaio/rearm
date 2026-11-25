@@ -90,7 +90,9 @@ summary names them. Component keys and organization-wide read-write keys never h
 write: use a FREEFORM key granted it at the scope you import to. A personal (USER) key holds only what
 both the key and its owner hold now. A `userIssuerClassOverride` that raises trust (`THIRD_PARTY`,
 then `VENDOR`, then `SELF`) also needs that permission; without it the override is ignored and the
-summary says so. After `rearm login`, the key the session is bound to is judged.
+summary says so. After `rearm login`, the key the session is bound to is judged. For the Finding
+Analysis write grant each scope needs, see
+[Who can make levels take effect](../workflows/safety-context#who-can-make-levels-take-effect).
 
 #### The import summary
 
@@ -111,6 +113,10 @@ An artifact counts as imported when the server stored at least one of its statem
 release's SBOM, errored statements and an unreadable document import nothing; the block then reads
 `NOTHING IMPORTED: ...` with the reason, followed by the server's messages. A count the server does not
 report prints as `-`, as `awaiting-sbom` does above.
+
+A SAFETY_CONTEXT level that matched no component is still stored as a pending proposal: it is counted
+in both `staged` and `unmatched`, and not counted as imported. See
+[Unmatched levels](../workflows/safety-context#unmatched-levels).
 
 #### Exit codes
 

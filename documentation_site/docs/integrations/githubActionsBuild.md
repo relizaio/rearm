@@ -10,6 +10,8 @@ Currently the bundle includes following actions:
 - relizaio/rearm-actions/sbom-sign-scan (generates SBOMs and signs them and deliverables, alternatively can be replaced with your own workflow for SBOMs and other artifacts)
 - relizaio/rearm-actions/finalize (pushes metadata to ReARM and finalizes ReARM release)
 
+`finalize` and `add-multi-release` upload their artifact inputs with `rearm addrelease` and `rearm addreleases`, which store a VEX or SAFETY_CONTEXT document but never import it, so the CLI refuses such a document in those inputs and the step fails (exit 1, nothing sent). Upload the document in a later step that runs `rearm addartifact` (installed by `setup-cli`) with `--wait-for-sbom`, after the step that uploads the SBOM. See [Importing VEX and safety context from CI](./rearmcli#importing-vex-and-safety-context-from-ci) and [Safety Context: CI ordering](../workflows/safety-context#ci-ordering).
+
 See some opinionated usage below.
 
 ## 2. Opinionated action for building and pushing container images on GitHub Actions

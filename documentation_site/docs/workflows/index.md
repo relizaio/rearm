@@ -12,6 +12,7 @@ sidebarDepth: 2
 - [License Compliance](./license-compliance)
 - [Auditing Findings](./auditing-findings)
 - [Importing VEX](./importing-vex)
+- [Safety Context](./safety-context)
 - [Supply Chain Forensics](./supply-chain-forensics)
 - [Exporting Compliance Artifacts](./exporting-compliance-artifacts)
 - [Regulatory Packages and Submissions (ReARM Pro)](./regulatory-packages)
