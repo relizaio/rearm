@@ -83,6 +83,31 @@ describe('UpstreamFollowStartModal', () => {
         w.unmount()
     })
 
+    it('sendsOnePreparationWhileTheFirstIsInFlight', async () => {
+        let release: (v: any) => void = () => {}
+        mutate.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+        const w = mountModal({ source: S1, upstreamUuid: ITEM })
+        const first = (w.vm as any).submit()
+        await (w.vm as any).submit()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        release({ data: { prepareUpstreamFollow: { uuid: PREP, state: 'PENDING' } } })
+        await first
+        await flushPromises()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(router.push).toHaveBeenCalledTimes(1)
+        w.unmount()
+    })
+
+    it('opensNothingAndStaysOpenWhenTheAnswerHasNoUuid', async () => {
+        mutate.mockResolvedValueOnce({ data: { prepareUpstreamFollow: { uuid: null, state: 'PENDING' } } })
+        const w = mountModal({ source: S1, upstreamUuid: ITEM })
+        await submit(w)
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(router.push).not.toHaveBeenCalled()
+        expect(w.emitted('update:show')).toBeUndefined()
+        w.unmount()
+    })
+
     it('requiresASource', async () => {
         const w = mountModal()
         await uuidInput(w).setValue(ITEM)

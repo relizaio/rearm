@@ -68,6 +68,15 @@ function refusal (message: string, extensions?: Record<string, any>): any {
 }
 
 let scopeAnswers: any[] = []
+let releasePages: any[] = []
+
+/** A promise the test settles itself, to answer requests in another order than they were sent. */
+function deferred () {
+    let resolve: (v: any) => void = () => {}
+    let reject: (e: any) => void = () => {}
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+}
 
 /** Answers by document: the preparation (or its refusal), the source's name, and the scope answers in turn. */
 function answer (prep: any) {
@@ -82,6 +91,7 @@ function answer (prep: any) {
             if (next instanceof Error) throw next
             return next
         }
+        if (args.query === Q.GET_UPSTREAM_FOLLOW_PREPARATION_RELEASES) return releasePages.shift()
         throw new Error('unexpected query')
     })
 }
@@ -119,6 +129,7 @@ beforeEach(() => {
     router.push.mockReset()
     router.replace.mockReset()
     scopeAnswers = []
+    releasePages = []
     getters.myuser = ADMIN
     route.params = { orguuid: ORG, uuid: PREP }
     route.query = {}
@@ -216,6 +227,8 @@ describe('T-525 the preview and the one confirm', () => {
         mutate.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
         await followButton(w).trigger('click')
         await (w.vm as any).follow()
+        await w.vm.$nextTick()
+        expect(followButton(w).attributes('disabled')).toBeDefined()
         await followButton(w).trigger('click')
         expect(confirmCalls()).toHaveLength(1)
         const follow = confirmCalls()[0][0].variables.follow
@@ -275,8 +288,10 @@ describe('T-525 the preview and the one confirm', () => {
         mutate.mockRejectedValueOnce(refusal('The preparation is stale. Prepare again.', { code: 'UPSTREAM_FOLLOW_REFUSED', reason: 'PREPARATION_STALE' }))
         await followButton(w).trigger('click')
         await flushPromises()
+        expect(w.find('[data-testid="upstream-confirm-refusal"]').exists()).toBe(true)
         expect(w.find('[data-testid="upstream-confirm-refusal"]').text()).toContain('The preparation is stale. Prepare again.')
         expect(w.find('[data-testid="upstream-prepare-again"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-follows-of-source"]').exists()).toBe(false)
         expect((w.vm as any).model.depth).toBe(2)
         expect((w.vm as any).model.backfill).toEqual({ kind: 'LATEST_PER_LINE', count: 3, day: null, release: null })
         expect(router.replace).not.toHaveBeenCalled()
@@ -304,6 +319,166 @@ describe('T-525 the preview and the one confirm', () => {
         const link = w.find('[data-testid="upstream-confirm-refusal"] [data-testid="upstream-follows-of-source"]')
         expect(JSON.parse(link.attributes('data-to')!)).toEqual({ name: 'UpstreamOfOrg', params: { orguuid: ORG }, query: { tab: 'follows', source: SOURCE } })
         expect(w.find('[data-testid="upstream-prepare-again"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('offersPrepareAgainForAPreparationThatIsNotUsable', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+        scopeAnswers = [scope(true)]
+        const w = await mountPage(preparation())
+        await chooseDepth(w, 2)
+        await chooseNewestPerLine(w, 3)
+        await vi.advanceTimersByTimeAsync(300)
+        await flushPromises()
+        mutate.mockRejectedValueOnce(refusal('The preparation cannot be used.', { code: 'UPSTREAM_FOLLOW_REFUSED', reason: 'PREPARATION_NOT_USABLE' }))
+        await followButton(w).trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="upstream-confirm-refusal"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-confirm-refusal"]').text()).toContain('The preparation cannot be used.')
+        expect(w.find('[data-testid="upstream-prepare-again"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-follows-of-source"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('restartsTheWaitForThePreviewOnEveryChange', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+        scopeAnswers = [scope(true), scope(true)]
+        const w = await mountPage(preparation())
+        await chooseDepth(w, 2)
+        await chooseNewestPerLine(w, 3)
+        await vi.advanceTimersByTimeAsync(200)
+        w.findComponent(NInputNumber).vm.$emit('update:value', 4)
+        await w.vm.$nextTick()
+        await vi.advanceTimersByTimeAsync(200)
+        expect(scopeCalls()).toHaveLength(0)
+        await vi.advanceTimersByTimeAsync(100)
+        expect(scopeCalls()).toHaveLength(1)
+        expect(scopeCalls()[0][0].variables).toEqual({ preparation: PREP, depth: 2, backfill: { kind: 'LATEST_PER_LINE', count: 4 } })
+        await vi.advanceTimersByTimeAsync(1000)
+        expect(scopeCalls()).toHaveLength(1)
+        w.unmount()
+    })
+
+    it.each([['an answer'], ['a refusal']])('dropsAnOlderPreviewThatArrivesAfterTheNewerOne, %s', async (kind) => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+        const older = deferred()
+        const newer = deferred()
+        scopeAnswers = [older.promise, newer.promise]
+        const w = await mountPage(preparation())
+        await chooseDepth(w, 2)
+        await chooseNewestPerLine(w, 3)
+        await vi.advanceTimersByTimeAsync(300)
+        await chooseDepth(w, 1)
+        await vi.advanceTimersByTimeAsync(300)
+        expect(scopeCalls().map(c => c[0].variables.depth)).toEqual([2, 1])
+        newer.resolve(scope(true, 5))
+        await flushPromises()
+        expect(followButton(w).attributes('disabled')).toBeUndefined()
+        if (kind === 'an answer') older.resolve(scope(true, 99))
+        else older.reject(refusal('The backfill point is not valid.', { code: 'UPSTREAM_FOLLOW_REFUSED', reason: 'INVALID_BACKFILL' }))
+        await flushPromises()
+        expect(followButton(w).attributes('disabled')).toBeUndefined()
+        expect(w.find('[data-testid="upstream-scope-answer"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-scope-answer"]').text()).toContain('5 releases on these lines')
+        expect(w.text()).not.toContain('99 releases')
+        expect(w.text()).not.toContain('The backfill point is not valid.')
+        w.unmount()
+    })
+
+    it('keepsAnAnswerWithTheValuesItWasAskedForNotTheValuesInTheFormWhenItArrives', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+        const pending = deferred()
+        scopeAnswers = [pending.promise]
+        const w = await mountPage(preparation())
+        await chooseDepth(w, 2)
+        await chooseNewestPerLine(w, 3)
+        await vi.advanceTimersByTimeAsync(300)
+        expect(scopeCalls()).toHaveLength(1)
+        await chooseDepth(w, 1)
+        pending.resolve(scope(true, 77))
+        await flushPromises()
+        expect(followButton(w).attributes('disabled')).toBeDefined()
+        expect(w.find('[data-testid="upstream-confirm-blockers"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-confirm-blockers"]').text()).toContain('The preview is being computed.')
+        expect(w.text()).not.toContain('77 releases')
+        await (w.vm as any).follow()
+        expect(confirmCalls()).toHaveLength(0)
+        w.unmount()
+    })
+
+    it('showsARefusedPreviewWithItsSentenceAndListsItAsTheBlocker', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+        scopeAnswers = [refusal('The backfill point is not valid.', { code: 'UPSTREAM_FOLLOW_REFUSED', reason: 'INVALID_BACKFILL' })]
+        const w = await mountPage(preparation())
+        await chooseDepth(w, 2)
+        await chooseNewestPerLine(w, 3)
+        await vi.advanceTimersByTimeAsync(300)
+        await flushPromises()
+        expect(w.find('[data-testid="upstream-scope-error"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-scope-error"]').text()).toBe('The backfill point is not valid.')
+        expect(w.find('[data-testid="upstream-confirm-blockers"]').text()).toContain('The backfill point is not valid.')
+        expect(w.find('[data-testid="upstream-confirm-blockers"]').text()).not.toContain('The preview is being computed.')
+        expect(followButton(w).attributes('disabled')).toBeDefined()
+        w.unmount()
+    })
+
+    it('readsTheClockAtTheMomentOfTheConfirm', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+        vi.setSystemTime(new Date('2026-11-25T10:00:00Z'))
+        scopeAnswers = [scope(true)]
+        const w = await mountPage(preparation({ expires: '2026-11-25T10:00:05Z' }))
+        await chooseDepth(w, 2)
+        await chooseNewestPerLine(w, 3)
+        await vi.advanceTimersByTimeAsync(300)
+        await flushPromises()
+        expect(followButton(w).attributes('disabled')).toBeUndefined()
+        // Past the expiry, before the page's own clock ticks again.
+        vi.setSystemTime(new Date('2026-11-25T10:00:06Z'))
+        await (w.vm as any).follow()
+        await flushPromises()
+        expect(confirmCalls()).toHaveLength(0)
+        w.unmount()
+    })
+
+    it('turnsAnOpenFormIntoTheExpiredTextWithinTenSeconds', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+        vi.setSystemTime(new Date('2026-11-25T10:00:00Z'))
+        const w = await mountPage(preparation({ expires: '2026-11-25T10:00:05Z' }))
+        expect(w.find('[data-testid="upstream-confirm-form"]').exists()).toBe(true)
+        await vi.advanceTimersByTimeAsync(10000)
+        expect(w.find('[data-testid="upstream-preparation-expired"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-confirm-form"]').exists()).toBe(false)
+        expect(followButton(w).exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('picksAStartingReleaseFromThePagesOfThePreparationAndOnlyAFinalUsableOne', async () => {
+        const R1 = 'bbbbbbbb-0000-4000-8000-000000000001'
+        const R2 = 'bbbbbbbb-0000-4000-8000-000000000002'
+        const R3 = 'bbbbbbbb-0000-4000-8000-000000000003'
+        const page = (releases: any[], endCursor: string | null) => ({ data: { upstreamFollowPreparationReleases: { total: 3, endCursor, releases } } })
+        releasePages = [
+            page([
+                { upstreamUuid: R1, version: '1.0.0', date: '2026-01-01T00:00:00Z', preRelease: 'NO', usable: true },
+                { upstreamUuid: R2, version: '1.1.0-rc.1', date: '2026-02-01T00:00:00Z', preRelease: 'YES', usable: true },
+            ], 'c1'),
+            page([{ upstreamUuid: R3, version: null, date: '2026-03-01T00:00:00Z', preRelease: 'NO', usable: false }], null),
+        ]
+        const releaseCalls = () => query.mock.calls.filter(c => c[0].query === Q.GET_UPSTREAM_FOLLOW_PREPARATION_RELEASES).map(c => c[0].variables)
+        const options = () => w.findAllComponents(NRadio).filter((r: any) => r.attributes('data-testid') === 'upstream-release-option')
+        const w = await mountPage(preparation())
+        expect(releaseCalls()).toHaveLength(0)
+        const fromRelease = w.findAllComponents(NRadio).find((r: any) => r.props('value') === 'FROM_RELEASE')!
+        await fromRelease.find('input').setValue(true)
+        await flushPromises()
+        expect(releaseCalls()).toEqual([{ preparation: PREP, after: null }])
+        expect(options().map((r: any) => [r.props('value'), !!r.props('disabled')])).toEqual([[R1, false], [R2, true]])
+        expect(w.find('[data-testid="upstream-releases-more"]').exists()).toBe(true)
+        await w.find('[data-testid="upstream-releases-more"]').trigger('click')
+        await flushPromises()
+        expect(releaseCalls()).toEqual([{ preparation: PREP, after: null }, { preparation: PREP, after: 'c1' }])
+        expect(options().map((r: any) => [r.props('value'), !!r.props('disabled')])).toEqual([[R1, false], [R2, true], [R3, true]])
+        expect(w.find('[data-testid="upstream-releases-more"]').exists()).toBe(false)
         w.unmount()
     })
 

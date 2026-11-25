@@ -149,6 +149,13 @@ describe('the follow documents (TPF-229, design 3.7 to 3.9)', () => {
         ].sort())
     })
 
+    it('selectsTheFieldsOfTheDesignOnTheScope', () => {
+        const lines = ['lineKey', 'branchName', 'releases', 'lowestVersion', 'highestVersion', 'newestDate']
+        expect(selectedPaths(GET_UPSTREAM_FOLLOW_PREPARATION_SCOPE)).toEqual([
+            'releases', 'withinLimit', 'onBaseBranch', 'skippedPreReleases', 'linesTruncated', 'lines', ...lines.map(l => 'lines.' + l),
+        ].sort())
+    })
+
     it('selectsNoPendingRowsInTheListOfFollows', () => {
         expect(selectedPaths(GET_UPSTREAM_FOLLOWS)).not.toContain('pending')
         expect(selectedPaths(GET_UPSTREAM_FOLLOWS)).toContain('pendingCount')

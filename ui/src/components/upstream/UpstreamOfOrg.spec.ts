@@ -114,6 +114,14 @@ describe('the Upstream page of an organization', () => {
         w.unmount()
     })
 
+    it('gives the start modal the active sources only', async () => {
+        const archived = { ...source('ARCHIVED'), uuid: 'aaaaaaaa-0000-4000-8000-000000000002', name: 'Old TEA' }
+        answer([aFollow()], [source(), archived])
+        const w = await mountPage(ADMIN)
+        expect(w.findComponent(StartModal).props('sources')).toEqual([source()])
+        w.unmount()
+    })
+
     it('shows a member neither the button nor the start modal', async () => {
         answer([aFollow()])
         const w = await mountPage(MEMBER)
@@ -141,6 +149,7 @@ describe('the Upstream page of an organization', () => {
     it('asks for a source first, with a link to the sources tab, when no source is active', async () => {
         answer([], [source('ARCHIVED')])
         const w = await mountPage(ADMIN)
+        expect(w.find('[data-testid="upstream-follows-no-source"]').exists()).toBe(true)
         const hint = w.get('[data-testid="upstream-follows-no-source"]')
         expect(hint.text()).toContain('Add an upstream source first.')
         const to = JSON.parse(hint.get('a.rl').attributes('data-to'))
@@ -156,6 +165,34 @@ describe('the Upstream page of an organization', () => {
         w.unmount()
     })
 
+    it('asks every state for All and the one state otherwise', async () => {
+        answer([aFollow()])
+        const w = await mountPage(ADMIN)
+        const select = w.findAllComponents({ name: 'Select' }).find((s: any) => s.attributes('data-testid') === 'upstream-follows-state-filter')!
+        select.vm.$emit('update:value', 'ALL')
+        await flushPromises()
+        expect(callsOf(GET_UPSTREAM_FOLLOWS).at(-1).variables).toEqual({ org: ORG, source: null, statuses: null })
+        select.vm.$emit('update:value', 'UNFOLLOWED')
+        await flushPromises()
+        expect(callsOf(GET_UPSTREAM_FOLLOWS).at(-1).variables).toEqual({ org: ORG, source: null, statuses: ['UNFOLLOWED'] })
+        w.unmount()
+    })
+
+    it('links a followed product to its product page and tags only an item that is no longer updated', async () => {
+        const stale = { ...aFollow(), uuid: 'cccccccc-0000-4000-8000-000000000002' }
+        stale.item = { ...stale.item, kind: 'COMPONENT', updateState: 'NO_LONGER_UPDATED', component: 'eeeeeeee-0000-4000-8000-000000000002' }
+        answer([aFollow(), stale])
+        const w = await mountPage(ADMIN)
+        const rows = w.findAll('[data-testid="upstream-follows-table"] tbody tr')
+        expect(rows).toHaveLength(2)
+        const to = (row: any) => row.findAll('a.rl').map((a: any) => JSON.parse(a.attributes('data-to')))
+        expect(to(rows[0])).toContainEqual({ name: 'ProductsOfOrg', params: { orguuid: ORG, compuuid: 'eeeeeeee-0000-4000-8000-000000000001' } })
+        expect(to(rows[1])).toContainEqual({ name: 'ComponentsOfOrg', params: { orguuid: ORG, compuuid: 'eeeeeeee-0000-4000-8000-000000000002' } })
+        expect(rows[0].find('[data-testid="upstream-no-longer-updated"]').exists()).toBe(false)
+        expect(rows[1].find('[data-testid="upstream-no-longer-updated"]').exists()).toBe(true)
+        w.unmount()
+    })
+
     it('ignores a source filter that is not a uuid', async () => {
         route.query = { source: '../x' }
         answer([aFollow()])
@@ -167,6 +204,7 @@ describe('the Upstream page of an organization', () => {
     it('shows the forbidden sentence and no table when the first read is Not authorized', async () => {
         answer(refusal('Not authorized'))
         const w = await mountPage(MEMBER)
+        expect(w.find('[data-testid="upstream-follows-forbidden"]').exists()).toBe(true)
         expect(w.get('[data-testid="upstream-follows-forbidden"]').text()).toBe(forbiddenSentence)
         expect(w.find('[data-testid="upstream-follows-table"]').exists()).toBe(false)
         w.unmount()

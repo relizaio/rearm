@@ -81,6 +81,27 @@ describe('buildBackfillInput (T-521)', () => {
         expect(buildBackfillInput(backfill({ kind: BackfillKind.FROM_RELEASE, release: REL }))).toEqual({ kind: 'FROM_RELEASE', release: REL })
     })
 
+    it('refusesAnEmptyRelease', () => {
+        expect(buildBackfillInput(backfill({ kind: BackfillKind.FROM_RELEASE, release: '' }))).toBeNull()
+    })
+
+    it('refusesADayWithAnythingAroundIt', () => {
+        for (const day of ['x2026-03-01', ' 2026-03-01', '2026-03-01T00:00:00Z', '2026-03-011', '12026-03-01']) expect(dayStartUtc(day)).toBeNull()
+    })
+
+    it('takesTheUtcStartOfTheDayWhateverTheTimeZoneOfTheBrowser', () => {
+        const before = process.env.TZ
+        try {
+            for (const tz of ['America/New_York', 'Asia/Tokyo']) {
+                process.env.TZ = tz
+                expect(dayStartUtc('2026-03-01')).toBe('2026-03-01T00:00:00.000Z')
+            }
+        } finally {
+            if (before === undefined) delete process.env.TZ
+            else process.env.TZ = before
+        }
+    })
+
     it('neverMixesTheFieldsOfTwoKinds', () => {
         const input = buildBackfillInput(backfill({ kind: BackfillKind.FROM_DATE, count: 3, release: REL, day: '2026-03-01' }))
         expect(input).toEqual({ kind: 'FROM_DATE', date: '2026-03-01T00:00:00.000Z' })
@@ -115,6 +136,12 @@ describe('initialConfirmModel and confirmBlockers (T-522)', () => {
         expect(confirmBlockers(model, { ...prep, state: 'PENDING' }, scope, NOW)).toContain(NOT_READY)
     })
 
+    it('saysNotReadyAloneForAPreparationThatIsNotReadyAndPastItsExpiry', () => {
+        const { prep, model, scope } = complete()
+        const blockers = confirmBlockers(model, { ...prep, state: 'PENDING' }, scope, new Date('2026-11-25T11:00:00Z'))
+        expect(blockers).toEqual([NOT_READY])
+    })
+
     it('isBlockedOnceThePreparationExpired', () => {
         const { prep, model, scope } = complete()
         expect(confirmBlockers(model, prep, scope, new Date('2026-11-25T10:15:00Z'))).toContain(EXPIRED)
@@ -136,6 +163,15 @@ describe('initialConfirmModel and confirmBlockers (T-522)', () => {
         expect(confirmBlockers({ ...model, components }, prep, scope, NOW)).toContain(componentAdoptRequired('acme-core'))
     })
 
+    it('isNotBlockedByAnAdoptionLeftOnAComponentThatFailedOrIsAlreadyInReARM', () => {
+        for (const extra of [{ failure: 'SOURCE_FAILURE' }, { existingItem: { uuid: 'i', component: CAND, depth: 1, depthOrigin: 'CHOSEN', updateState: 'UPDATED' } }]) {
+            const { prep, model, scope } = complete()
+            Object.assign(prep.components[0], extra)
+            const components = model.components.map((c, i) => i === 0 ? { ...c, target: ItemTarget.ADOPT, adopt: null } : c)
+            expect(confirmBlockers({ ...model, components }, prep, scope, NOW)).toEqual([])
+        }
+    })
+
     it('isBlockedWithoutADepth', () => {
         const { prep, model, scope } = complete()
         expect(confirmBlockers({ ...model, depth: null }, prep, scope, NOW)).toContain(DEPTH_REQUIRED)
@@ -144,6 +180,26 @@ describe('initialConfirmModel and confirmBlockers (T-522)', () => {
     it('waitsForThePreviewWhenACompleteStartingPointHasNoAnswerYet', () => {
         const { prep, model } = complete()
         expect(confirmBlockers(model, prep, { key: null, answer: null, error: null }, NOW)).toEqual([PREVIEW_PENDING])
+    })
+
+    it('waitsForThePreviewWhenTheAnswerForTheCurrentValuesIsEmpty', () => {
+        const { prep, model, scope } = complete()
+        let blockers: string[] = []
+        expect(() => { blockers = confirmBlockers(model, prep, { key: scope.key, answer: null, error: null }, NOW) }).not.toThrow()
+        expect(blockers).toEqual([PREVIEW_PENDING])
+    })
+
+    it('waitsForThePreviewWhenTheAnswerBelongsToAnotherDayOrRelease', () => {
+        const prep = preparation()
+        const model = initialConfirmModel(prep)
+        model.backfill = { kind: BackfillKind.FROM_DATE, count: null, day: '2026-03-01', release: null }
+        const dayScope: ScopeState = { key: currentScopeKey(model, prep), answer: { releases: 12, withinLimit: true }, error: null }
+        expect(confirmBlockers(model, prep, dayScope, NOW)).toEqual([])
+        expect(confirmBlockers({ ...model, backfill: { ...model.backfill, day: '2026-04-01' } }, prep, dayScope, NOW)).toEqual([PREVIEW_PENDING])
+        model.backfill = { kind: BackfillKind.FROM_RELEASE, count: null, day: null, release: REL }
+        const releaseScope: ScopeState = { key: currentScopeKey(model, prep), answer: { releases: 12, withinLimit: true }, error: null }
+        expect(confirmBlockers(model, prep, releaseScope, NOW)).toEqual([])
+        expect(confirmBlockers({ ...model, backfill: { ...model.backfill, release: CAND } }, prep, releaseScope, NOW)).toEqual([PREVIEW_PENDING])
     })
 
     it('waitsForThePreviewWhenTheAnswerBelongsToAnotherDepth', () => {
@@ -178,6 +234,34 @@ describe('initialConfirmModel and confirmBlockers (T-522)', () => {
         const scope: ScopeState = { key: scopeKey(3, buildBackfillInput(model)), answer: { releases: 1, withinLimit: true }, error: null }
         expect(confirmBlockers(model, prep, scope, NOW)).toEqual([])
     })
+
+    it('startsAComponentAlreadyInReARMAtItsStandingDepth', () => {
+        const prep = preparation()
+        prep.components[0].existingItem = { uuid: 'i', component: CAND, depth: 4, depthOrigin: 'CHOSEN', updateState: 'UPDATED' }
+        expect(initialConfirmModel(prep).components.map(c => c.depth)).toEqual([4, 3])
+    })
+})
+
+describe('scopeVariables', () => {
+    it('asksTheScopeAtTheStandingDepthOfAnItemAlreadyInReARM', () => {
+        const prep = preparation()
+        prep.item.existingItem = { uuid: 'i', component: CAND, depth: 3, depthOrigin: 'CHOSEN', updateState: 'UPDATED' }
+        const model = initialConfirmModel(prep)
+        model.backfill = { kind: BackfillKind.LATEST_PER_LINE, count: 3, day: null, release: null }
+        model.depth = 1
+        expect(scopeVariables(model, prep)).toEqual({ preparation: PREP, depth: 3, backfill: { kind: 'LATEST_PER_LINE', count: 3 } })
+    })
+
+    it('asksNoScopeWithoutACompleteStartingPointOrADepth', () => {
+        const prep = preparation()
+        const model = initialConfirmModel(prep)
+        expect(scopeVariables(model, prep)).toBeNull()
+        model.backfill = { kind: BackfillKind.LATEST_PER_LINE, count: null, day: null, release: null }
+        expect(scopeVariables(model, prep)).toBeNull()
+        model.backfill.count = 3
+        expect(scopeVariables({ ...model, depth: null }, prep)).toBeNull()
+        expect(scopeVariables(model, prep)).toEqual({ preparation: PREP, depth: 2, backfill: { kind: 'LATEST_PER_LINE', count: 3 } })
+    })
 })
 
 describe('buildConfirmInput (T-523)', () => {
@@ -203,6 +287,26 @@ describe('buildConfirmInput (T-523)', () => {
         const input = buildConfirmInput({ ...model, target: ItemTarget.ADOPT, adopt: CAND, name: 'Other' }, prep)
         expect(input.adopt).toBe(CAND)
         expect('name' in input).toBe(false)
+    })
+
+    it('sendsNoAdoptForAnAdoptionWithoutACandidate', () => {
+        const { prep, model } = complete()
+        expect(buildConfirmInput({ ...model, target: ItemTarget.ADOPT, adopt: null }, prep))
+            .toEqual({ depth: 2, backfill: { kind: 'LATEST_PER_LINE', count: 3 }, onDrift: 'STOP' })
+    })
+
+    it('sendsNoAdoptionLeftFromAnEarlierChoiceWhenCreating', () => {
+        const { prep, model } = complete()
+        model.name = prep.item.rearmName
+        expect(buildConfirmInput({ ...model, target: ItemTarget.CREATE, adopt: CAND }, prep))
+            .toEqual({ depth: 2, backfill: { kind: 'LATEST_PER_LINE', count: 3 }, onDrift: 'STOP' })
+    })
+
+    it('sendsNoComponentAdoptionLeftFromAnEarlierChoiceWhenTheComponentIsCreated', () => {
+        const { prep, model } = complete()
+        model.name = prep.item.rearmName
+        model.components[0] = { ...model.components[0], target: ItemTarget.CREATE, adopt: CAND }
+        expect(buildConfirmInput(model, prep)).toEqual({ depth: 2, backfill: { kind: 'LATEST_PER_LINE', count: 3 }, onDrift: 'STOP' })
     })
 
     it('sendsOnlyTheComponentsThatChangedWithOnlyTheirChangedKeys', () => {
@@ -261,5 +365,8 @@ describe('scopeKey', () => {
         expect(scopeKey(2, a)).not.toBe(scopeKey(1, a))
         expect(scopeKey(2, a)).not.toBe(scopeKey(2, { kind: BackfillKind.LATEST_PER_LINE, count: 4 }))
         expect(scopeKey(2, { kind: BackfillKind.FROM_RELEASE, release: REL })).not.toBe(scopeKey(2, { kind: BackfillKind.FROM_DATE, date: REL }))
+        expect(scopeKey(2, { kind: BackfillKind.FROM_DATE, date: '2026-03-01T00:00:00.000Z' }))
+            .not.toBe(scopeKey(2, { kind: BackfillKind.FROM_DATE, date: '2026-04-01T00:00:00.000Z' }))
+        expect(scopeKey(2, { kind: BackfillKind.FROM_RELEASE, release: REL })).not.toBe(scopeKey(2, { kind: BackfillKind.FROM_RELEASE, release: CAND }))
     })
 })

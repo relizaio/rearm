@@ -163,6 +163,33 @@ describe('the follow page, sections 1 to 3', () => {
         w.unmount()
     })
 
+    it('shows no tag No longer updated on an unfollowed follow', async () => {
+        const base = follow()
+        const w = await mountPage(follow({ status: 'UNFOLLOWED', unfollowedDate: '2026-11-10T10:00:00Z', item: { ...base.item, updateState: 'NO_LONGER_UPDATED' } }))
+        expect(w.find('[data-testid="upstream-follow-unfollowed"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-no-longer-updated"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('links no branch and no release whose uuid is not a uuid or not set', async () => {
+        const base = follow()
+        const w = await mountPage(follow({
+            item: { ...base.item, lines: [{ lineKey: '3.x', branch: '../x', latestRelease: null, latestVersion: '3.0.0' }] },
+            components: [],
+        }))
+        const line = w.get('[data-testid="upstream-follow-line"]')
+        expect(line.text()).toContain('3.0.0')
+        expect(line.findAll('a.rl')).toHaveLength(0)
+        w.unmount()
+    })
+
+    it('shows the message of the backend for a stopped run before the words of its stop reason', async () => {
+        const w = await mountPage(follow({ lastRun: run({ state: 'STOPPED', message: 'The supplier answered 503 three times.', stopReason: 'ITEM_GONE' }) }))
+        expect(w.find('[data-testid="upstream-run-message"]').exists()).toBe(true)
+        expect(w.get('[data-testid="upstream-run-message"]').text()).toBe('The supplier answered 503 three times.')
+        w.unmount()
+    })
+
     it('shows that no release has been ingested when there are no lines', async () => {
         const base = follow()
         const w = await mountPage(follow({ item: { ...base.item, lines: [] } }))
@@ -173,6 +200,7 @@ describe('the follow page, sections 1 to 3', () => {
 
     it('shows the words of the stop reason of a stopped run without a message', async () => {
         const w = await mountPage(follow({ lastRun: run({ state: 'STOPPED', message: null, stopReason: 'ITEM_GONE' }) }))
+        expect(w.find('[data-testid="upstream-run-message"]').exists()).toBe(true)
         expect(w.get('[data-testid="upstream-run-message"]').text()).toBe('The source no longer knows this item.')
         w.unmount()
     })
@@ -186,6 +214,7 @@ describe('the follow page, sections 1 to 3', () => {
 
     it('shows the forbidden sentence for a plain Not authorized first read', async () => {
         const w = await mountPage(refusal('Not authorized'))
+        expect(w.find('[data-testid="upstream-follow-forbidden"]').exists()).toBe(true)
         expect(w.get('[data-testid="upstream-follow-forbidden"]').text()).toBe(forbiddenSentence)
         expect(w.find('[data-testid="upstream-follow-name"]').exists()).toBe(false)
         w.unmount()
@@ -225,6 +254,38 @@ describe('the follow page, sections 1 to 3', () => {
         expect(w.get('[data-testid="upstream-run-state"]').text()).toBe('Completed')
         await vi.advanceTimersByTimeAsync(5000)
         expect(followQueries()).toBe(3)
+        w.unmount()
+    })
+
+    it('reads again every 5 seconds while the run is queued', async () => {
+        vi.useFakeTimers()
+        const followQueries = () => query.mock.calls.filter(c => c[0].query === GET_UPSTREAM_FOLLOW).length
+        query.mockImplementation(async (args: any) => {
+            if (args.query === GET_UPSTREAM_SOURCE) return sourceReply()
+            return { data: { upstreamFollow: follow({ lastRun: run({ state: followQueries() <= 1 ? 'QUEUED' : 'COMPLETED' }) }) } }
+        })
+        const w = mount(Page, { global, attachTo: document.body })
+        await flushPromises()
+        await vi.advanceTimersByTimeAsync(5000)
+        expect(followQueries()).toBe(2)
+        w.unmount()
+    })
+
+    it('keeps the page when a later read is refused', async () => {
+        vi.useFakeTimers()
+        let reads = 0
+        query.mockImplementation(async (args: any) => {
+            if (args.query === GET_UPSTREAM_SOURCE) return sourceReply()
+            if (++reads === 1) return { data: { upstreamFollow: follow({ lastRun: run({ state: 'RUNNING' }) }) } }
+            throw refusal('Not authorized')
+        })
+        const w = mount(Page, { global, attachTo: document.body })
+        await flushPromises()
+        await vi.advanceTimersByTimeAsync(5000)
+        expect(reads).toBe(2)
+        expect(w.find('[data-testid="upstream-follow-name"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-follow-forbidden"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-follow-error"]').exists()).toBe(false)
         w.unmount()
     })
 
