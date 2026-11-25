@@ -1476,6 +1476,9 @@
                     </n-tab-pane>
                 </n-tabs>
             </n-tab-pane>
+            <n-tab-pane v-if="upstreamAvailable" name="upstreamSources" tab="Upstream Sources">
+                <upstream-sources-panel :org-uuid="orgResolved" :is-org-admin="isOrgAdmin" :notify="notify" />
+            </n-tab-pane>
         </n-tabs>
         <n-modal 
             v-model:show="showCreateResourceGroupModal"
@@ -1574,6 +1577,8 @@ import { apiKeyPagination, byNewestKey, fmtKeyDate } from '@/utils/apiKeyTable'
 import { normalizeSearchTerm } from '@/utils/tableSearch'
 import { filterUsersBySearch } from '@/utils/orgUsersSearch'
 import OrgIntegrations from './OrgIntegrations.vue'
+import UpstreamSourcesPanel from './upstream/UpstreamSourcesPanel.vue'
+import { upstreamSourcesAvailable } from '@/utils/upstream'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
 import TeaOrgPanel from './TeaOrgPanel.vue'
@@ -1955,6 +1960,7 @@ const isOrgAdmin: ComputedRef<boolean> = computed((): any => {
     }
     return isOrgAdmin
 })
+const upstreamAvailable: ComputedRef<boolean> = computed((): boolean => upstreamSourcesAvailable(myUser.value?.installationType))
 
 // Tab management with router integration
 const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
@@ -1966,7 +1972,7 @@ const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 // Terminology, SBOM Profiles, Regulatory and Transparency Exchange API are sub-tabs of Admin Settings
 // (?adminTab=), gated per sub-tab by isAdminSubTabAccessible below.
 const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'apiKeyGroups', 'freeFormKeys', 'adminSettings']
-const proOnlyTabs = ['policies', 'committers', 'perspectives']
+const proOnlyTabs = ['policies', 'committers', 'perspectives', 'upstreamSources']
 function isTabAccessible (t: string): boolean {
     if (adminOnlyTabs.includes(t) && !isOrgAdmin.value) return false
     if (proOnlyTabs.includes(t) && myUser.value?.installationType === 'OSS') return false
