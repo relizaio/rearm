@@ -28,6 +28,9 @@
                         <upstream-follows-list v-else-if="state === 'LIST'" :org-uuid="orgUuid" :follows="follows" :sources="sources" />
                     </n-spin>
                 </n-tab-pane>
+                <n-tab-pane name="tei" tab="By TEI">
+                    <upstream-one-off-panel :org-uuid="orgUuid" :sources="sources" :can-write="canWrite" @source-added="loadSources" />
+                </n-tab-pane>
             </n-tabs>
             <upstream-follow-start-modal
                 v-if="isOrgAdmin"
@@ -40,10 +43,9 @@
 </template>
 
 <script lang="ts" setup>
-// The Upstream page (ReARM Pro, TPF-185 design 3.7): the follows of the organization, and for an
-// administrator the start of a follow. The tab "By TEI" is added by a later part of the feature;
-// until then ?tab=tei shows the Follows tab. The page tests the edition gate first and sends no
-// request when it is false.
+// The Upstream page (ReARM Pro, TPF-185 design 3.7 and 3.10): the follows of the organization, and
+// for an administrator the start of a follow; the tab "By TEI" (?tab=tei) ingests one release by its
+// TEI. The page tests the edition gate first and sends no request when it is false.
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
@@ -56,6 +58,7 @@ import { GET_UPSTREAM_SOURCES } from '@/utils/upstreamSourceQueries'
 import { forbiddenSentence, notAvailableSentence } from '@/utils/upstreamLabels'
 import UpstreamFollowsList from './UpstreamFollowsList.vue'
 import UpstreamFollowStartModal from './UpstreamFollowStartModal.vue'
+import UpstreamOneOffPanel from './UpstreamOneOffPanel.vue'
 
 const ALL_STATES = 'ALL'
 const STATE_OPTIONS = [
@@ -75,7 +78,12 @@ const available = computed((): boolean => upstreamSourcesAvailable(myUser.value?
 const orgUuid = computed((): string => String(route.params.orguuid ?? ''))
 const isOrgAdmin = computed((): boolean => commonFunctions.getUserPermission(orgUuid.value, myUser.value).org === 'ADMIN')
 
-const activeTab = computed((): string => 'follows')
+const TABS = ['follows', 'tei']
+const activeTab = computed((): string => {
+    const t = route.query.tab
+    return typeof t === 'string' && TABS.includes(t) ? t : 'follows'
+})
+const canWrite = computed((): boolean => commonFunctions.isWritable(orgUuid.value, myUser.value, 'ORG'))
 const sourceFilter = computed((): string | null => {
     const s = route.query.source
     return typeof s === 'string' && isUuid(s) ? s : null

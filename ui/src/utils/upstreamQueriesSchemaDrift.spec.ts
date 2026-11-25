@@ -8,6 +8,9 @@ import {
     CONFIRM_UPSTREAM_FOLLOW, GET_UPSTREAM_FOLLOW, GET_UPSTREAM_FOLLOWS, GET_UPSTREAM_FOLLOW_PREPARATION, GET_UPSTREAM_FOLLOW_PREPARATION_RELEASES,
     GET_UPSTREAM_FOLLOW_PREPARATION_SCOPE, PREPARE_UPSTREAM_FOLLOW, confirmedFollowUuid,
 } from './upstreamFollowQueries'
+import {
+    CHOOSE_UPSTREAM_ONE_OFF, GET_UPSTREAM_ONE_OFF, GET_UPSTREAM_ONE_OFFS, REFRESH_UPSTREAM_ONE_OFF, RESOLVE_UPSTREAM_TEI,
+} from './upstreamOneOffQueries'
 import { proSchema } from './schemaDriftSupport'
 
 // T-502 (TPF-185 design 3.4): every document of the upstream sources feature against the Pro
@@ -38,7 +41,16 @@ const FOLLOW_DOCUMENTS: Row[] = [
     ['GET_UPSTREAM_FOLLOW', GET_UPSTREAM_FOLLOW, 'upstreamFollow', 'query'],
 ]
 
-const ALL: Row[] = [...SOURCE_DOCUMENTS, ...FOLLOW_DOCUMENTS]
+// TPF-231 (design 3.10): ingesting one release by its TEI.
+const ONE_OFF_DOCUMENTS: Row[] = [
+    ['GET_UPSTREAM_ONE_OFFS', GET_UPSTREAM_ONE_OFFS, 'upstreamOneOffs', 'query'],
+    ['GET_UPSTREAM_ONE_OFF', GET_UPSTREAM_ONE_OFF, 'upstreamOneOff', 'query'],
+    ['RESOLVE_UPSTREAM_TEI', RESOLVE_UPSTREAM_TEI, 'resolveUpstreamTei', 'mutation'],
+    ['CHOOSE_UPSTREAM_ONE_OFF', CHOOSE_UPSTREAM_ONE_OFF, 'chooseUpstreamOneOff', 'mutation'],
+    ['REFRESH_UPSTREAM_ONE_OFF', REFRESH_UPSTREAM_ONE_OFF, 'refreshUpstreamOneOff', 'mutation'],
+]
+
+const ALL: Row[] = [...SOURCE_DOCUMENTS, ...FOLLOW_DOCUMENTS, ...ONE_OFF_DOCUMENTS]
 
 const operations = (doc: DocumentNode): OperationDefinitionNode[] =>
     doc.definitions.filter((d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION)
@@ -181,5 +193,28 @@ describe('the follow documents (TPF-229, design 3.7 to 3.9)', () => {
         expect(confirmedFollowUuid({ confirmUpstreamFollow: { uuid: 'f1' } })).toBe('f1')
         expect(confirmedFollowUuid({})).toBeNull()
         expect(confirmedFollowUuid(null)).toBeNull()
+    })
+})
+
+describe('the one-off documents (TPF-231, design 3.10)', () => {
+    it('selectsTheFieldsOfTheDesignOnAOneOffInEveryDocument', () => {
+        const expected = [
+            'uuid', 'tei', 'state', 'failure', 'sourceFailure', 'source', 'unmatchedRoots', 'sourceCanBeAdded', 'createdDate',
+            'candidates', ...['upstreamRelease', 'source', 'root'].map(f => 'candidates.' + f),
+            'release', ...['uuid', 'item', 'upstreamUuid', 'upstreamVersion', 'state', 'failure', 'message', 'release', 'oneOff'].map(f => 'release.' + f),
+            'lastRun', ...['uuid', 'state', 'stopReason', 'message', 'finishedDate'].map(f => 'lastRun.' + f),
+        ].sort()
+        for (const [name, doc] of ONE_OFF_DOCUMENTS) expect(selectedPaths(doc), name).toEqual(expected)
+    })
+
+    it('readsTheNewestFiftyOneOffsOfTheOrganization', () => {
+        expect(argOf(GET_UPSTREAM_ONE_OFFS, 'limit')?.value).toEqual(expect.objectContaining({ kind: Kind.INT, value: '50' }))
+        expect(argOf(GET_UPSTREAM_ONE_OFFS, 'org')?.value.kind).toBe(Kind.VARIABLE)
+    })
+
+    it('sendsTheTeiAndTheSourceAsVariables', () => {
+        for (const name of ['org', 'tei', 'source']) expect(argOf(RESOLVE_UPSTREAM_TEI, name)?.value.kind, name).toBe(Kind.VARIABLE)
+        for (const name of ['oneOff', 'upstreamRelease', 'source']) expect(argOf(CHOOSE_UPSTREAM_ONE_OFF, name)?.value.kind, name).toBe(Kind.VARIABLE)
+        expect(argOf(REFRESH_UPSTREAM_ONE_OFF, 'oneOff')?.value.kind).toBe(Kind.VARIABLE)
     })
 })
