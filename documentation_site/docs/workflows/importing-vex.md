@@ -112,24 +112,30 @@ Imported VEX statements are preserved verbatim on the proposal as `sourceStateme
 
 Direct API import isn't exposed as a separate mutation — every VEX import goes through the artifact-upload path. Both the **multipart manual** (`addArtifactManual`, used by the UI) and the **programmatic** (`addArtifactProgrammatic`, used by [rearm-cli](https://github.com/relizaio/rearm-cli) and CI integrations) paths trigger the import pipeline when the artifact's `type` is `VEX` — whether the artifact is attached to the release, a deliverable (`--deliverablearts`), or a source-code entry (`--scearts`).
 
+`rearm-cli addartifact` prints the import summary of each VEX it uploads and checks it, for artifacts attached to the release or to a deliverable. The server does not report the import result of a source-code entry upload, so the CLI refuses a VEX in `--scearts` unless `--allow-import-failure` is given; put it in `--releasearts` instead (the import runs against the release either way).
+
 CI example:
 
 ```sh
 rearm-cli addartifact \
   --component "$COMPONENT_UUID" \
   --version "$RELEASE_VERSION" \
+  --wait-for-sbom 10m \
   --artifacts '[{
     "filePath": "vex.cdx.json",
     "type": "VEX",
     "bomFormat": "CYCLONEDX",
     "storedIn": "REARM",
     "displayIdentifier": "vendor-vex-1",
-    "vexImportMode": "STAGE"
+    "importScope": "COMPONENT",
+    "importMode": "STAGE"
   }]'
 ```
 
-The three controls the UI upload form exposes — [Scope](#scope), [Import mode](#import-mode), and [Issuer class](#issuer-class) — can be set on the artifact JSON via the optional `vexScope`, `vexImportMode`, and `userIssuerClassOverride` fields. Omit them to accept the defaults (`COMPONENT` scope, `AUTO_ACCEPT` mode, issuer class derived from binding context). These fields require **rearm-cli 26.05 or newer** — older CLI builds silently drop them, so the import falls back to the defaults.
+The three controls the UI upload form exposes, [Scope](#scope), [Import mode](#import-mode) and [Issuer class](#issuer-class), are set on the artifact JSON with the optional `importScope`, `importMode` and `userIssuerClassOverride` fields. Omit them to accept the defaults (`COMPONENT` scope, `AUTO_ACCEPT` mode, issuer class derived from binding context). `vexScope` and `vexImportMode` are deprecated aliases of `importScope` and `importMode`; when both are set, the generic field wins. The CLI refuses an artifact field it does not know before sending anything, so a misspelled field fails the step instead of falling back to a default.
 
-Or fold it into the `addrelease` call via `--releasearts`. The GitHub Actions wrapper [`relizaio/rearm-actions`](https://github.com/relizaio/rearm-actions) does this for you when a VEX file is on the build's artifact list.
+`addrelease`, `addreleases`, `addodeliverable` and `getversion` store a VEX artifact but never import it, so the CLI refuses a VEX on those commands unless `--allow-import-failure` is given (with the flag it is stored without an import). Upload the VEX with `addartifact` once the release's SBOM is indexed.
 
-**Precondition:** the release must already have at least one SBOM artifact (so the VEX matcher has an inventory to match against). The upload fails loud with *"Cannot import VEX: release has no SBOM components yet"* if you try to import VEX into an SBOM-less release.
+**Precondition:** the release must already have at least one SBOM artifact (so the VEX matcher has an inventory to match against). The upload fails loud with *"Cannot import VEX: release has no SBOM components yet"* if you try to import VEX into an SBOM-less release. Upload the SBOM in its own, earlier call; an SBOM in the same call as the VEX does not count. `--wait-for-sbom 10m` makes `addartifact` retry the upload until the SBOM is indexed (nothing is stored while the server refuses).
+
+**Result and exit code:** the CLI prints each VEX artifact's import summary on stderr and exits `3` when an artifact imported nothing or its result is unknown (the artifact is still stored). See [Importing VEX and safety context from CI](../integrations/rearmcli#importing-vex-and-safety-context-from-ci) for the summary, the exit codes, `--allow-import-failure`, and which keys make an import take effect.
