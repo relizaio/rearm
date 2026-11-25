@@ -124,7 +124,12 @@ const { page } = Astro.props;
         </div>
       </div>
       <div class="evidence">{page.evidence}</div>
-      {page.stripNote && <p class="strip-note">{page.stripNote}</p>}
+      {(page.stripNote || page.stripLink) && (
+        <p class="strip-note">
+          {page.stripNote}{page.stripNote && page.stripLink && ' '}
+          {page.stripLink && <a href={page.stripLink.href}>{page.stripLink.text}</a>}
+        </p>
+      )}
     </div>
   </section>
 

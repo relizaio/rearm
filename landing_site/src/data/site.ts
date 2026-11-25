@@ -69,8 +69,9 @@ export type UcPage = {
   a1: string; a2: string; stripLabel: string; strip: string[]; evidence: string;
   publicDemo: boolean; shot: string | false; note: string | false; steps: UcStep[];
   // Optional: a checklist-to-feature mapping after the steps, a note under the
-  // standards strip, and a link block to a related page at the bottom.
-  mapping?: UcMapping; stripNote?: string; seeAlso?: UcSeeAlso;
+  // standards strip (with an optional link to a related page), and a link card
+  // in the steps grid.
+  mapping?: UcMapping; stripNote?: string; stripLink?: UcLink; seeAlso?: UcSeeAlso;
 };
 
 export const levels = design.levels as string[];
