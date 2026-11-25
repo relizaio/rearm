@@ -559,15 +559,15 @@
       "pain": "Safety-critical products depend on supplier declarations, third-party assessments, component classifications, safety analyses, and evidence that often live outside release records.",
       "a1": "rgba(94,235,195,0.10)",
       "a2": "rgba(91,124,250,0.10)",
-      "stripLabel": "STANDARDS",
+      "stripLabel": "RELEVANT STANDARDS",
       "strip": [
         "ISO 26262",
         "IEC 61508",
         "IEC 62304",
-        "EN 50128",
+        "EN 50716",
         "DO-178C"
       ],
-      "evidence": "SAFETY CONTEXT · SUPPLIER ASSERTIONS · THIRD-PARTY CONTEXT · CYCLONEDX · SPDX · RELEASE EVIDENCE",
+      "evidence": "SAFETY CONTEXT · SUPPLIER ASSERTIONS · THIRD-PARTY CONTEXT · CYCLONEDX · RELEASE EVIDENCE",
       "publicDemo": false,
       "shot": false,
       "note": false,
@@ -575,28 +575,33 @@
         {
           "num": "01",
           "title": "Safety Context arrives from multiple sources",
-          "body": "Supplier declarations, independent assessments, certification authority reports, and internal engineering reviews can all be imported as Safety Context artifacts. ReARM preserves the source, issuer, and supporting evidence for every assertion.",
+          "body": "Supplier declarations, independent assessments and internal reviews come in as CycloneDX 2.0 safety statements, and any reports behind them are kept with the release as evidence. ReARM preserves the source, issuer, and supporting evidence for every assertion.",
           "cap": "SBOM/XBOM Management"
         },
         {
           "num": "02",
           "title": "Trust depends on who is talking",
-          "body": "Assertions from trusted issuers can be accepted automatically based on organizational policy, while other assertions remain pending review. ReARM supports supplier, third-party, and internal assertions with clear provenance and review workflows.",
-          "cap": "Findings Aggregation"
+          "body": "Assertions from trusted issuers can be accepted automatically under your trust rules, while other assertions remain pending review. ReARM supports supplier, third-party, and internal assertions with clear provenance and review workflows.",
+          "cap": "Safety Context"
         },
         {
           "num": "03",
           "title": "One assertion, correct scope",
-          "body": "Safety assertions can apply to a component, a subsystem, or an entire release. ReARM records the intended scope, correlates assertions to the right components, and prevents broader assertions from silently overriding more specific evidence.",
-          "cap": "Findings Aggregation"
+          "body": "Safety assertions can apply to the whole organization, a product, a feature set, a component, a branch, or a release. ReARM records the intended scope, correlates assertions to the right components, and the release view uses the most specific scope that applies, so a broader assertion never overrides a narrower one.",
+          "cap": "Safety Context"
         },
         {
           "num": "04",
           "title": "Review decisions become evidence",
-          "body": "Accepted, pending, and rejected assertions remain attached to the release together with the supporting documents and audit trail. Nothing is lost when personnel, suppliers, or products change.",
+          "body": "Accepted, pending, and rejected assertions remain attached to the release together with their supporting documents, the reasons for each rejection, and the audit trail.",
           "cap": "Audit Evidence"
         }
-      ]
+      ],
+      "stripNote": "ReARM keeps the evidence for safety programs run under these standards. It is not a qualified or certified tool under them, for example under ISO 26262-8 tool confidence or DO-330 tool qualification. EN 50716:2023 replaces EN 50128 for railway software.",
+      "stripLink": {
+        "text": "Building medical device software under IEC 62304? See Medical Devices.",
+        "href": "/use-cases/medical-devices/"
+      }
     },
     {
       "id": "3f",
@@ -642,7 +647,11 @@
           "body": "A record of what actually shipped, holding up years later when auditors ask.",
           "cap": "Audit Evidence"
         }
-      ]
+      ],
+      "stripLink": {
+        "text": "Working to functional safety standards such as IEC 61508 or ISO 26262? See Functional Safety.",
+        "href": "/use-cases/functional-safety/"
+      }
     },
     {
       "id": "3g",
