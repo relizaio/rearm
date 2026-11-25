@@ -92,8 +92,6 @@ export const fullChain: ChainLevel[] = levels.map((name, i) => ({
 // Integration / client logos, carried over 1:1 from the current site.
 export const integrations = [
   { file: 'dtrack.png', url: 'https://dependencytrack.org', title: 'Dependency-Track' },
-  { file: 'cdx.png', url: 'https://cyclonedx.org', title: 'CycloneDX' },
-  { file: 'spdx.png', url: 'https://spdx.org', title: 'SPDX' },
   { file: 'ado.png', url: 'https://dev.azure.com', title: 'Azure DevOps' },
   { file: 'github.png', url: 'https://github.com', title: 'GitHub' },
   { file: 'gitlab.png', url: 'https://gitlab.com', title: 'GitLab' },
@@ -105,7 +103,6 @@ export const integrations = [
   { file: 'slack.png', url: 'https://slack.com', title: 'Slack' },
   { file: 'cosign.png', url: 'https://github.com/sigstore/cosign', title: 'Sigstore Cosign' },
   { file: 'msteams.png', url: 'https://www.microsoft.com/en-us/microsoft-365/microsoft-teams/group-chat-software', title: 'Microsoft Teams' },
-  { file: 'oci.png', url: 'https://www.opencontainers.org', title: 'Open Container Initiative' },
   { file: 'sendgrid.png', url: 'https://sendgrid.com', title: 'SendGrid' },
   { file: 'semgrep.png', url: 'https://semgrep.dev', title: 'Semgrep' },
   { file: 'checkov.png', url: 'https://www.checkov.io', title: 'Checkov' },
@@ -140,6 +137,23 @@ export const ownTrademarksLine =
   'ReARM, Reliza and their logos are trademarks of Reliza Incorporated. All other trademarks and logos are the property of their respective owners.';
 
 export const teaLink = 'https://github.com/cyclonedx/transparency-exchange-api';
+
+// Standards ReARM supports, shown on the home page. Tiles are 2x renders of each
+// standard's official logo on the same #FAF9FF tile as the integration logos
+// (public/logos/standards/); marks without a wordmark carry a label in Sora.
+// `title` is the full name, used for alt text and the tooltip.
+export const standards = [
+  { file: 'tea.png', url: teaLink, title: 'OWASP Transparency Exchange API (TEA)' },
+  { file: 'cyclonedx.png', url: 'https://cyclonedx.org', title: 'CycloneDX' },
+  { file: 'spdx.png', url: 'https://spdx.dev', title: 'SPDX (Software Package Data Exchange)' },
+  { file: 'purl.png', url: 'https://packageurl.org', title: 'Package-URL (purl)' },
+  { file: 'openvex.png', url: 'https://openvex.dev', title: 'OpenVEX' },
+  { file: 'sarif.png', url: 'https://sarifweb.azurewebsites.net', title: 'SARIF (OASIS Static Analysis Results Interchange Format)' },
+  { file: 'oci.png', url: 'https://opencontainers.org', title: 'Open Container Initiative (OCI)' },
+  { file: 'cvss.png', url: 'https://www.first.org/cvss/', title: 'CVSS (FIRST Common Vulnerability Scoring System)' },
+  { file: 'semver.png', url: 'https://semver.org', title: 'Semantic Versioning (SemVer)' },
+  { file: 'calver.png', url: 'https://calver.org', title: 'Calendar Versioning (CalVer)' },
+];
 export const demoVideo = 'https://cdn.rearmhq.com/ReARM_Tutorial_V2_2.mp4';
 
 export const regulations = ['EU CRA', 'NIS2', 'DORA', 'US EO 14028 / 14144', 'FDA 524B', 'RBI / SEBI'];

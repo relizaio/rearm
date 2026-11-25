@@ -5,7 +5,7 @@ import Shot from '../components/Shot.astro';
 import CtaBand from '../components/CtaBand.astro';
 import {
   links, caps, useCasePanels, questions, fullChain, pageHrefs,
-  integrations, clientsPartners, nvidiaLegalLine, ownTrademarksLine, teaLink, demoVideo, regulations, extraQuestions,
+  integrations, clientsPartners, nvidiaLegalLine, ownTrademarksLine, standards, demoVideo, regulations, extraQuestions,
 } from '../data/site';
 
 const allQuestions = [...questions, ...extraQuestions];
@@ -126,24 +126,24 @@ const allQuestions = [...questions, ...extraQuestions];
     </div>
   </section>
 
-  <!-- SUPPORTS (TEA) -->
+  <!-- STANDARDS -->
   <section class="logos-section">
     <div class="container logo-block">
-      <h2 class="logo-title">Supports</h2>
-      <p class="logo-sub">OWASP Transparency Exchange API</p>
+      <h2 class="logo-title">Standards</h2>
       <div class="logo-items">
-        <a href={teaLink} title="OWASP Transparency Exchange API" target="_blank" rel="noopener noreferrer">
-          <img src="/logos/tealogo.png" alt="OWASP Transparency Exchange API" class="fav-icon" />
-        </a>
+        {standards.map((l) => (
+          <a href={l.url} title={l.title} target="_blank" rel="noopener noreferrer">
+            <img src={`/logos/standards/${l.file}`} alt={l.title} class="fav-icon" width="166" height="89" />
+          </a>
+        ))}
       </div>
     </div>
   </section>
 
-  <!-- INTEGRATES -->
+  <!-- INTEGRATIONS -->
   <section class="logos-section">
     <div class="container logo-block">
-      <h2 class="logo-title">Integrates</h2>
-      <p class="logo-sub">with your favorite tools</p>
+      <h2 class="logo-title">Integrations</h2>
       <div class="logo-items">
         {integrations.map((l) => (
           <a href={l.url} title={l.title} target="_blank" rel="noopener noreferrer">
@@ -289,7 +289,6 @@ const allQuestions = [...questions, ...extraQuestions];
   .logos-section { padding: 8px 0 44px; }
   .logo-block { text-align: center; }
   .logo-title { font-size: 24px; font-weight: 700; letter-spacing: -0.015em; margin-bottom: 4px; }
-  .logo-sub { color: var(--muted-1); font-size: 15px; margin-bottom: 8px; }
   /* Uniform cells: constraining BOTH dimensions (object-fit: contain) keeps
      tall/square marks from dominating wide wordmarks; generous gaps declutter. */
   .logo-items { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 30px 56px; margin-top: 20px; }
