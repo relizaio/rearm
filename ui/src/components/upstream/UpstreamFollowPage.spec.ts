@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 //
-// TPF-229 (TPF-185 design 3.9 sections 1 to 3, no row of its own): the read-only follow page. The header, the version
-// lines with their router links, the components table and the last run are shown from the
+// TPF-229 (TPF-185 design 3.9 sections 1 to 3, and T-530): the read-only follow page. The header, the version
+// lines with their branch links and their latest version as text, the components table and the last run are shown from the
 // follow; an unfollowed follow, a no-longer-updated item, a stopped run, a refused source read
 // and a refused first read each have their own words; every value is text; the page reads again
 // every 5 seconds while the run is open and never sends a mutation.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { print } from 'graphql'
 
 const query = vi.fn()
 const mutate = vi.fn()
@@ -31,8 +32,6 @@ const UPSTREAM_ITEM = 'dddddddd-0000-4000-8000-000000000001'
 const COMPONENT = 'eeeeeeee-0000-4000-8000-000000000001'
 const BRANCH_1 = 'ffffffff-0000-4000-8000-000000000001'
 const BRANCH_2 = 'ffffffff-0000-4000-8000-000000000002'
-const RELEASE_1 = '99999999-0000-4000-8000-000000000001'
-const RELEASE_2 = '99999999-0000-4000-8000-000000000002'
 const SEALED = 'System is sealed. Please unseal the system first.'
 
 const RouterLink = { name: 'RouterLink', props: ['to'], template: '<a class="rl" :data-to="JSON.stringify(to)"><slot/></a>' }
@@ -62,14 +61,14 @@ function follow (over: any = {}) {
             uuid: '88888888-0000-4000-8000-000000000001', kind: 'PRODUCT', upstreamUuid: UPSTREAM_ITEM, upstreamName: 'Widget Suite', component: COMPONENT,
             depth: 2, depthOrigin: 'PROPOSED', mapping: 'CREATED', updateState: 'UPDATED',
             lines: [
-                { lineKey: '1.x', branch: BRANCH_1, latestRelease: RELEASE_1, latestVersion: '1.4.2' },
-                { lineKey: '2.x', branch: BRANCH_2, latestRelease: RELEASE_2, latestVersion: '2.0.1' },
+                { lineKey: '1.x', branch: BRANCH_1, latestVersion: '1.4.2' },
+                { lineKey: '2.x', branch: BRANCH_2, latestVersion: '2.0.1' },
             ],
         },
         components: [{
             uuid: '88888888-0000-4000-8000-000000000002', kind: 'COMPONENT', upstreamUuid: 'dddddddd-0000-4000-8000-000000000002', upstreamName: 'Widget Core',
             component: 'eeeeeeee-0000-4000-8000-000000000002', depth: 1, depthOrigin: 'PROPOSED', mapping: 'CREATED', updateState: 'UPDATED',
-            lines: [{ lineKey: '1.x', branch: BRANCH_1, latestRelease: RELEASE_1, latestVersion: '1.4.2' }],
+            lines: [{ lineKey: '1.x', branch: BRANCH_1, latestVersion: '1.4.2' }],
         }],
         lastRun: run(),
         pending: [],
@@ -134,8 +133,6 @@ describe('the follow page, sections 1 to 3', () => {
         expect(to).toContainEqual({ name: 'ProductsOfOrg', params: { orguuid: ORG, compuuid: COMPONENT } })
         expect(to).toContainEqual({ name: 'ProductsOfOrg', params: { orguuid: ORG, compuuid: COMPONENT, branchuuid: BRANCH_1 } })
         expect(to).toContainEqual({ name: 'ProductsOfOrg', params: { orguuid: ORG, compuuid: COMPONENT, branchuuid: BRANCH_2 } })
-        expect(to).toContainEqual({ name: 'ReleaseView', params: { uuid: RELEASE_1 } })
-        expect(to).toContainEqual({ name: 'ReleaseView', params: { uuid: RELEASE_2 } })
 
         const lines = w.findAll('[data-testid="upstream-follow-line"]')
         expect(lines.length).toBe(2)
@@ -171,10 +168,10 @@ describe('the follow page, sections 1 to 3', () => {
         w.unmount()
     })
 
-    it('links no branch and no release whose uuid is not a uuid or not set', async () => {
+    it('links no branch whose uuid is not a uuid', async () => {
         const base = follow()
         const w = await mountPage(follow({
-            item: { ...base.item, lines: [{ lineKey: '3.x', branch: '../x', latestRelease: null, latestVersion: '3.0.0' }] },
+            item: { ...base.item, lines: [{ lineKey: '3.x', branch: '../x', latestVersion: '3.0.0' }] },
             components: [],
         }))
         const line = w.get('[data-testid="upstream-follow-line"]')
@@ -303,5 +300,43 @@ describe('the follow page, sections 1 to 3', () => {
         w.unmount()
         await vi.advanceTimersByTimeAsync(20000)
         expect(followQueries()).toBe(2)
+    })
+})
+
+describe('T-530 the latest version of a line is text', () => {
+    const ROW = '55555555-0000-4000-8000-000000000001'
+    const B1 = 'ffffffff-0000-4000-8000-000000000011'
+    const B2 = 'ffffffff-0000-4000-8000-000000000012'
+    const B3 = 'ffffffff-0000-4000-8000-000000000013'
+    const CB = 'ffffffff-0000-4000-8000-000000000014'
+
+    it('shows the latest version as text, links no release and selects no latestRelease', async () => {
+        const base = follow()
+        const w = await mountPage(follow({
+            item: {
+                ...base.item,
+                lines: [
+                    { lineKey: '1.x', branch: B1, latestRelease: ROW, latestVersion: '1.4.2' },
+                    { lineKey: '2.x', branch: B2, latestVersion: '2.0.1' },
+                    { lineKey: '3.x', branch: B3 },
+                ],
+            },
+            components: [{ ...base.components[0], lines: [{ lineKey: '1.x', branch: CB, latestVersion: '0.9.0' }] }],
+        }))
+        const latest = w.findAll('[data-testid="upstream-follow-line-latest"]')
+        expect(latest.map((c: any) => c.text())).toEqual(['1.4.2', '2.0.1', ''])
+        expect(latest.every((c: any) => c.findAll('a').length === 0)).toBe(true)
+
+        const to = links(w)
+        expect(to.some(t => t.name === 'ReleaseView')).toBe(false)
+        expect(to.some(t => typeof t.path === 'string' && t.path.startsWith('/release/show'))).toBe(false)
+        expect(to.some(t => JSON.stringify(t).includes(ROW))).toBe(false)
+        expect(document.body.innerHTML).not.toContain('/release/show')
+        const lineRows = w.findAll('[data-testid="upstream-follow-line"]')
+        expect(lineRows.map((r: any) => r.findAll('a.rl').map((a: any) => JSON.parse(a.attributes('data-to'))))).toEqual(
+            [B1, B2, B3].map(branch => [{ name: 'ProductsOfOrg', params: { orguuid: ORG, compuuid: COMPONENT, branchuuid: branch } }]))
+
+        expect(print(GET_UPSTREAM_FOLLOW)).not.toContain('latestRelease')
+        w.unmount()
     })
 })

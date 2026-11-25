@@ -39,10 +39,7 @@
                             <tr v-for="line in item.lines" :key="line.lineKey" data-testid="upstream-follow-line">
                                 <td>{{ line.lineKey }}</td>
                                 <td><router-link v-if="branchLink(item, line)" :to="branchLink(item, line)">branch</router-link></td>
-                                <td>
-                                    <router-link v-if="isUuid(line.latestRelease)" :to="{ name: 'ReleaseView', params: { uuid: line.latestRelease } }">{{ line.latestVersion }}</router-link>
-                                    <span v-else>{{ line.latestVersion ?? '' }}</span>
-                                </td>
+                                <td data-testid="upstream-follow-line-latest">{{ line.latestVersion ?? '' }}</td>
                             </tr>
                         </tbody>
                     </n-table>

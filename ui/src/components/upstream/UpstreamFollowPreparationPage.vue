@@ -42,7 +42,7 @@
                         Its depth is {{ item.existingItem.depth }} and cannot be chosen again.
                     </div>
                     <n-radio-group v-else v-model:value="model.target" data-testid="upstream-confirm-target">
-                        <n-space vertical>
+                        <div class="upstream-choices">
                             <n-radio :value="ItemTarget.CREATE" data-testid="upstream-target-create">Create it in ReARM</n-radio>
                             <div v-if="model.target === ItemTarget.CREATE" class="upstream-indent">
                                 <n-input v-model:value="model.name" type="text" :maxlength="NAME_MAX + 1" placeholder="Name in ReARM" data-testid="upstream-confirm-name" />
@@ -55,7 +55,7 @@
                                     <div class="upstream-small">{{ adoptionSentence }}</div>
                                 </div>
                             </template>
-                        </n-space>
+                        </div>
                     </n-radio-group>
                 </section>
 
@@ -110,7 +110,7 @@
                                     </td>
                                     <td>
                                         <n-radio-group v-if="c.adoptionCandidates?.length" v-model:value="model.components[i].target" size="small">
-                                            <n-radio :value="ItemTarget.CREATE">Create</n-radio>
+                                            <n-radio :value="ItemTarget.CREATE" :data-testid="`upstream-component-create-${i}`">Create</n-radio>
                                             <n-radio :value="ItemTarget.ADOPT" :data-testid="`upstream-component-adopt-${i}`">Adopt</n-radio>
                                         </n-radio-group>
                                         <span v-else>Created</span>
@@ -130,7 +130,7 @@
                 <section data-testid="upstream-confirm-starting-point">
                     <h5>Starting point</h5>
                     <n-radio-group :value="model.backfill.kind" data-testid="upstream-backfill-kind" @update:value="onBackfillKind">
-                        <n-space vertical>
+                        <div class="upstream-choices">
                             <n-radio :value="BackfillKind.LATEST_PER_LINE" data-testid="upstream-backfill-LATEST_PER_LINE">The newest N releases of each version line</n-radio>
                             <div v-if="model.backfill.kind === BackfillKind.LATEST_PER_LINE" class="upstream-indent">
                                 <n-input-number v-model:value="model.backfill.count" :placeholder="`N, ${COUNT_MIN} to ${COUNT_MAX}`"
@@ -145,7 +145,7 @@
                             <div v-if="model.backfill.kind === BackfillKind.FROM_RELEASE" class="upstream-indent" data-testid="upstream-release-picker">
                                 <div v-if="releasesError" class="upstream-error">{{ releasesError }}</div>
                                 <n-radio-group v-model:value="model.backfill.release">
-                                    <n-space vertical :size="2">
+                                    <div class="upstream-choices upstream-choices-dense">
                                         <n-radio v-for="r in releases" :key="r.upstreamUuid" :value="r.upstreamUuid" :disabled="!isPickable(r)"
                                             data-testid="upstream-release-option">
                                             <template v-if="r.usable">{{ r.version }}</template>
@@ -153,14 +153,14 @@
                                             <span v-if="r.date" class="upstream-small"> {{ dateOf(r.date) }}</span>
                                             <span v-if="r.preRelease === 'YES'" class="upstream-small"> pre-release</span>
                                         </n-radio>
-                                    </n-space>
+                                    </div>
                                 </n-radio-group>
                                 <div class="upstream-small">{{ releases.length }} of {{ releasesTotal }} releases listed.</div>
                                 <n-button v-if="releasesCursor" size="small" :loading="releasesLoading" data-testid="upstream-releases-more" @click="loadReleases(releasesCursor)">
                                     Load more
                                 </n-button>
                             </div>
-                        </n-space>
+                        </div>
                     </n-radio-group>
                 </section>
 
@@ -508,6 +508,16 @@ async function prepareAgain () {
 <style scoped>
 .upstream-confirm-form section {
     margin-bottom: 20px;
+}
+/* A plain column, not n-space: n-space wraps every child in an element of one and the same key, so
+   a choice whose block comes and goes beside its radio leaves stale or doubled blocks (design 3.8). */
+.upstream-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.upstream-choices-dense {
+    gap: 2px;
 }
 .upstream-indent {
     margin-left: 24px;

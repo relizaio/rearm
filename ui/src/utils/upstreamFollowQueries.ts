@@ -29,7 +29,7 @@ export const UPSTREAM_ITEM_PROPOSAL_FIELDS = `
 
 export const UPSTREAM_ITEM_FIELDS = `
         uuid kind upstreamUuid upstreamName component depth depthOrigin mapping updateState
-        lines { lineKey branch latestRelease latestVersion }`
+        lines { lineKey branch latestVersion }`
 
 export const UPSTREAM_RUN_FIELDS = `
         uuid kind origin state stopReason sourceFailure message createdDate startedDate finishedDate sync

@@ -5,10 +5,12 @@
 // has no starting point, on-drift Stop and a disabled button that sends nothing; the scope preview
 // is asked 300 ms after the last change with exactly the values in the form, and the one confirm
 // carries those very values; a stale or over-the-limit preview blocks; a refusal keeps the form.
-// Supplier text is text, here and in the follows list.
+// Supplier text is text, here and in the follows list. T-531 to T-533 (design 3.8, one block of
+// controls per choice): after any change of choice the form holds the controls of the checked choice
+// only, once, and the confirm carries the values of the checked choices only.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { NInputNumber, NRadio } from 'naive-ui'
+import { NDatePicker, NInput, NInputNumber, NRadio, NSelect } from 'naive-ui'
 
 const query = vi.fn()
 const mutate = vi.fn()
@@ -490,6 +492,149 @@ describe('T-525 the preview and the one confirm', () => {
         expect(w.find('[data-testid="upstream-confirm-target"]').exists()).toBe(false)
         expect(w.find('[data-testid="upstream-depth-assessment"]').exists()).toBe(false)
         expect(JSON.parse(w.find('[data-testid="upstream-existing-link"]').attributes('data-to')!)).toEqual({ name: 'ProductsOfOrg', params: { orguuid: ORG, compuuid: CAND } })
+        w.unmount()
+    })
+})
+
+describe('T-531 to T-533 one block of controls per choice', () => {
+    const FAKE = { toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] } as any
+    const KINDS = ['LATEST_PER_LINE', 'FROM_DATE', 'FROM_RELEASE']
+    const BLOCKS: Record<string, string> = {
+        LATEST_PER_LINE: 'upstream-backfill-count',
+        FROM_DATE: 'upstream-backfill-day',
+        FROM_RELEASE: 'upstream-release-picker',
+    }
+    const VERSIONS = ['1.0.0', '1.1.0', '1.2.0', '1.3.0', '1.4.0', '1.5.0', '1.6.0']
+    const releaseUuid = (i: number) => `bbbbbbbb-0000-4000-8000-00000000000${i + 1}`
+    const sevenReleases = () => ({
+        data: {
+            upstreamFollowPreparationReleases: {
+                total: 7,
+                endCursor: null,
+                releases: VERSIONS.map((version, i) => ({ upstreamUuid: releaseUuid(i), version, date: `2026-0${i + 1}-01T00:00:00Z`, preRelease: 'NO', usable: true })),
+            },
+        },
+    })
+    const count = (testId: string) => document.querySelectorAll(`[data-testid="${testId}"]`).length
+    const checkedKind = () => KINDS.filter(k => (document.querySelector(`[data-testid="upstream-backfill-${k}"] input`) as HTMLInputElement | null)?.checked)
+    const VALUES: Record<string, any> = {
+        LATEST_PER_LINE: { kind: 'LATEST_PER_LINE', count: 3 },
+        FROM_DATE: { kind: 'FROM_DATE', date: '2026-03-01T00:00:00.000Z' },
+        FROM_RELEASE: { kind: 'FROM_RELEASE', release: releaseUuid(2) },
+    }
+
+    function expectOneStartingPointBlock (kind: string | null) {
+        expect(KINDS.map(k => count(`upstream-backfill-${k}`))).toEqual([1, 1, 1])
+        expect(checkedKind()).toEqual(kind ? [kind] : [])
+        for (const k of KINDS) expect(count(BLOCKS[k])).toBe(k === kind ? 1 : 0)
+        if (kind === 'FROM_RELEASE') {
+            const options = Array.from(document.querySelectorAll('[data-testid="upstream-release-option"]')).map(o => o.textContent!.trim())
+            expect(options).toHaveLength(VERSIONS.length)
+            expect(VERSIONS.map(v => options.filter(o => o.startsWith(v)).length)).toEqual(VERSIONS.map(() => 1))
+        }
+    }
+
+    async function chooseKind (w: any, kind: string) {
+        await w.find(`[data-testid="upstream-backfill-${kind}"] input`).setValue(true)
+        await flushPromises()
+    }
+
+    /** Completes the value of the checked kind and lets the preview go out. */
+    async function complete (w: any, kind: string) {
+        if (kind === 'LATEST_PER_LINE') {
+            w.findComponent(NInputNumber).vm.$emit('update:value', 3)
+        } else if (kind === 'FROM_DATE') {
+            const input = w.findComponent(NDatePicker).find('input')
+            await input.setValue('2026-03-01')
+            await input.trigger('blur')
+        } else {
+            await w.findAll('[data-testid="upstream-release-option"] input')[2].setValue(true)
+        }
+        await vi.advanceTimersByTimeAsync(300)
+        await flushPromises()
+    }
+
+    it.each([
+        ['a', ['LATEST_PER_LINE', 'FROM_DATE']],
+        ['b', ['LATEST_PER_LINE', 'FROM_RELEASE']],
+        ['c', ['FROM_DATE', 'FROM_RELEASE']],
+        ['d', ['FROM_RELEASE', 'LATEST_PER_LINE']],
+        ['e', ['LATEST_PER_LINE', 'FROM_DATE', 'FROM_RELEASE', 'LATEST_PER_LINE']],
+    ])('T-531 (%s) shows the controls of the checked starting point only, once', async (_name, sequence) => {
+        vi.useFakeTimers(FAKE)
+        scopeAnswers = sequence.map(() => scope(true))
+        releasePages = [sevenReleases()]
+        const w = await mountPage(preparation())
+        expectOneStartingPointBlock(null)
+        for (const kind of sequence) {
+            await chooseKind(w, kind)
+            expectOneStartingPointBlock(kind)
+            await complete(w, kind)
+            expectOneStartingPointBlock(kind)
+            const calls = scopeCalls()
+            expect(calls.length).toBeGreaterThan(0)
+            expect(calls[calls.length - 1][0].variables.backfill).toEqual(VALUES[kind])
+        }
+        w.unmount()
+    })
+
+    it('T-532 shows the control of the checked target only, once, for the root and for a component row', async () => {
+        const prep = preparation()
+        prep.item.adoptionCandidates = [{ component: CAND, name: 'Old suite', releases: 3, releasesWithUpstreamVersion: 2 }]
+        prep.components[0].adoptionCandidates = [{ component: CAND, name: 'Old core', releases: 3, releasesWithUpstreamVersion: 2 }]
+        const w = await mountPage(prep)
+        const expectRoot = (target: 'CREATE' | 'ADOPT') => {
+            expect([count('upstream-target-create'), count('upstream-target-adopt')]).toEqual([1, 1])
+            expect(count('upstream-confirm-name')).toBe(target === 'CREATE' ? 1 : 0)
+            expect(count('upstream-confirm-adopt')).toBe(target === 'ADOPT' ? 1 : 0)
+        }
+        expectRoot('CREATE')
+        for (const target of ['ADOPT', 'CREATE', 'ADOPT'] as const) {
+            await w.find(`[data-testid="upstream-target-${target.toLowerCase()}"] input`).setValue(true)
+            await flushPromises()
+            expectRoot(target)
+        }
+        expect(count('upstream-component-candidate-0')).toBe(0)
+        await w.find('[data-testid="upstream-component-adopt-0"] input').setValue(true)
+        await flushPromises()
+        expect(count('upstream-component-candidate-0')).toBe(1)
+        expectRoot('ADOPT')
+        await w.find('[data-testid="upstream-component-create-0"] input').setValue(true)
+        await flushPromises()
+        expect(count('upstream-component-candidate-0')).toBe(0)
+        expectRoot('ADOPT')
+        w.unmount()
+    })
+
+    it('T-533 confirms the values of the checked choices only', async () => {
+        vi.useFakeTimers(FAKE)
+        scopeAnswers = [scope(true), scope(true), scope(true)]
+        const prep = preparation()
+        prep.item.adoptionCandidates = [{ component: CAND, name: 'Old suite', releases: 3, releasesWithUpstreamVersion: 2 }]
+        const w = await mountPage(prep)
+        await chooseKind(w, 'LATEST_PER_LINE')
+        w.findComponent(NInputNumber).vm.$emit('update:value', 3)
+        await chooseKind(w, 'FROM_DATE')
+        const day = w.findComponent(NDatePicker).find('input')
+        await day.setValue('2026-03-01')
+        await day.trigger('blur')
+        w.findComponent(NInput).vm.$emit('update:value', 'Renamed suite')
+        await w.find('[data-testid="upstream-target-adopt"] input').setValue(true)
+        await flushPromises()
+        const adopt = w.findAllComponents(NSelect).find((s: any) => s.attributes('data-testid') === 'upstream-confirm-adopt')!
+        adopt.vm.$emit('update:value', CAND)
+        await vi.advanceTimersByTimeAsync(300)
+        await flushPromises()
+        expect(followButton(w).attributes('disabled')).toBeUndefined()
+        await followButton(w).trigger('click')
+        await flushPromises()
+        expect(confirmCalls()).toHaveLength(1)
+        const follow = confirmCalls()[0][0].variables.follow
+        expect(follow.backfill).toStrictEqual({ kind: 'FROM_DATE', date: '2026-03-01T00:00:00.000Z' })
+        const calls = scopeCalls()
+        expect(follow.backfill).toStrictEqual(calls[calls.length - 1][0].variables.backfill)
+        expect(follow.adopt).toBe(CAND)
+        expect('name' in follow).toBe(false)
         w.unmount()
     })
 })
