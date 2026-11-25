@@ -7,7 +7,7 @@
 // every 5 seconds while the run is open and never sends a mutation.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { print } from 'graphql'
+import { print, visit } from 'graphql'
 
 const query = vi.fn()
 const mutate = vi.fn()
@@ -338,5 +338,26 @@ describe('T-530 the latest version of a line is text', () => {
 
         expect(print(GET_UPSTREAM_FOLLOW)).not.toContain('latestRelease')
         w.unmount()
+    })
+
+    // Mutation round 3 (M-18): the cell shows latestVersion, so the follow document must still ask for it.
+    it('asks for exactly lineKey, branch and latestVersion of the lines of the item and of each component', () => {
+        const lineSelections: Record<string, string[]> = {}
+        const parents: string[] = []
+        visit(GET_UPSTREAM_FOLLOW, {
+            Field: {
+                enter (node) { parents.push(node.name.value) },
+                leave (node) {
+                    parents.pop()
+                    if (node.name.value === 'lines') {
+                        lineSelections[parents[parents.length - 1]] = (node.selectionSet?.selections ?? []).map((s: any) => s.name.value)
+                    }
+                },
+            },
+        })
+        expect(lineSelections).toEqual({
+            item: ['lineKey', 'branch', 'latestVersion'],
+            components: ['lineKey', 'branch', 'latestVersion'],
+        })
     })
 })
