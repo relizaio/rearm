@@ -68,6 +68,7 @@
                                 <span>Scope <n-icon :component="QuestionCircle20Regular" size="14" style="vertical-align: middle;" /></span>
                             </template>
                             How broadly this VEX claim applies. Component (default) covers every release of this release's component. Branch and Release narrow it further. Organization applies the claim to every release in the organization that contains the affected package.
+                            Each scope needs Finding Analysis write: Component on this component; Release on this release (or its component); Branch and Organization on the organization.
                         </n-tooltip>
                     </template>
                     <n-select v-model:value="artifact.vexScope" :options="vexScopeOptions" />
@@ -86,7 +87,7 @@
                         <n-radio value="AUTO_ACCEPT">
                             <n-tooltip trigger="hover" placement="bottom" :style="{ maxWidth: '360px' }">
                                 <template #trigger><span>Auto-accept</span></template>
-                                Each statement is applied as a finding-analysis decision immediately. The trust gate may still stage some statements (e.g., a vendor's "not affected" claim) — those land in the VEX inbox for manual review.
+                                Each statement is applied as a finding-analysis decision immediately. The trust gate may still stage some statements (e.g., a vendor's "not affected" claim) — those land in the VEX inbox for manual review. Statements take effect only if you hold Finding Analysis write at the chosen scope.
                             </n-tooltip>
                         </n-radio>
                         <n-radio value="STAGE">
@@ -111,6 +112,7 @@
                                 <span>Issuer class <n-icon :component="QuestionCircle20Regular" size="14" style="vertical-align: middle;" /></span>
                             </template>
                             Who is making this VEX claim. <strong>Vendor</strong> is the cautious default (quiet "not affected" claims get staged for review, loud "exploitable" claims auto-accept). Pick <strong>Self</strong> when you wrote this VEX about your own software. Pick <strong>Third party</strong> for fully untrusted sources — everything stages.
+                            {{ ISSUER_OVERRIDE_HINT }}
                         </n-tooltip>
                     </template>
                     <n-select
@@ -119,6 +121,9 @@
                         clearable
                         placeholder="Auto-detect from binding" />
                 </n-form-item>
+                <n-text depth="3" style="font-size: 12px; display: block;" data-testid="import-permission-note">
+                    {{ IMPORT_PERMISSION_NOTE }}
+                </n-text>
             </n-card>
             <n-card v-if="artifact.type === 'SAFETY_CONTEXT'"
                 title="Safety context import settings"
@@ -130,12 +135,22 @@
                     A CycloneDX 2.0 document declaring safety integrity levels for this release's components. Levels are
                     recorded as the issuer's declaration; ReARM does not verify them. Defaults suit most uploads.
                 </n-text>
-                <n-form-item label="Scope">
+                <n-form-item>
+                    <template #label>
+                        <n-tooltip trigger="hover" placement="top" :style="{ maxWidth: '360px' }">
+                            <template #trigger>
+                                <span>Scope <n-icon :component="QuestionCircle20Regular" size="14" style="vertical-align: middle;" /></span>
+                            </template>
+                            Which releases a level applies to. Each scope needs Finding Analysis write: Component on this
+                            component; Release on this release (or its component); Branch and Organization on the
+                            organization.
+                        </n-tooltip>
+                    </template>
                     <n-select v-model:value="safetyImport.scope" :options="safetyScopeOptions" />
                 </n-form-item>
                 <n-form-item label="Import mode">
                     <n-radio-group v-model:value="safetyImport.mode">
-                        <n-radio value="AUTO_ACCEPT">Auto-accept where the trust rules allow (Self and most Vendor levels are accepted without review)</n-radio>
+                        <n-radio value="AUTO_ACCEPT">Auto-accept where the trust rules allow (Self and most Vendor levels are accepted without review; levels take effect only if you hold Finding Analysis write at the chosen scope)</n-radio>
                         <n-radio value="STAGE">Stage all for review</n-radio>
                         <n-radio value="REJECT">Reject all</n-radio>
                     </n-radio-group>
@@ -146,15 +161,18 @@
                             <template #trigger>
                                 <span>Issuer class <n-icon :component="QuestionCircle20Regular" size="14" style="vertical-align: middle;" /></span>
                             </template>
-                            Leave empty to use the upload's own class: Self when the file is attached to this release, a
-                            deliverable or a source code entry. An override needs Finding Analysis write permission and is
-                            recorded on every level. Self auto-accepts; Vendor auto-accepts unless the level is the scheme's
-                            lowest, unrecognised or custom; Third party stages everything.
+                            Leave empty to use the upload's own class: Self when the file is attached to this release, an
+                            outbound deliverable or a source code entry; Vendor for an inbound deliverable. {{ ISSUER_OVERRIDE_HINT }}
+                            An override is recorded on every level. Self auto-accepts; Vendor auto-accepts unless the level
+                            is the scheme's lowest, unrecognised or custom; Third party stages everything.
                         </n-tooltip>
                     </template>
                     <n-select v-model:value="safetyImport.issuer" :options="safetyIssuerOptions" clearable
                         placeholder="Use the upload's own class" />
                 </n-form-item>
+                <n-text depth="3" style="font-size: 12px; display: block;" data-testid="import-permission-note">
+                    {{ IMPORT_PERMISSION_NOTE }}
+                </n-text>
             </n-card>
             <n-form-item
                         path="version"
@@ -239,6 +257,8 @@ import Swal from 'sweetalert2'
 import commonFunctions from '../utils/commonFunctions'
 import { chosenUploadFile } from '@/utils/artifactNewVersion'
 import constants from '@/utils/constants'
+import { ADD_ARTIFACT_WITH_IMPORT_SUMMARY, UPDATE_ARTIFACT_WITH_IMPORT_SUMMARY } from '@/graphql/artifactImport'
+import { importOutcomeLines, IMPORT_PERMISSION_NOTE, ISSUER_OVERRIDE_HINT } from '@/utils/importOutcome'
 
 const isUploading = ref(false)
 
@@ -310,19 +330,19 @@ const artifact: Ref<any>= ref({
 })
 
 const vexScopeOptions = [
-    { label: 'Component (default — this release\'s component, all branches)', value: 'COMPONENT' },
-    { label: 'Organization (every release in the org)', value: 'ORG' },
-    { label: 'Branch (this release\'s branch only)', value: 'BRANCH' },
-    { label: 'Release (only this specific release)', value: 'RELEASE' },
+    { label: 'Component (default — this release\'s component, all branches; Finding Analysis write on this component)', value: 'COMPONENT' },
+    { label: 'Organization (every release in the org; Finding Analysis write on the organization)', value: 'ORG' },
+    { label: 'Branch (this release\'s branch only; Finding Analysis write on the organization)', value: 'BRANCH' },
+    { label: 'Release (only this specific release; Finding Analysis write on this release or its component)', value: 'RELEASE' },
 ]
 // SAFETY_CONTEXT import controls, kept apart from the VEX ones: VEX defaults the issuer
 // override to VENDOR, while a safety upload defaults to no override (its binding decides).
 const safetyImport = ref({ scope: 'COMPONENT', mode: 'AUTO_ACCEPT', issuer: null as string | null })
 const safetyScopeOptions = [
-    { label: 'Component (default: this release\'s component)', value: 'COMPONENT' },
-    { label: 'Release (only this release)', value: 'RELEASE' },
-    { label: 'Branch (needs Finding Analysis write, otherwise staged)', value: 'BRANCH' },
-    { label: 'Organization (needs Finding Analysis write, otherwise staged)', value: 'ORG' },
+    { label: 'Component (default: this release\'s component; Finding Analysis write on this component)', value: 'COMPONENT' },
+    { label: 'Release (only this release; Finding Analysis write on this release or its component)', value: 'RELEASE' },
+    { label: 'Branch (Finding Analysis write on the organization)', value: 'BRANCH' },
+    { label: 'Organization (Finding Analysis write on the organization)', value: 'ORG' },
 ]
 
 const safetyIssuerOptions = [
@@ -444,23 +464,19 @@ const onSubmit = async () => {
     // artifact (and its import summary) in the mutation response below.
     const submittedDisplayId = artifact.value.displayIdentifier
     const isVex = artifact.value.type === 'VEX'
-    // For a VEX upload, ask the mutation for the resulting artifacts + their
-    // import summary so we can report matched / unmatched counts.
-    const releaseBody = isVex
-        ? `uuid artifactDetails { uuid displayIdentifier type vexImportSummary { statementsTotal proposalsCreated proposalsAutoAccepted proposalsAutoRejected attestationsDeferred statementsUnmatched statementsErrored errorMessages } }`
-        : isSafetyContext
-            ? `uuid artifactDetails { uuid displayIdentifier type importSummary { statementsTotal proposalsCreated proposalsAutoAccepted proposalsAutoRejected statementsUnchanged statementsUnmatched statementsErrored errorMessages } }`
-            : `uuid`
+    // For an import (VEX, SAFETY_CONTEXT), ask the mutation for the resulting artifacts + their
+    // import summary so we can report what was applied, what was staged and why.
+    const runsImport = isVex || isSafetyContext
 
     isUploading.value = true
     try{
         let mutationResult: any
         if(props.isUpdateExistingBom){
             mutationResult = await graphqlClient.mutate({
-                mutation: gql`
+                mutation: runsImport ? UPDATE_ARTIFACT_WITH_IMPORT_SUMMARY : gql`
                     mutation addArtifactManual($artifactInput: CreateArtifactInput, $artifactUuid: ID!) {
                         addArtifactManual(artifactInput: $artifactInput, artifactUuid: $artifactUuid) {
-                            ${releaseBody}
+                            uuid
                         }
                     }`,
                 variables: {
@@ -472,10 +488,10 @@ const onSubmit = async () => {
             emit('addArtifact')
         }else {
             mutationResult = await graphqlClient.mutate({
-                mutation: gql`
+                mutation: runsImport ? ADD_ARTIFACT_WITH_IMPORT_SUMMARY : gql`
                     mutation addArtifactManual($artifactInput: CreateArtifactInput) {
                         addArtifactManual(artifactInput: $artifactInput) {
-                            ${releaseBody}
+                            uuid
                         }
                     }`,
                 variables: {
@@ -503,6 +519,28 @@ const onSubmit = async () => {
     }
 };
 
+// The outcome text, followed by one line per reason statements were staged and whether the issuer
+// override was applied (importOutcomeLines). Built as elements so server text is never parsed as HTML.
+function outcomeContent(text: string, summary: any): HTMLElement {
+    const box = document.createElement('div')
+    const p = document.createElement('p')
+    p.textContent = text
+    box.appendChild(p)
+    const lines = importOutcomeLines(summary)
+    if (lines.length) {
+        const ul = document.createElement('ul')
+        ul.setAttribute('data-testid', 'import-outcome-reasons')
+        ul.style.textAlign = 'left'
+        for (const line of lines) {
+            const li = document.createElement('li')
+            li.textContent = line
+            ul.appendChild(li)
+        }
+        box.appendChild(ul)
+    }
+    return box
+}
+
 // Report the SAFETY_CONTEXT import outcome (synchronous, like VEX).
 function showSafetyOutcome(release: any, displayId: string) {
     const s = (release?.artifactDetails ?? [])
@@ -520,8 +558,8 @@ function showSafetyOutcome(release: any, displayId: string) {
     Swal.fire({
         icon: s.statementsErrored ? 'warning' : 'success',
         title: 'Safety context processed',
-        text: `${parts.join(' ')} ${messages} Levels are the issuer's declaration; ReARM does not verify them. `
-            + 'Open the Safety Context tab on this release to review.'
+        html: outcomeContent(`${parts.join(' ')} ${messages} Levels are the issuer's declaration; ReARM does not verify them. `
+            + 'Open the Safety Context tab on this release to review.', s)
     })
 }
 
@@ -532,8 +570,8 @@ function showVexOutcome(release: any, displayId: string) {
     const artifacts = release?.artifactDetails ?? []
     const vexArtifact = artifacts
         .filter((a: any) => a?.type === 'VEX' && a?.displayIdentifier === displayId)
-        .find((a: any) => a?.vexImportSummary)
-    const s = vexArtifact?.vexImportSummary
+        .find((a: any) => a?.importSummary)
+    const s = vexArtifact?.importSummary
 
     if (!s) {
         // No summary available (older backend, or nothing to summarize): keep it
@@ -573,7 +611,7 @@ function showVexOutcome(release: any, displayId: string) {
         if (unmatched > 0) parts.push(`${unmatched} unmatched: the VEX product PURLs / versions do not correspond to any component in this release's SBOM -- check that the VEX targets the same PURLs (including version) that appear in the SBOM.`)
         if (errored > 0) parts.push(`${errored} could not be processed.`)
         if (details) parts.push(details)
-        Swal.fire({ icon: 'warning', title: 'No VEX statements matched', text: parts.join(' '), showConfirmButton: true })
+        Swal.fire({ icon: 'warning', title: 'No VEX statements matched', html: outcomeContent(parts.join(' '), s), showConfirmButton: true })
         return
     }
 
@@ -593,10 +631,12 @@ function showVexOutcome(release: any, displayId: string) {
         ? ' Conditional claims apply after their control is attested in the Mitigation Attestations inbox.'
         : ''
     const suffix = details && errored > 0 ? ` ${details}` : ''
+    const reasons = importOutcomeLines(s)
     Swal.fire({
         icon: 'success', title: 'VEX processed',
-        text: `${total} statement${total === 1 ? '' : 's'}${breakdown}. Open the VEX tab to review.${deferredHint}${suffix}`,
-        timer: deferred > 0 ? 10000 : 7000, showConfirmButton: true,
+        html: outcomeContent(`${total} statement${total === 1 ? '' : 's'}${breakdown}. Open the VEX tab to review.${deferredHint}${suffix}`, s),
+        // A dialog that explains why statements were staged stays until it is closed.
+        timer: reasons.length ? undefined : (deferred > 0 ? 10000 : 7000), showConfirmButton: true,
     })
 }
 

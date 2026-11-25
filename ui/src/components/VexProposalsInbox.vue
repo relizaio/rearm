@@ -1,12 +1,13 @@
 <template>
     <n-card title="VEX Statement Proposals">
-        <n-tabs v-model:value="statusFilter" type="segment" animated>
-            <n-tab-pane name="PENDING" tab="Pending" />
-            <n-tab-pane name="ACCEPTED" tab="Accepted" />
-            <n-tab-pane name="REJECTED" tab="Rejected" />
-            <n-tab-pane name="SUPERSEDED" tab="Superseded" />
-            <n-tab-pane name="ERRORED" tab="Errored" />
-        </n-tabs>
+        <n-radio-group v-model:value="statusFilter" size="small" style="margin-bottom: 8px;"
+            data-testid="vex-proposals-status-filter">
+            <n-radio-button value="PENDING">Pending</n-radio-button>
+            <n-radio-button value="ACCEPTED">Accepted</n-radio-button>
+            <n-radio-button value="REJECTED">Rejected</n-radio-button>
+            <n-radio-button value="SUPERSEDED">Superseded</n-radio-button>
+            <n-radio-button value="ERRORED">Errored</n-radio-button>
+        </n-radio-group>
 
         <n-data-table
             :columns="columns"
@@ -14,6 +15,35 @@
             :loading="loading"
             :row-key="(row: any) => row.uuid"
         />
+
+        <n-collapse v-if="isOrgAdmin" style="margin-top: 16px;" data-testid="vex-import-audit">
+            <n-collapse-item title="Import audit" name="import-audit">
+                <n-text depth="3" style="font-size: 12px; display: block; margin-bottom: 8px;">
+                    Accepted VEX statements at Organization or Branch scope, or with a suppressing state, whose accepting
+                    credential cannot be shown to hold Finding Analysis write at the statement's scope now. Permissions
+                    are judged now, not at acceptance time. Statements accepted before this audit existed do not name
+                    the key that accepted them: a user key's import shows its owner under Acted by and never reads Yes;
+                    a statement whose mitigation attestation completed after the accept reads Unknown. Read-only.
+                </n-text>
+                <n-space align="center" style="margin-bottom: 8px;">
+                    <n-button size="small" type="primary" :loading="auditLoading" @click="runAudit">Run</n-button>
+                    <n-checkbox v-model:checked="auditIncludeHeld">Show held too</n-checkbox>
+                </n-space>
+                <n-alert v-if="auditError" type="error" style="margin-bottom: 8px;">{{ auditError }}</n-alert>
+                <n-alert v-if="audit?.truncated" type="warning" style="margin-bottom: 8px;"
+                    data-testid="vex-import-audit-truncated">
+                    Results truncated at 5000; the newest are shown.
+                </n-alert>
+                <n-data-table
+                    v-if="audit"
+                    size="small"
+                    :columns="auditColumns"
+                    :data="audit.rows"
+                    :row-key="(row: any) => row.proposal"
+                    data-testid="vex-import-audit-rows"
+                />
+            </n-collapse-item>
+        </n-collapse>
     </n-card>
 </template>
 
@@ -25,11 +55,13 @@ export default {
 <script lang="ts" setup>
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, NIcon, NTabs, NTabPane, NTag, NTooltip } from 'naive-ui'
+import { useStore } from 'vuex'
+import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NIcon, NRadioButton, NRadioGroup, NSpace, NTag, NText, NTooltip } from 'naive-ui'
 import { Eye } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
+import commonFunctions from '@/utils/commonFunctions'
 import { useOrgUsersIndex } from '@/utils/userLookup'
-import { GET_VEX_PROPOSALS } from '@/graphql/vexImport'
+import { GET_VEX_IMPORT_AUTHORITY_REPORT, GET_VEX_PROPOSALS } from '@/graphql/vexImport'
 
 const route = useRoute()
 const router = useRouter()
@@ -55,6 +87,85 @@ async function fetchProposals () {
 
 onMounted(fetchProposals)
 watch([statusFilter, orgUuid], fetchProposals)
+
+// Import audit (org admins): the server gates the report on organization admin; the card is shown
+// only to them so nobody else is offered a button that is always refused. acceptedBy and actedBy are
+// a user or a key; formatUser names a user of the org and shows anything else (a key) by its id.
+const store = useStore()
+const isOrgAdmin = computed((): boolean => {
+    const perm = store.getters.myuser?.permissions?.permissions?.find((p: any) =>
+        p.scope === 'ORGANIZATION' && p.org === orgUuid.value && p.object === orgUuid.value)
+    return perm?.type === 'ADMIN'
+})
+const audit = ref<{ rows: any[], truncated: boolean } | null>(null)
+const auditIncludeHeld = ref(false)
+const auditLoading = ref(false)
+const auditError = ref('')
+
+async function runAudit () {
+    auditLoading.value = true
+    auditError.value = ''
+    try {
+        const r: any = await graphqlClient.query({
+            query: GET_VEX_IMPORT_AUTHORITY_REPORT,
+            variables: { org: orgUuid.value, includeHeld: auditIncludeHeld.value },
+            fetchPolicy: 'no-cache'
+        })
+        audit.value = r.data?.vexImportAuthorityReport ?? { rows: [], truncated: false }
+    } catch (err: any) {
+        audit.value = null
+        auditError.value = commonFunctions.parseGraphQLError(err?.message ?? String(err))
+    } finally {
+        auditLoading.value = false
+    }
+}
+
+// A new org or a changed toggle invalidates the shown result; the next Run reads it again.
+watch([orgUuid, auditIncludeHeld], () => { audit.value = null; auditError.value = '' })
+
+const ACCEPTED_BY_KIND_TEXT: Record<string, string> = {
+    USER: 'User', USER_KEY: 'User key', FREEFORM_KEY: 'Freeform key', FEDERATED_KEY: 'Federated key',
+    COMPONENT_KEY: 'Component key', ORGANIZATION_RW_KEY: 'Organization read-write key', OTHER_KEY: 'Other key', NONE: 'Not recorded'
+}
+const HOLDS_NOW_TEXT: Record<string, string> = { YES: 'Yes', NO: 'No', UNKNOWN: 'Unknown' }
+
+// The scope with its resolved name where the inbox already resolves it (the proposal is in the list on
+// screen, e.g. under Accepted); otherwise the scope and its uuid.
+const shownProposals = computed((): Record<string, any> =>
+    Object.fromEntries(proposals.value.map((p: any) => [p.uuid, p])))
+
+function auditScope (r: any) {
+    const shown = shownProposals.value[r.proposal]
+    if (shown) return renderScope(shown)
+    const tag = h(NTag, { size: 'small', round: true, style: 'margin-right: 6px;' }, () => r.scope)
+    return r.scope === 'ORG' ? tag : h('span', {}, [tag, h('span', { class: 'text-muted' }, r.scopeUuid)])
+}
+
+const auditColumns = [
+    { title: 'Finding', key: 'findingId' },
+    { title: 'Location', key: 'location' },
+    { title: 'Scope', key: 'scope', render: (r: any) => auditScope(r) },
+    { title: 'State', key: 'analysisState' },
+    { title: 'Accepted at', key: 'acceptedAt', render: (r: any) => r.acceptedAt ? new Date(r.acceptedAt).toLocaleString() : '—' },
+    { title: 'Accepted via', key: 'acceptedVia', render: (r: any) => r.acceptedVia === 'IMPORT' ? 'Import' : r.acceptedVia === 'MANUAL' ? 'Manual' : '—' },
+    { title: 'Accepted by kind', key: 'acceptedByKind', render: (r: any) => ACCEPTED_BY_KIND_TEXT[r.acceptedByKind] ?? r.acceptedByKind },
+    { title: 'Accepted by', key: 'acceptedBy', render: (r: any) => formatUser(r.acceptedBy) },
+    { title: 'Acted by', key: 'actedBy', render: (r: any) => formatUser(r.actedBy) },
+    {
+        title: 'Holds now',
+        key: 'holdsFindingAnalysisWriteNow',
+        render: (r: any) => {
+            const v = r.holdsFindingAnalysisWriteNow
+            const type = v === 'YES' ? 'success' : v === 'NO' ? 'error' : 'warning'
+            return h(NTag, { type, size: 'small', round: true }, () => HOLDS_NOW_TEXT[v] ?? v)
+        }
+    },
+    {
+        title: 'Still as accepted',
+        key: 'analysisStillAsAccepted',
+        render: (r: any) => r.analysisStillAsAccepted === true ? 'Yes' : r.analysisStillAsAccepted === false ? 'No' : '—'
+    }
+]
 
 // Scope display: the backend resolves scope+scopeUuid into component / branch /
 // release names (batched -- see VexProposalScopeResolver). Show the MOST
