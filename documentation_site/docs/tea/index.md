@@ -443,6 +443,10 @@ In a pipeline, set `REARM_TEA_APIKEY` from the secret store of the CI system, or
 - **The ReARM API credentials are not used.** `-i`, `-k`, `REARM_APIKEYID`, `REARM_APIKEY`, `REARM_API_ID`, `REARM_API_KEY` and a `rearm login` session belong to the ReARM API: the `tea` commands do not read them and never send them to a TEA server. Mind the names: `REARM_APIKEYID` is the ReARM API key id, `REARM_TEA_APIKEYID` the external key id. An external key given in `-i` and `-k` is ignored by the `tea` commands.
 - **Plain http.** With `--usehttp` an `http` root is accepted on the local origin the flags allow and nowhere else, and the credential then travels in clear text: for a server on your own machine only.
 
+### Reading a supplier's server into ReARM (ReARM Pro)
+
+ReARM Pro can do this reading itself: an organization adds a supplier's TEA server as an upstream source, follows a product or a component on it, and ReARM ingests the releases and their documents and keeps them up to date. See [Supplier Intake over TEA](../workflows/supplier-intake).
+
 ## Deploying TEA
 
 The TEA endpoints are always mounted on ReARM Pro, but an organization is served only once its administrator chooses a [serving mode](#serving-modes): every organization starts as **Not served**, existing organizations included after the upgrade that brings serving modes, and answers `404` with `OBJECT_UNKNOWN` on every TEA path until then. On ReARM Community Edition there are no serving modes: an organization is served at `<your ReARM URL>/tea/<organization TEA id>` once it has a TEA id. Custom domains take the steps of [Upgrading and the order of steps](#upgrading-and-the-order-of-steps). What a consumer meets on the base the organization is served at depends on the organization:

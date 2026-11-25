@@ -28,6 +28,7 @@ function sidebar() {
           {text: 'License Compliance', link: '/workflows/license-compliance'},
           {text: 'Auditing Findings', link: '/workflows/auditing-findings'},
           {text: 'Importing VEX', link: '/workflows/importing-vex'},
+          {text: 'Supplier Intake over TEA', link: '/workflows/supplier-intake'},
           {text: 'Supply Chain Forensics', link: '/workflows/supply-chain-forensics'},
           {text: 'Exporting Compliance Artifacts', link: '/workflows/exporting-compliance-artifacts'},
           {text: 'Regulatory Packages and Submissions', link: '/workflows/regulatory-packages'},
