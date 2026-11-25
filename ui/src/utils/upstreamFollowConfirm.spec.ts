@@ -163,6 +163,12 @@ describe('initialConfirmModel and confirmBlockers (T-522)', () => {
         expect(confirmBlockers({ ...model, components }, prep, scope, NOW)).toContain(componentAdoptRequired('acme-core'))
     })
 
+    it('isBlockedByAComponentAdoptionWithoutACandidateWhileTheRootAdoptsOne', () => {
+        const { prep, model, scope } = complete()
+        const components = model.components.map((c, i) => i === 0 ? { ...c, target: ItemTarget.ADOPT, adopt: null } : c)
+        expect(confirmBlockers({ ...model, target: ItemTarget.ADOPT, adopt: CAND, components }, prep, scope, NOW)).toEqual([componentAdoptRequired('acme-core')])
+    })
+
     it('isNotBlockedByAnAdoptionLeftOnAComponentThatFailedOrIsAlreadyInReARM', () => {
         for (const extra of [{ failure: 'SOURCE_FAILURE' }, { existingItem: { uuid: 'i', component: CAND, depth: 1, depthOrigin: 'CHOSEN', updateState: 'UPDATED' } }]) {
             const { prep, model, scope } = complete()
