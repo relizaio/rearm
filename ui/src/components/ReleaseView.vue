@@ -4206,11 +4206,7 @@ async function approve(approvals: ApprovalInput[]) {
             notify('success', 'Saved', 'Approvals Saved.')
         }
     }).catch(error => {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(error.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(error.message), icon: 'error' })
         emit('closeRelease')
     }).finally(() => {
         approvalPending.value = false
@@ -4479,7 +4475,7 @@ async function withTeaProgress (act: TeaAct, view: any, run: () => Promise<void>
     try {
         await run()
     } catch (err: any) {
-        await Swal.fire('Error!', teaActErrorText(err), 'error')
+        await Swal.fire({ titleText: 'Error!', text: teaActErrorText(err), icon: 'error' })
     } finally {
         teaActing.value = null
     }
@@ -4636,11 +4632,7 @@ async function requestApprovals () {
         await loadApprovalRequests()
         notify('success', 'Requested', 'Approval request sent to eligible approvers.')
     } catch (error: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(error.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(error.message), icon: 'error' })
     } finally {
         requestApprovalsPending.value = false
     }
@@ -5753,11 +5745,7 @@ async function save() {
             notify('success', 'Saved', 'Release saved.')
         } catch (err: any) {
             updatedRelease.value = deepCopyRelease(release.value)
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(err.message),
-                'error'
-            )
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
             console.error(err)
         }
     } else if (release.value.notes !== updatedRelease.value.notes ||
@@ -5768,11 +5756,7 @@ async function save() {
             notify('success', 'Saved', 'Release saved.')
         } catch (err: any) {
             updatedRelease.value = deepCopyRelease(release.value)
-            Swal.fire(
-                'Error!',
-                commonFunctions.parseGraphQLError(err.message),
-                'error'
-            )
+            Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
             console.error(err)
         }
     } else {
@@ -6448,11 +6432,7 @@ async function uploadNewBomVersion (art: any) {
             ?? (hasLostStoredBom(art, isBomArtifact) ? artifactBelongsToForRow(art.belongsTo) : undefined)
         deliverableAddArtifactSceId.value = art.belongsToUUID
     }else{
-        Swal.fire(
-            'Cancelled',
-            'Cancelled Artifact Update',
-            'error'
-        )
+        Swal.fire({ titleText: 'Cancelled', text: 'Cancelled Artifact Update', icon: 'error' })
     }
     
 }
@@ -6473,9 +6453,8 @@ async function exportDeviceSupportStatement () {
         bomExportPending.value = true
         const orgUuid = updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid
         if (!orgUuid) {
-            Swal.fire('Statement not generated',
-                'This release did not carry an organization, so the required text cannot be'
-                + ' resolved. Reload the page and try again.', 'error')
+            Swal.fire({ titleText: 'Statement not generated', text: 'This release did not carry an organization, so the required text cannot be'
+                + ' resolved. Reload the page and try again.', icon: 'error' })
             return
         }
         // Collect, refuse, render, download -- all four in the shared helper, which the
@@ -6486,12 +6465,12 @@ async function exportDeviceSupportStatement () {
             releaseUuid: updatedRelease.value.uuid, orgUuid
         })
         if (!outcome.ok) {
-            Swal.fire('Statement not generated', outcome.message, outcome.kind === 'BLOCKED' ? 'warning' : 'error')
+            Swal.fire({ titleText: 'Statement not generated', text: outcome.message, icon: outcome.kind === 'BLOCKED' ? 'warning' : 'error' })
             return
         }
         notify('success', 'Statement exported', 'Device support statement downloaded.')
     } catch (err: any) {
-        Swal.fire('Error!', commonFunctions.extractGraphQLErrorMessage(err), 'error')
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.extractGraphQLErrorMessage(err), icon: 'error' })
     } finally {
         bomExportPending.value = false
     }
@@ -6518,15 +6497,14 @@ async function exportFdaAddendum (mediaType: string) {
             // Refused in the same voice as every other refusal. Without this the operator
             // gets a raw GraphQL variable-coercion message about $orgUuid, which reads as a
             // server fault rather than as "this release did not carry its org".
-            Swal.fire('Addendum not generated',
-                'This release did not carry an organization, so the labeling statements'
-                + ' cannot be resolved. Reload the page and try again.', 'error')
+            Swal.fire({ titleText: 'Addendum not generated', text: 'This release did not carry an organization, so the labeling statements'
+                + ' cannot be resolved. Reload the page and try again.', icon: 'error' })
             return
         }
         const result = await collectAddendumData(
             graphqlClient as any, updatedRelease.value.uuid, orgUuid)
         if (!result.ok) {
-            Swal.fire('Addendum not generated', result.error, 'error')
+            Swal.fire({ titleText: 'Addendum not generated', text: result.error, icon: 'error' })
             return
         }
         // The collection is identical for both encodings -- only the rendering differs -- so
@@ -6539,7 +6517,7 @@ async function exportFdaAddendum (mediaType: string) {
         // complete -- while the CSV for the same release shows the text.
         const unrenderable = asPdf ? findUnrenderableText(result.data) : null
         if (unrenderable) {
-            Swal.fire('Addendum not generated', unrenderable, 'error')
+            Swal.fire({ titleText: 'Addendum not generated', text: unrenderable, icon: 'error' })
             return
         }
         const blob = asPdf
@@ -6565,7 +6543,7 @@ async function exportFdaAddendum (mediaType: string) {
         // refusal, so err may be anything -- and parseGraphQLError calls startsWith on its
         // argument, throwing a TypeError out of the catch itself when there is no string
         // message. That exact defect was found on the previous PR in this feature.
-        Swal.fire('Error!', commonFunctions.extractGraphQLErrorMessage(err), 'error')
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.extractGraphQLErrorMessage(err), icon: 'error' })
     } finally {
         bomExportPending.value = false
     }
@@ -6771,14 +6749,10 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
     } catch (err: any) {
         if (fileComponentsSwitch.latchRefusal(err)) {
             // This server cannot leave the files out; nothing was exported. Say why.
-            Swal.fire('Error!', err.message, 'error')
+            Swal.fire({ titleText: 'Error!', text: err.message, icon: 'error' })
             return
         }
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         bomExportPending.value = false
     }
@@ -6805,11 +6779,7 @@ async function triggerReleaseCompletionFinalizer() {
             await fetchRelease()
         }
     } catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         refreshPending.value = false
     }
@@ -6837,11 +6807,7 @@ async function exportReleaseObom () {
         link.click()
         notify('info', 'Processing Download', 'Your artifact is being downloaded...')
     } catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         bomExportPending.value = false
     }
@@ -6875,11 +6841,7 @@ async function exportReleaseCle () {
         link.click()
         notify('info', 'Processing Download', 'Your CLE document is being downloaded...')
     } catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         bomExportPending.value = false
     }
@@ -6991,11 +6953,7 @@ async function exportReleaseVex () {
         window.URL.revokeObjectURL(link.href)
         notify('info', 'Processing Download', 'Your VEX is being downloaded...')
     } catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         bomExportPending.value = false
     }
@@ -7085,11 +7043,7 @@ async function exportReleaseVdr () {
         window.URL.revokeObjectURL(link.href)
         notify('info', 'Processing Download', 'Your VDR is being downloaded...')
     } catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         bomExportPending.value = false
     }
@@ -7260,11 +7214,7 @@ async function exportReleaseVdrPdf() {
         
         notify('info', 'Processing Download', 'Your VDR PDF is being downloaded...')
     } catch (err: any) {
-        Swal.fire(
-            'Error!',
-            commonFunctions.parseGraphQLError(err.message),
-            'error'
-        )
+        Swal.fire({ titleText: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
     } finally {
         vdrPdfExportPending.value = false
     }
