@@ -21,8 +21,10 @@ vi.mock('vue-router', async (orig) => ({ ...(await orig<any>()), useRoute: () =>
 
 const { default: Page } = await import('./UpstreamOfOrg.vue')
 const { default: StartModal } = await import('./UpstreamFollowStartModal.vue')
+const { default: OneOffPanel } = await import('./UpstreamOneOffPanel.vue')
 const { GET_UPSTREAM_FOLLOWS } = await import('@/utils/upstreamFollowQueries')
 const { GET_UPSTREAM_SOURCES } = await import('@/utils/upstreamSourceQueries')
+const { GET_UPSTREAM_ONE_OFFS } = await import('@/utils/upstreamOneOffQueries')
 const { forbiddenSentence } = await import('@/utils/upstreamLabels')
 
 const ORG = '11111111-2222-3333-4444-555555555555'
@@ -223,6 +225,65 @@ describe('the Upstream page of an organization', () => {
         answer([aFollow()])
         const w = await mountPage(ADMIN)
         expect(mutate).not.toHaveBeenCalled()
+        w.unmount()
+    })
+})
+
+// TPF-231 (design 3.3 and 3.10): the tab "By TEI" of the same page, opened by ?tab=tei.
+describe('the tab By TEI of the Upstream page', () => {
+    const WRITER = { installationType: 'SAAS', permissions: { permissions: [{ org: ORG, object: ORG, scope: 'ORGANIZATION', type: 'READ_WRITE' }] } }
+
+    function answerWithOneOffs () {
+        query.mockImplementation(async (args: any) => {
+            if (args.query === GET_UPSTREAM_FOLLOWS) return { data: { upstreamFollows: [] } }
+            if (args.query === GET_UPSTREAM_SOURCES) return { data: { upstreamSources: [source()] } }
+            if (args.query === GET_UPSTREAM_ONE_OFFS) return { data: { upstreamOneOffs: [] } }
+            throw new Error('unexpected query')
+        })
+    }
+
+    it('shows the panel for ?tab=tei with the sources and WRITE of a writer', async () => {
+        route.query = { tab: 'tei' }
+        answerWithOneOffs()
+        const w = await mountPage(WRITER)
+        const panel = w.findComponent(OneOffPanel)
+        expect(panel.exists()).toBe(true)
+        expect(panel.props('orgUuid')).toBe(ORG)
+        expect(panel.props('canWrite')).toBe(true)
+        expect(panel.props('sources').map((s: any) => s.uuid)).toEqual([SOURCE])
+        expect(w.find('[data-testid="upstream-follows-table"]').exists()).toBe(false)
+        expect(mutate).not.toHaveBeenCalled()
+        w.unmount()
+    })
+
+    it('gives a member without WRITE the panel without the right to write', async () => {
+        route.query = { tab: 'tei' }
+        answerWithOneOffs()
+        const w = await mountPage(MEMBER)
+        expect(w.findComponent(OneOffPanel).props('canWrite')).toBe(false)
+        w.unmount()
+    })
+
+    it('shows the Follows tab, not the panel, without a tab or for an unknown one', async () => {
+        for (const q of [{}, { tab: 'other' }]) {
+            route.query = q
+            answerWithOneOffs()
+            const w = await mountPage(ADMIN)
+            expect(w.findComponent(OneOffPanel).exists()).toBe(false)
+            expect(callsOf(GET_UPSTREAM_ONE_OFFS)).toHaveLength(0)
+            w.unmount()
+            query.mockReset()
+        }
+    })
+
+    it('reads the sources again when the panel added one', async () => {
+        route.query = { tab: 'tei' }
+        answerWithOneOffs()
+        const w = await mountPage(ADMIN)
+        expect(callsOf(GET_UPSTREAM_SOURCES)).toHaveLength(1)
+        w.findComponent(OneOffPanel).vm.$emit('source-added', SOURCE)
+        await flushPromises()
+        expect(callsOf(GET_UPSTREAM_SOURCES)).toHaveLength(2)
         w.unmount()
     })
 })
