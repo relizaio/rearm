@@ -109,7 +109,7 @@ To see that the rule took effect, dial the address from the rebom pod:
 kubectl -n <namespace> exec deploy/<release>-rebom-backend -- nc -z -w 5 <address> 443; echo exit=$?
 ```
 
-It prints `exit=0`. In ReARM the **Probe** of the source then reads **Reachable**; the page Supplier Intake over TEA describes sources and the probe.
+It prints `exit=0`. In ReARM the **Probe** of the source then reads **Reachable**; the page [Supplier Intake over TEA](/workflows/supplier-intake) describes sources and the probe.
 
 rebom verifies the certificate of a TEA server against the trust store of its image, and this check cannot be switched off. An internal server needs a certificate that this trust store accepts.
 
