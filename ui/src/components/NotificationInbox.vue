@@ -195,6 +195,14 @@
                                         <a v-if="c.links.board" href="#" class="inbox-go" data-testid="inbox-open-board"
                                            @click.prevent.stop="goTo(c.links.board)">Open board</a>
                                     </template>
+                                    <!-- An upstream alert: the follow it is about, or the source (TPF-185). -->
+                                    <template v-if="c.upstreamLinks.follow || c.upstreamLinks.source">
+                                        <span class="inbox-meta-sep">&middot;</span>
+                                        <a v-if="c.upstreamLinks.follow" href="#" class="inbox-go" data-testid="inbox-open-follow"
+                                           @click.prevent.stop="goTo(c.upstreamLinks.follow)">Open follow</a>
+                                        <a v-if="c.upstreamLinks.source" href="#" class="inbox-go" data-testid="inbox-open-upstream-source"
+                                           @click.prevent.stop="goTo(c.upstreamLinks.source)">Open source</a>
+                                    </template>
                                 </div>
                             </div>
                             <div class="inbox-card-side">
@@ -296,6 +304,13 @@
                         <n-button v-if="drawerLinks.board" size="small" data-testid="inbox-drawer-open-board"
                                   @click="goTo(drawerLinks.board)">Open board</n-button>
                     </n-space>
+                    <div v-if="drawerUpstreamLinks.follow || drawerUpstreamLinks.source" class="inbox-drawer-upstream-links"
+                         data-testid="inbox-drawer-upstream-links">
+                        <n-button v-if="drawerUpstreamLinks.follow" size="small" data-testid="inbox-drawer-open-follow"
+                                  @click="goTo(drawerUpstreamLinks.follow)">Open follow</n-button>
+                        <n-button v-if="drawerUpstreamLinks.source" size="small" data-testid="inbox-drawer-open-upstream-source"
+                                  @click="goTo(drawerUpstreamLinks.source)">Open source</n-button>
+                    </div>
 
                     <!-- column=1 in this narrow drawer — column=2 wraps
                          the labels mid-word ("Severit/y", "Chann/el", etc).
@@ -448,6 +463,7 @@ import {
 } from '@/utils/notificationsCommon'
 import { loadNotificationInboxPage } from '@/utils/notificationInboxQuery'
 import { inboxLinksOf } from '@/utils/agentInboxLinks'
+import { upstreamInboxLinksOf } from '@/utils/upstreamInboxLinks'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 import { lifecycleLabel } from '@/utils/lifecycle'
 
@@ -575,6 +591,7 @@ const approvalRoleNameById = computed<Record<string, string>>(() => {
 const inboxDrawerOpen = ref<boolean>(false)
 const inboxDrawerRow = ref<InboxRow | null>(null)
 const drawerLinks = computed(() => inboxLinksOf(inboxDrawerRow.value))
+const drawerUpstreamLinks = computed(() => upstreamInboxLinksOf(inboxDrawerRow.value, myuser.value?.installationType))
 
 /** Leave the inbox for the task or board a row is about (RD2-15). */
 function goTo (path: string | null): void {
@@ -1121,6 +1138,7 @@ const inboxCards = computed(() => inboxItems.value.map(row => {
             : '(no content)'),
         channel: channelLabel(row),
         links: inboxLinksOf(row),
+        upstreamLinks: upstreamInboxLinksOf(row, myuser.value?.installationType),
         rail: railColor(row.severity),
         kind: row.severity ? null : kindLabel(row.eventType),
         // FAILED = the delivery didn't reach the channel; surfaced inline so a
@@ -1386,6 +1404,7 @@ onUnmounted(() => {
 /* Inbox drawer — payload viewer. Monospace + wrap-on-word so a deeply-nested
  * JSON doesn't blow the drawer's horizontal extent. */
 .inbox-drawer-desc { font-size: 14px; line-height: 1.45; }
+.inbox-drawer-upstream-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .inbox-affected-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--n-text-color-2, #666); }
 .inbox-drawer-payload {
     font-family: var(--font-mono, monospace);

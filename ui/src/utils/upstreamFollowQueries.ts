@@ -1,5 +1,6 @@
 // The documents of following an upstream item (ReARM Pro, TPF-185 design 3.7 to 3.9): the follows
-// of the organization, the start of a follow, the confirmation page and the read of a follow. Pro
+// of the organization, the start of a follow, the confirmation page, the read of a follow and the
+// operation of a follow (its runs, its releases, sync now, reconfigure and unfollow). Pro
 // only: they are sent only behind upstreamSourcesAvailable, and no document CE runs selects any of
 // this.
 //
@@ -93,7 +94,7 @@ export function confirmedFollowUuid (data: any): string | null {
     return typeof uuid === 'string' ? uuid : null
 }
 
-// ---- The follow page (design 3.9; the documents of its sections 4 to 8 are appended by a later part) ----
+// ---- The follow page (design 3.9) ----
 
 export const GET_UPSTREAM_FOLLOW = gql`
     query upstreamFollow($uuid: ID!) {
@@ -105,4 +106,39 @@ export const GET_UPSTREAM_FOLLOW = gql`
             lastRun { ${UPSTREAM_RUN_FIELDS} }
             pending(limit: 50) { uuid item upstreamUuid upstreamVersion upstreamDate drift }
         }
+    }`
+
+// ---- Operating a follow (design 3.9, sections 4 to 8 and the reconfigure dialog) ----
+
+/** The newest 20 runs of a follow; the backend serves the newest runs only. */
+export const GET_UPSTREAM_INGEST_RUNS = gql`
+    query upstreamIngestRuns($follow: ID!) {
+        upstreamIngestRuns(follow: $follow, first: 20) { ${UPSTREAM_RUN_FIELDS} }
+    }`
+
+/**
+ * The upstream release rows of one item, 50 at a time, in the order they were made. after is the
+ * number of rows already loaded, as a decimal string. release is the ReARM release of a row and the
+ * only field of a row that may be a link target.
+ */
+export const GET_UPSTREAM_RELEASES = gql`
+    query upstreamReleases($item: ID!, $states: [UpstreamReleaseState!], $after: String) {
+        upstreamReleases(item: $item, states: $states, first: 50, after: $after) {
+            uuid upstreamUuid upstreamVersion upstreamDate state failure message integrity presence goneSince drift lineKey release
+        }
+    }`
+
+export const START_UPSTREAM_FOLLOW_RUN = gql`
+    mutation startUpstreamFollowRun($follow: ID!) {
+        startUpstreamFollowRun(follow: $follow) { uuid }
+    }`
+
+export const RECONFIGURE_UPSTREAM_FOLLOW = gql`
+    mutation reconfigureUpstreamFollow($follow: ID!, $input: UpstreamFollowReconfigureInput!) {
+        reconfigureUpstreamFollow(follow: $follow, input: $input) { uuid }
+    }`
+
+export const UNFOLLOW_UPSTREAM_ITEM = gql`
+    mutation unfollowUpstreamItem($follow: ID!) {
+        unfollowUpstreamItem(follow: $follow) { uuid }
     }`

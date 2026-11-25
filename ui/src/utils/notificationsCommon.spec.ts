@@ -129,6 +129,16 @@ describe('unselectable options without a backend implementation', () => {
         expect(boardDocumentsApplyTo(['LICENSE_SEAT_EVENT'])).toBe(false)
     })
 
+    // TPF-185 design 3.13 (T-543): the upstream alert, labelled and Pro-only; each kind carries a
+    // fixed severity on the server, and no release is on it.
+    it('offers UPSTREAM_ALERT labelled Upstream sources, flagged proOnly, severity-bearing, no board documents', () => {
+        expect(option(eventTypeOptions, 'UPSTREAM_ALERT')).toEqual({ label: 'Upstream sources', value: 'UPSTREAM_ALERT', proOnly: true })
+        expect(SEVERITY_BEARING_EVENT_TYPES).toContain('UPSTREAM_ALERT')
+        expect(severityAppliesTo(['UPSTREAM_ALERT'])).toBe(true)
+        expect(BOARD_DOCUMENT_BEARING_EVENT_TYPES).not.toContain('UPSTREAM_ALERT')
+        expect(boardDocumentsApplyTo(['UPSTREAM_ALERT'])).toBe(false)
+    })
+
 })
 
 const CE_BACKEND_SRC_PATH = fileURLToPath(new URL(
@@ -584,7 +594,7 @@ describe('severity gating', () => {
         expect([...SEVERITY_BEARING_EVENT_TYPES].sort())
             .toEqual(['AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_QUEUE_AGE', 'AGENT_TASK_RETURNED',
                 'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED', 'LICENSE_SEAT_EVENT',
-                'NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED'])
+                'NEW_VULN_AFFECTS_RELEASES', 'UPSTREAM_ALERT', 'VULNERABILITY_RECORD_UPDATED'])
     })
 
     it('applies when any selected event type carries a severity', () => {
