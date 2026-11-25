@@ -204,6 +204,53 @@ describe('T-505 buildUpdateInput on a source with a stored API key', () => {
     })
 })
 
+// The edit form starts from what is stored, not from the create defaults: a source whose four
+// settings all differ from the defaults, renamed, sends the name alone.
+describe('editModel on a source whose settings are not the create defaults', () => {
+    const CUSTOM: LoadedUpstreamSource = {
+        ...LOADED,
+        vexImportMode: 'AUTO_ACCEPT',
+        autoIntegrate: 'ENABLED',
+        syncIntervalMinutes: 120,
+        documentReServing: 'RE_SERVED',
+    }
+
+    it('startsFromEveryStoredSetting', () => {
+        expect(editModel(CUSTOM)).toEqual({
+            name: 'Supplier',
+            root: 'https://tea.example.com/tea',
+            credentialKind: 'API_KEY',
+            credentialChange: CredentialChange.KEEP,
+            keyId: '',
+            documentClasses: ['SBOM', 'VEX', 'OTHER'],
+            vexImportMode: 'AUTO_ACCEPT',
+            autoIntegrate: true,
+            syncIntervalMinutes: 120,
+            reServe: true,
+        })
+    })
+
+    it('sendsOnlyTheNameWhenOnlyTheNameChanged', () => {
+        const model = { ...editModel(CUSTOM), name: 'Renamed' }
+        expect(buildUpdateInput(CUSTOM, model, NO_SECRETS)).toEqual({ name: 'Renamed' })
+    })
+})
+
+// The document classes compare as a set: the same count with one class swapped is a change.
+describe('buildUpdateInput on the document classes', () => {
+    const TWO: LoadedUpstreamSource = { ...LOADED, documentClasses: ['SBOM', 'VEX'] }
+
+    it('sendsTheClassesWhenOneIsSwappedForAnotherOfTheSameCount', () => {
+        const model = { ...editModel(TWO), documentClasses: ['SBOM' as const, 'OTHER' as const] }
+        expect(buildUpdateInput(TWO, model, NO_SECRETS)).toEqual({ documentClasses: ['SBOM', 'OTHER'] })
+    })
+
+    it('readsTheSameClassesInAnotherOrderAsUnchanged', () => {
+        const model = { ...editModel(TWO), documentClasses: ['VEX' as const, 'SBOM' as const] }
+        expect(buildUpdateInput(TWO, model, NO_SECRETS)).toEqual({})
+    })
+})
+
 describe('intervalWords', () => {
     it('saysHoursForMultiplesOf60', () => {
         expect(intervalWords(1440)).toBe('every 24 hours')

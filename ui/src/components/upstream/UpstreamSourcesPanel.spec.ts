@@ -212,6 +212,25 @@ describe('UpstreamSourcesPanel administrator controls', () => {
         w.unmount()
     })
 
+    it('addSourceAfterAnEditOpensAnEmptyCreateForm', async () => {
+        const { w } = await mountPanel(true)
+        await w.findAll('[data-testid="upstream-action-edit"]')[0].trigger('click')
+        await flushPromises()
+        expect(w.findComponent(FormModal).props('source')).toEqual(SOURCES[0])
+        expect((w.findComponent(FormModal).vm as any).model.name).toBe('Acme TEA')
+        w.findComponent(FormModal).vm.$emit('update:show', false)
+        await flushPromises()
+        expect(w.findComponent(FormModal).props('show')).toBe(false)
+
+        await w.find('[data-testid="upstream-add-source"]').trigger('click')
+        await flushPromises()
+        expect(w.findComponent(FormModal).props('show')).toBe(true)
+        expect(w.findComponent(FormModal).props('source')).toBeNull()
+        expect((w.findComponent(FormModal).vm as any).model.name).toBe('')
+        expect((w.findComponent(FormModal).vm as any).model.root).toBe('')
+        w.unmount()
+    })
+
     it('aSaveReadsTheListAgain', async () => {
         const { w } = await mountPanel(true)
         query.mockResolvedValueOnce(listReply())

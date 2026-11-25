@@ -338,6 +338,39 @@ describe('UpstreamSourceFormModal save', () => {
         w.unmount()
     })
 
+    it('aRenameOfASourceWithNonDefaultSettingsSendsTheNameAlone', async () => {
+        const custom = { ...LOADED, vexImportMode: 'AUTO_ACCEPT' as const, autoIntegrate: 'ENABLED' as const, syncIntervalMinutes: 120, documentReServing: 'RE_SERVED' as const }
+        mutate.mockResolvedValueOnce({ data: { updateUpstreamSource: { uuid: LOADED.uuid, name: 'Renamed' } } })
+        const w = mountForm({ source: custom })
+        await flushPromises()
+        expect(w.find('[data-testid="upstream-form-nothing"]').exists()).toBe(true)
+        await setInput(w, 'upstream-form-name', 'Renamed')
+        await w.find('[data-testid="upstream-form-save"]').trigger('click')
+        await flushPromises()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(mutate.mock.calls[0][0].variables).toEqual({ uuid: LOADED.uuid, source: { name: 'Renamed' } })
+        w.unmount()
+    })
+
+    it('swappingOneDocumentClassForAnotherEnablesSaveAndSendsTheClasses', async () => {
+        mutate.mockResolvedValueOnce({ data: { updateUpstreamSource: { uuid: LOADED.uuid } } })
+        const w = mountForm({ source: LOADED })
+        await flushPromises()
+        const boxes = w.findAll('[data-testid="upstream-form-document-classes"] .n-checkbox')
+        expect(boxes.map((b: any) => b.text())).toHaveLength(3)
+        await boxes[1].trigger('click') // VEX off
+        await boxes[2].trigger('click') // OTHER on
+        await flushPromises()
+        expect((w.vm as any).model.documentClasses).toEqual(['SBOM', 'OTHER'])
+        expect(w.find('[data-testid="upstream-form-nothing"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-form-save"]').attributes('disabled')).toBeUndefined()
+        await w.find('[data-testid="upstream-form-save"]').trigger('click')
+        await flushPromises()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(mutate.mock.calls[0][0].variables).toEqual({ uuid: LOADED.uuid, source: { documentClasses: ['SBOM', 'OTHER'] } })
+        w.unmount()
+    })
+
     it('theRootRuleShowsBeforeTheFirstSaveAndBlocksIt', async () => {
         const w = mountForm({ source: LOADED })
         await flushPromises()
