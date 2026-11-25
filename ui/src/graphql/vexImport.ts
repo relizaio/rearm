@@ -109,3 +109,18 @@ export const WAIVE_MITIGATION = gql`
         }
     }
 `
+
+// Org admins: accepted VEX statements whose accepting credential cannot be shown to hold Finding Analysis
+// write at the statement's scope now (includeHeld adds those whose credential holds it).
+export const GET_VEX_IMPORT_AUTHORITY_REPORT = gql`
+    query VexImportAuthorityReport($org: ID!, $includeHeld: Boolean) {
+        vexImportAuthorityReport(org: $org, includeHeld: $includeHeld) {
+            truncated
+            rows {
+                proposal sourceArtifact scope scopeUuid location findingId analysisState
+                targetVulnAnalysis mitigationAttestation acceptedAt acceptedVia acceptedBy acceptedByKind actedBy
+                holdsFindingAnalysisWriteNow analysisStillAsAccepted
+            }
+        }
+    }
+`
