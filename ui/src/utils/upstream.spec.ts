@@ -36,6 +36,7 @@ describe('isUuid', () => {
         ['a trailing path', UUID + '/x'],
         ['a relative path', '../x'],
         ['an empty string', ''],
+        ['a leading path', 'x/' + UUID],
     ])('refuses %s', (_what, text) => {
         expect(isUuid(text)).toBe(false)
     })
@@ -70,6 +71,27 @@ describe('refusalOf and isForbidden', () => {
     it('doesNotReadAnotherSentenceAsForbidden', () => {
         const r = refusalOf(apolloError([{ message: 'System is sealed. Please unseal the system first.' }]))
         expect(r.text).toBe('System is sealed. Please unseal the system first.')
+        expect(isForbidden(r)).toBe(false)
+    })
+
+    it('skipsAnEntryWithAnEmptyMessage', () => {
+        const r = refusalOf(apolloError([{ message: '  ' }, TYPED]))
+        expect(r).toEqual({ text: TYPED.message, code: 'UPSTREAM_SOURCE_REFUSED', reason: 'DUPLICATE_ROOT' })
+    })
+
+    it('fallsBackToTheErrorsOwnMessageWhenOnlyTheNullPropagationEntryIsThere', () => {
+        const own = apolloError([NULL_PROPAGATION])
+        own.message = 'Resource is busy, please retry'
+        expect(refusalOf(own)).toEqual({ text: 'Resource is busy, please retry', code: null, reason: null })
+
+        const empty = apolloError([NULL_PROPAGATION])
+        empty.message = ' '
+        expect(refusalOf(empty)).toEqual({ text: networkSentence, code: null, reason: null })
+    })
+
+    it('readsOnlyTheExactNotAuthorizedAsForbidden', () => {
+        const r = refusalOf(apolloError([{ message: 'Not authorized to archive this source' }]))
+        expect(r).toEqual({ text: 'Not authorized to archive this source', code: null, reason: null })
         expect(isForbidden(r)).toBe(false)
     })
 

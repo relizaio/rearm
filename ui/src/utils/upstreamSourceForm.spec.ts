@@ -54,6 +54,14 @@ describe('T-503 createProblems', () => {
         expect(problems[field as keyof typeof problems]).toBeTruthy()
     })
 
+    it('acceptsEveryBoundaryValue', () => {
+        expect(createProblems(complete({ name: 'n'.repeat(100), root: 'r'.repeat(1024) }), NO_SECRETS)).toEqual({})
+        expect(createProblems(complete({ syncIntervalMinutes: 60 }), NO_SECRETS)).toEqual({})
+        expect(createProblems(complete({ syncIntervalMinutes: 43200 }), NO_SECRETS)).toEqual({})
+        expect(createProblems(complete({ credentialKind: 'BEARER_TOKEN' }), { token: 't'.repeat(8192), keySecret: '' })).toEqual({})
+        expect(createProblems(complete({ credentialKind: 'API_KEY', keyId: 'k'.repeat(8192) }), { token: '', keySecret: 's'.repeat(8192) })).toEqual({})
+    })
+
     it('acceptsAndKeepsATokenWithALeadingSpace', () => {
         const secrets = { token: ' ' + SECRET, keySecret: '' }
         const model = complete({ credentialKind: 'BEARER_TOKEN' })
@@ -87,6 +95,17 @@ describe('T-504 buildCreateInput', () => {
         expect(input).toMatchObject({
             documentClasses: ['SBOM', 'VEX', 'OTHER'], vexImportMode: 'STAGE', autoIntegrate: 'DISABLED',
             syncIntervalMinutes: 1440, documentReServing: 'WITHHELD',
+        })
+    })
+})
+
+describe('buildCreateInput with every switch on', () => {
+    it('sendsAutoIntegrateEnabledAndTheDocumentsReServed', () => {
+        const input = buildCreateInput(complete({ autoIntegrate: true, reServe: true }), NO_SECRETS)
+        expect(input).toEqual({
+            kind: 'TEA', name: 'Supplier', tea: { root: 'https://tea.example.com/tea' }, credential: { kind: 'NONE' },
+            documentClasses: ['SBOM', 'VEX', 'OTHER'], vexImportMode: 'STAGE', autoIntegrate: 'ENABLED',
+            syncIntervalMinutes: 1440, documentReServing: 'RE_SERVED',
         })
     })
 })
@@ -139,6 +158,37 @@ describe('T-505 buildUpdateInput on a source with a stored API key', () => {
     it('(f) sendsExactlyTheIntervalAndTheVexMode', () => {
         const model = { ...start(), syncIntervalMinutes: 120, vexImportMode: 'REJECT' as const }
         expect(buildUpdateInput(LOADED, model, NO_SECRETS)).toEqual({ syncIntervalMinutes: 120, vexImportMode: 'REJECT' })
+    })
+
+    it('sendsExactlyTheChangedSwitchesAndDocumentClasses', () => {
+        const model = { ...start(), autoIntegrate: true, reServe: true, documentClasses: ['SBOM' as const] }
+        expect(buildUpdateInput(LOADED, model, NO_SECRETS)).toEqual({
+            autoIntegrate: 'ENABLED', documentReServing: 'RE_SERVED', documentClasses: ['SBOM'],
+        })
+    })
+
+    it('readsARootWithSurroundingSpacesAsUnchanged', () => {
+        const model = { ...start(), root: '  https://tea.example.com/tea  ' }
+        expect(updateProblems(LOADED, model, NO_SECRETS)).toEqual({})
+        expect(buildUpdateInput(LOADED, model, NO_SECRETS)).toEqual({})
+    })
+
+    it('replaceValidatesTheNewCredential', () => {
+        const bearer = { ...start(), credentialChange: CredentialChange.REPLACE, credentialKind: 'BEARER_TOKEN' as const }
+        expect(updateProblems(LOADED, bearer, NO_SECRETS)).toEqual({ token: 'Enter the token.' })
+        const apiKey = { ...start(), credentialChange: CredentialChange.REPLACE, credentialKind: 'API_KEY' as const }
+        expect(updateProblems(LOADED, apiKey, NO_SECRETS)).toEqual({ keyId: 'Enter the key id.', keySecret: 'Enter the key secret.' })
+    })
+
+    it('replaceWithKindNoneIsAProblemNotARemoval', () => {
+        const model = { ...start(), credentialChange: CredentialChange.REPLACE, credentialKind: 'NONE' as const }
+        expect(updateProblems(LOADED, model, NO_SECRETS)).toEqual({ credential: 'Choose the kind of the new credential.' })
+    })
+
+    it('presetsTheReplacingKindToTheStoredKind', () => {
+        expect(start().credentialKind).toBe('API_KEY')
+        const none: LoadedUpstreamSource = { ...LOADED, credential: { kind: 'NONE', keyId: null, setDate: null } }
+        expect(editModel(none).credentialKind).toBe('BEARER_TOKEN')
     })
 
     it('neverPrefillsTheEditModelWithACredential', () => {

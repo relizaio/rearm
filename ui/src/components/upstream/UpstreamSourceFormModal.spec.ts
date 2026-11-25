@@ -17,7 +17,8 @@ const router = { push: vi.fn(), replace: vi.fn() }
 vi.mock('vue-router', () => ({ useRouter: () => router, useRoute: () => ({ query: {}, params: {} }) }))
 
 const { default: FormModal } = await import('./UpstreamSourceFormModal.vue')
-const { CREATE_UPSTREAM_SOURCE } = await import('@/utils/upstreamSourceQueries')
+const { CREATE_UPSTREAM_SOURCE, UPDATE_UPSTREAM_SOURCE } = await import('@/utils/upstreamSourceQueries')
+const { nothingToChange, rootChangeNeedsCredential } = await import('@/utils/upstreamSourceForm')
 
 const ORG = '11111111-2222-3333-4444-555555555555'
 const SECRET = 'S3CR3T-marker-185'
@@ -230,6 +231,152 @@ describe('UpstreamSourceFormModal secret handling', () => {
         await flushPromises()
         await chooseRadio(w, 'upstream-form-kind-BEARER_TOKEN')
         expect(tokenField(w).value).toBe('')
+        w.unmount()
+    })
+})
+
+// The choices of the credential and the life of what was typed for one of them.
+describe('UpstreamSourceFormModal credential choices', () => {
+    it('anotherCredentialChangeClearsTheTypedSecretAndKeyId', async () => {
+        const w = mountForm({ source: LOADED })
+        await flushPromises()
+        await chooseRadio(w, 'upstream-form-change-replace')
+        await setInput(w, 'upstream-form-key-id', 'kid-2')
+        await setInput(w, 'upstream-form-key-secret', SECRET)
+        expect(secretRefs(w).keySecret).toBe(SECRET)
+
+        await chooseRadio(w, 'upstream-form-change-keep')
+        expect(secretRefs(w)).toEqual({ token: '', keySecret: '' })
+        expect((w.vm as any).model.keyId).toBe('')
+        w.unmount()
+    })
+
+    it('anotherKindClearsTheTypedSecret', async () => {
+        const w = mountForm()
+        await flushPromises()
+        await fillCreate(w)
+        await chooseRadio(w, 'upstream-form-kind-API_KEY')
+        expect(secretRefs(w)).toEqual({ token: '', keySecret: '' })
+        w.unmount()
+    })
+
+    it('theTokenFieldIsAPasswordThatDoesNotAutofill', async () => {
+        const w = mountForm()
+        await flushPromises()
+        await chooseRadio(w, 'upstream-form-kind-BEARER_TOKEN')
+        const input = w.find('[data-testid="upstream-form-token"] input')
+        expect(input.attributes('type')).toBe('password')
+        expect(input.attributes('autocomplete')).toBe('new-password')
+        w.unmount()
+    })
+
+    it('replaceOffersNoKindNone', async () => {
+        const w = mountForm({ source: LOADED })
+        await flushPromises()
+        await chooseRadio(w, 'upstream-form-change-replace')
+        expect(w.find('[data-testid="upstream-form-kind-BEARER_TOKEN"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-form-kind-API_KEY"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-form-kind-NONE"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('removeIsOfferedOnlyWhenACredentialIsStored', async () => {
+        const stored = mountForm({ source: LOADED })
+        await flushPromises()
+        expect(stored.find('[data-testid="upstream-form-change-remove"]').exists()).toBe(true)
+        stored.unmount()
+
+        const w = mountForm({ source: { ...LOADED, credential: { kind: 'NONE', keyId: null, setDate: null } } })
+        await flushPromises()
+        expect(w.text()).toContain('Stored: no credential')
+        expect(w.text()).toContain('Keep no credential')
+        expect(w.text()).toContain('Add one')
+        expect(w.find('[data-testid="upstream-form-change-remove"]').exists()).toBe(false)
+        w.unmount()
+    })
+})
+
+// When the modal sends, and what.
+describe('UpstreamSourceFormModal save', () => {
+    it('aFormWithProblemsSendsNothingAndShowsThem', async () => {
+        const w = mountForm()
+        await flushPromises()
+        await w.find('[data-testid="upstream-form-save"]').trigger('click')
+        await flushPromises()
+        expect(mutate).not.toHaveBeenCalled()
+        expect(w.text()).toContain('Enter a name.')
+        expect(w.text()).toContain('Enter the server root.')
+        expect(w.emitted('saved')).toBeUndefined()
+        w.unmount()
+    })
+
+    it('anUnchangedEditDisablesSaveAndSendsNothingEvenWhenSaveRuns', async () => {
+        const w = mountForm({ source: LOADED })
+        await flushPromises()
+        expect(w.find('[data-testid="upstream-form-nothing"]').text()).toBe(nothingToChange)
+        expect(w.find('[data-testid="upstream-form-save"]').attributes('disabled')).toBeDefined()
+        // the guard inside save holds on its own, without the disabled button
+        await (w.vm as any).save()
+        await flushPromises()
+        expect(mutate).not.toHaveBeenCalled()
+        w.unmount()
+    })
+
+    it('anEditSendsOnlyTheChangedFieldsForThatSourceAndEmitsItsUuid', async () => {
+        mutate.mockResolvedValueOnce({ data: { updateUpstreamSource: { uuid: LOADED.uuid, name: 'Renamed' } } })
+        const w = mountForm({ source: LOADED })
+        await flushPromises()
+        await setInput(w, 'upstream-form-name', 'Renamed')
+        await w.find('[data-testid="upstream-form-save"]').trigger('click')
+        await flushPromises()
+
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(mutate.mock.calls[0][0].mutation).toBe(UPDATE_UPSTREAM_SOURCE)
+        expect(mutate.mock.calls[0][0].variables).toEqual({ uuid: LOADED.uuid, source: { name: 'Renamed' } })
+        expect(w.emitted('saved')).toEqual([[LOADED.uuid]])
+        expect(w.emitted('update:show')).toEqual([[false]])
+        w.unmount()
+    })
+
+    it('theRootRuleShowsBeforeTheFirstSaveAndBlocksIt', async () => {
+        const w = mountForm({ source: LOADED })
+        await flushPromises()
+        await setInput(w, 'upstream-form-root', 'https://other.acme.example/tea')
+        expect(w.text()).toContain(rootChangeNeedsCredential)
+        await w.find('[data-testid="upstream-form-save"]').trigger('click')
+        await flushPromises()
+        expect(mutate).not.toHaveBeenCalled()
+        w.unmount()
+    })
+})
+
+// Opening and closing by the parent.
+describe('UpstreamSourceFormModal opened and closed by the parent', () => {
+    it('aCloseByTheParentClearsTheSecrets', async () => {
+        const w = mountForm()
+        await flushPromises()
+        await fillCreate(w)
+        await w.setProps({ show: false })
+        await flushPromises()
+        expect(secretRefs(w)).toEqual({ token: '', keySecret: '' })
+        w.unmount()
+    })
+
+    it('reopeningStartsFromTheStartingValues', async () => {
+        mutate.mockRejectedValueOnce({ message: 'x', errors: [{ message: 'Resource is busy, please retry' }] })
+        const w = mountForm()
+        await flushPromises()
+        await fillCreate(w)
+        await w.find('[data-testid="upstream-form-save"]').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="upstream-form-error"]').exists()).toBe(true)
+
+        await w.setProps({ show: false })
+        await w.setProps({ show: true })
+        await flushPromises()
+        expect((w.vm as any).model.name).toBe('')
+        expect((w.vm as any).model.credentialKind).toBe('NONE')
+        expect(w.find('[data-testid="upstream-form-error"]').exists()).toBe(false)
         w.unmount()
     })
 })

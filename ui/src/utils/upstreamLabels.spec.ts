@@ -45,6 +45,7 @@ describe('upstream sentences that carry a decision', () => {
         expect(labels.driftStopSentence).toBe('Stop: a release that does not fit the version lines is held and listed as pending until you reconfigure the follow. Releases that fit, and new documents of releases already ingested, keep coming in.')
         expect(labels.driftAdaptSentence).toBe('Adapt: ReARM works out a new depth from the release history and uses it from then on; releases already ingested keep their lines. When the history gives no clear answer, the release is held as under Stop. Either way an alert tells the administrators.')
         expect(labels.probeTimeoutHint).toBe('If the server is on a private network, the network policy of this installation may block its address. Whoever installed ReARM with helm can allow it.')
+        expect(labels.probeApiKeyHint).toBe('Check the server root as well as the key: a wrong root gives the same answer.')
         expect(labels.startingPointRequired).toBe('Choose a starting point.')
         expect(labels.oneOffFailureSentence.NO_MATCHING_SOURCE).toBe('The TEI resolved to a server that is not an upstream source of the organization.')
         expect(labels.forbiddenSentence).toBe('You are not allowed to see this, or it does not exist. Upstream sources need read access to the whole organization.')

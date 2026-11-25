@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Kind, validate, visit, type DocumentNode, type FieldNode, type GraphQLSchema, type OperationDefinitionNode } from 'graphql'
+import { Kind, print, validate, visit, type DocumentNode, type FieldNode, type GraphQLSchema, type OperationDefinitionNode } from 'graphql'
 import {
     ARCHIVE_UPSTREAM_SOURCE, CREATE_UPSTREAM_SOURCE, GET_UPSTREAM_SOURCE, GET_UPSTREAM_SOURCES, GET_UPSTREAM_SYNCS, PROBE_UPSTREAM_SOURCE,
     SYNC_UPSTREAM_SOURCE_NOW, UPDATE_UPSTREAM_SOURCE,
@@ -56,6 +56,36 @@ describe('upstream documents vs the Pro schema', () => {
 
     it.each(ALL.filter(r => r[3] === 'mutation'))('%s passes every argument as a variable', (_name, doc) => {
         expect(literalArguments(doc)).toEqual([])
+    })
+
+    it('selectsExactlyTheFieldsOfTheDesignOnASource', () => {
+        // design 3.6: the one selection of a source, field for field
+        const paths: string[] = []
+        const walk = (sel: readonly any[], prefix: string) => {
+            for (const s of sel) {
+                const path = prefix + s.name.value
+                paths.push(path)
+                if (s.selectionSet) walk(s.selectionSet.selections, path + '.')
+            }
+        }
+        walk(rootField(GET_UPSTREAM_SOURCE).selectionSet!.selections, '')
+        const sync = ['uuid', 'origin', 'state', 'stopReason', 'sourceFailure', 'createdDate', 'finished', 'counters',
+            ...['follows', 'runsCompleted', 'runsWithFailures', 'runsStopped', 'ingested', 'newCollectionVersions', 'held', 'failed'].map(c => 'counters.' + c)]
+        expect(paths.sort()).toEqual([
+            'uuid', 'org', 'kind', 'name', 'status', 'documentClasses', 'vexImportMode', 'autoIntegrate',
+            'tea', 'tea.root', 'credential', 'credential.kind', 'credential.keyId', 'credential.setDate',
+            'probe', 'probe.state', 'probe.result', 'probe.message', 'probe.requestedDate', 'probe.finishedDate',
+            'createdDate', 'lastUpdatedDate', 'archivedDate', 'syncIntervalMinutes', 'nextSync', 'syncFailures',
+            'lastSync', ...sync.map(f => 'lastSync.' + f), 'documentReServing',
+        ].sort())
+        for (const [name, doc] of ALL.filter(r => r[2] !== 'upstreamSyncs')) {
+            expect(print(rootField(doc).selectionSet!), name).toBe(print(rootField(GET_UPSTREAM_SOURCE).selectionSet!))
+        }
+    })
+
+    it('readsTheTenMostRecentSyncs', () => {
+        const limit = rootField(GET_UPSTREAM_SYNCS).arguments!.find(a => a.name.value === 'limit')
+        expect(limit?.value).toEqual(expect.objectContaining({ kind: Kind.INT, value: '10' }))
     })
 
     it('selectsNoSecretOfACredential', () => {

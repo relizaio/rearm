@@ -5,6 +5,7 @@
 // "never probed" for none; a message is shown as text and nothing else an object carries is shown.
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { NTag } from 'naive-ui'
 
 vi.mock('@/utils/commonFunctions', () => ({ default: { dateDisplay: (d: string) => 'D:' + d } }))
 
@@ -63,6 +64,28 @@ describe('UpstreamProbeResult', () => {
         expect(w.text()).toContain(probeResultSentence.REACHABLE)
         expect(w.text()).not.toContain('10.1.2.3')
         expect(w.text()).not.toContain('502')
+        w.unmount()
+    })
+
+    it.each([
+        ['REACHABLE', 'success'],
+        ['NOT_RUN', 'warning'],
+        ['NOT_COMPLETED', 'warning'],
+        ['FETCHER_BUSY', 'warning'],
+        ['FETCHER_NOT_AVAILABLE', 'warning'],
+        ['FETCHER_NOT_CONFIGURED', 'warning'],
+        ['COULD_NOT_CONNECT', 'error'],
+        ['AUTHENTICATION_FAILED', 'error'],
+    ])('%s gets a %s tag', (result, type) => {
+        const w = render(done(result, probeResultSentence[result]))
+        expect(w.findComponent(NTag).props('type')).toBe(type)
+        w.unmount()
+    })
+
+    it('showsTheFinishedDate', () => {
+        const w = render(done('REACHABLE', probeResultSentence.REACHABLE))
+        expect(w.find('[data-testid="upstream-probe-date"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-probe-date"]').text()).toBe('D:2026-11-01T10:00:00Z')
         w.unmount()
     })
 
