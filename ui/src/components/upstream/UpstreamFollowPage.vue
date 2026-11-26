@@ -6,6 +6,7 @@
             <div v-else-if="pageState === 'FORBIDDEN'" data-testid="upstream-follow-forbidden">{{ forbiddenSentence }}</div>
             <div v-else-if="pageState === 'ERROR'" class="upstream-error" data-testid="upstream-follow-error">{{ loadError }}</div>
             <template v-else-if="followRow">
+                <router-link v-if="followsLink" :to="followsLink" class="upstream-back" data-testid="upstream-follow-back">&larr; Follows</router-link>
                 <!-- 1. Header -->
                 <section data-testid="upstream-follow-header">
                     <h4>
@@ -31,7 +32,7 @@
 
                 <!-- 2. Lines -->
                 <section data-testid="upstream-follow-lines">
-                    <h5>Version lines</h5>
+                    <h5><field-label label="Version lines" :tip="VERSION_LINE_HELP" /></h5>
                     <div v-if="!(item.lines ?? []).length" data-testid="upstream-follow-no-lines">No release has been ingested yet.</div>
                     <n-table v-else size="small" :single-line="false">
                         <thead><tr><th>Line</th><th>Branch</th><th>Latest version</th></tr></thead>
@@ -47,7 +48,7 @@
                         <h5>Components</h5>
                         <div v-if="!componentItems.length">No component has been ingested yet.</div>
                         <n-table v-else size="small" :single-line="false">
-                            <thead><tr><th>Component</th><th>Depth</th><th>Update state</th><th>Lines</th><th></th></tr></thead>
+                            <thead><tr><th>Component</th><th><field-label label="Depth" :tip="DEPTH_HELP" /></th><th>Update state</th><th><field-label label="Lines" :tip="LINES_COUNT_HELP" /></th><th></th></tr></thead>
                             <tbody>
                                 <tr v-for="c in componentItems" :key="c.uuid" data-testid="upstream-follow-component">
                                     <td>{{ c.upstreamName }}</td>
@@ -78,7 +79,9 @@
                         <div data-testid="upstream-run-counters">{{ countersSentence }}</div>
                         <n-collapse>
                             <n-collapse-item title="All counters" name="counters">
-                                <div v-for="[label, value] in allCounters" :key="label" class="upstream-small">{{ label }}: {{ value }}</div>
+                                <div v-for="c in allCounters" :key="c.key" class="upstream-small" :data-testid="'upstream-counter-' + c.key">
+                                    <field-label :label="c.label" :tip="c.help" />: <span :title="c.title">{{ c.value }}</span>
+                                </div>
                             </n-collapse-item>
                         </n-collapse>
                     </template>
@@ -123,7 +126,9 @@
                                 </tr>
                                 <tr v-if="expandedRuns.includes(r.uuid)" data-testid="upstream-run-row-counters">
                                     <td colspan="7">
-                                        <div v-for="[label, value] in allCountersOf(r)" :key="label" class="upstream-small">{{ label }}: {{ value }}</div>
+                                        <div v-for="c in allCountersOf(r)" :key="c.key" class="upstream-small" :data-testid="'upstream-run-row-counter-' + c.key">
+                                            <field-label :label="c.label" :tip="c.help" />: <span :title="c.title">{{ c.value }}</span>
+                                        </div>
                                     </td>
                                 </tr>
                             </template>
@@ -145,7 +150,7 @@
                     <div v-else-if="!releases.length" data-testid="upstream-releases-empty">No release is listed for this choice.</div>
                     <template v-else>
                         <n-table size="small" :single-line="false">
-                            <thead><tr><th>Version</th><th>Upstream date</th><th>State</th><th>Line</th><th>In ReARM</th></tr></thead>
+                            <thead><tr><th>Version</th><th>Upstream date</th><th>State</th><th><field-label label="Line" :tip="RELEASE_LINE_HELP" /></th><th>In ReARM</th></tr></thead>
                             <tbody>
                                 <tr v-for="row in releases" :key="row.uuid" data-testid="upstream-release-row">
                                     <td data-testid="upstream-release-version">{{ row.upstreamVersion ?? 'no usable version' }}</td>
@@ -231,6 +236,10 @@ import {
     probeResultSentence, releaseStateLabel, runKindLabel, runOriginLabel, runStateLabel, runStopSentence, syncStateLabel, unfollowStatement,
 } from '@/utils/upstreamLabels'
 import UpstreamProbeResult from './UpstreamProbeResult.vue'
+import FieldLabel from '../FieldLabel.vue'
+import {
+    DEPTH_HELP, LINES_COUNT_HELP, RELEASE_LINE_HELP, RUN_COUNTERS, VERSION_LINE_HELP, bytesExactly, counterValueOf,
+} from '@/utils/upstreamHelp'
 import UpstreamReconfigureModal from './UpstreamReconfigureModal.vue'
 
 const RUN_POLL_MS = 5000
@@ -248,6 +257,11 @@ const myUser = computed((): any => store.getters.myuser)
 const available = computed((): boolean => upstreamSourcesAvailable(myUser.value?.installationType))
 const orgUuid = computed((): string => String(route.params.orguuid ?? ''))
 const uuid = computed((): string => String(route.params.uuid ?? ''))
+
+/** Back to the Follows tab of the organization's Upstream page. */
+const followsLink = computed(() => (isUuid(orgUuid.value)
+    ? { name: 'UpstreamOfOrg', params: { orguuid: orgUuid.value }, query: { tab: 'follows' } }
+    : null))
 
 const pageState = ref<PageState>('LOADING')
 const loadError = ref('')
@@ -298,20 +312,17 @@ function countersSentenceOf (r: any): string {
 
 const countersSentence = computed((): string => countersSentenceOf(run.value))
 
-const COUNTER_LABELS: Array<[string, string]> = [
-    ['releasesInScope', 'Releases in scope'], ['created', 'Created'], ['adopted', 'Adopted'], ['alreadyIngested', 'Already ingested'],
-    ['skippedPreReleases', 'Pre-releases skipped'], ['failed', 'Failed'], ['failedComponentRefs', 'Component references failed'],
-    ['documentsPending', 'Documents pending'], ['filesStored', 'Files stored'], ['filesNotKept', 'Files not kept'], ['bytes', 'Bytes'],
-    ['checked', 'Checked again'], ['newCollectionVersions', 'New collection versions'], ['gone', 'Gone upstream'], ['repaired', 'Repaired'],
-    ['held', 'Held'],
-]
+/** One counter of a run as listed: its label, explanation, the value shown and, for the bytes, the exact count. */
+interface CounterRow { key: string, label: string, help: string, value: string, title?: string }
 
-function allCountersOf (r: any): Array<[string, string]> {
+function allCountersOf (r: any): CounterRow[] {
     const c = r?.counters ?? {}
-    return COUNTER_LABELS.map(([key, label]) => [label, String(c[key] ?? 0)])
+    return RUN_COUNTERS.map(({ key, label, help }) => ({
+        key, label, help, value: counterValueOf(key, c), title: key === 'bytes' ? bytesExactly(c.bytes) : undefined,
+    }))
 }
 
-const allCounters = computed((): Array<[string, string]> => allCountersOf(run.value))
+const allCounters = computed((): CounterRow[] => allCountersOf(run.value))
 
 // ---- 5. Run history ----
 
@@ -572,6 +583,10 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.upstream-back {
+    display: inline-block;
+    margin-bottom: 8px;
+}
 .upstream-follow-page section {
     margin-bottom: 20px;
 }

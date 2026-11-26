@@ -1,24 +1,32 @@
 <template>
     <div v-if="available && origin" class="upstream-marker" :data-testid="'upstream-marker-' + subject">
-        <n-alert type="info" title="Ingested from an upstream source" :closable="false">
-            <template v-if="subject === 'ITEM'">
-                <div data-testid="upstream-marker-headline">Ingested from {{ sourceName }}: {{ labelOf(itemKindLabel, origin.kind) }} {{ origin.upstreamName }}</div>
-                <div class="upstream-small">uuid on the source: {{ origin.upstreamUuid }}</div>
-                <div v-if="origin.mapping === 'ADOPTED'" data-testid="upstream-marker-adopted">{{ itemMappingLabel.ADOPTED }}</div>
-            </template>
-            <template v-else>
-                <div data-testid="upstream-marker-headline">Ingested from {{ sourceName }}: upstream release {{ origin.upstreamVersion }}</div>
-                <div class="upstream-small">
-                    <span v-if="origin.upstreamDate">dated {{ dateOf(origin.upstreamDate) }}, </span>uuid on the source: {{ origin.upstreamUuid }}
-                </div>
-                <div>{{ OWNED_BY_SYNC }}</div>
+        <n-alert type="info" :title="expanded ? 'Ingested from an upstream source' : undefined" :closable="false">
+            <div class="upstream-marker-headline-row">
+                <span data-testid="upstream-marker-headline">{{ headline }}</span>
+                <n-button text size="tiny" type="primary" class="upstream-marker-toggle" data-testid="upstream-marker-toggle"
+                    :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? 'Hide details' : 'Show details' }}</n-button>
+            </div>
+            <template v-if="expanded">
+                <template v-if="subject === 'ITEM'">
+                    <div class="upstream-small">uuid on the source: {{ origin.upstreamUuid }}</div>
+                    <div v-if="origin.mapping === 'ADOPTED'" data-testid="upstream-marker-adopted">{{ itemMappingLabel.ADOPTED }}</div>
+                </template>
+                <template v-else>
+                    <div class="upstream-small">
+                        <span v-if="origin.upstreamDate">dated {{ dateOf(origin.upstreamDate) }}, </span>uuid on the source: {{ origin.upstreamUuid }}
+                    </div>
+                    <div>{{ OWNED_BY_SYNC }}</div>
+                </template>
             </template>
 
-            <div class="upstream-marker-line">
-                <n-tag size="small" :type="origin.updateState === 'NO_LONGER_UPDATED' ? 'warning' : 'success'" data-testid="upstream-marker-update-state">
+            <!-- the update state: always when it is a warning, else with the details -->
+            <div v-if="expanded || noLongerUpdated" class="upstream-marker-line">
+                <n-tag size="small" :type="noLongerUpdated ? 'warning' : 'success'" data-testid="upstream-marker-update-state">
                     {{ labelOf(itemUpdateStateLabel, origin.updateState) }}
                 </n-tag>
-                <span v-if="origin.updateState === 'NO_LONGER_UPDATED'" class="upstream-marker-text">{{ NO_LONGER_UPDATED_SENTENCE }}</span>
+                <upstream-info-tip v-if="labelOf(UPDATE_STATE_HELP, origin.updateState)" :tip="labelOf(UPDATE_STATE_HELP, origin.updateState)"
+                    testid="upstream-marker-update-state-help" />
+                <span v-if="noLongerUpdated" class="upstream-marker-text">{{ NO_LONGER_UPDATED_SENTENCE }}</span>
             </div>
 
             <template v-if="subject === 'RELEASE'">
@@ -29,17 +37,20 @@
                 <div v-if="origin.integrity === 'UPSTREAM_REWROTE_COLLECTION'" class="upstream-warning" data-testid="upstream-marker-rewrote">
                     {{ releaseIntegrityLabel.UPSTREAM_REWROTE_COLLECTION }}
                 </div>
-                <div v-if="origin.state === 'DOCUMENTS_PENDING'" data-testid="upstream-marker-documents-pending">{{ DOCUMENTS_PENDING_SENTENCE }}</div>
-                <div v-if="origin.oneOff" data-testid="upstream-marker-one-off">
-                    {{ oneOffFrozenSentence }}
-                    <router-link v-if="oneOffLink" :to="oneOffLink" data-testid="upstream-marker-one-off-link">Open the one-off</router-link>
-                </div>
-                <div v-if="newestCollection" data-testid="upstream-marker-newest">
-                    Newest ingested documents: collection version {{ newestCollection.version }}, ingested on {{ dateOf(newestCollection.ingestedDate) }}
-                </div>
+                <template v-if="expanded">
+                    <div v-if="origin.state === 'DOCUMENTS_PENDING'" data-testid="upstream-marker-documents-pending">{{ DOCUMENTS_PENDING_SENTENCE }}</div>
+                    <div v-if="origin.oneOff" data-testid="upstream-marker-one-off">
+                        {{ oneOffFrozenSentence }}
+                        <upstream-info-tip :tip="ONE_OFF_HELP" testid="upstream-marker-one-off-help" />
+                        <router-link v-if="oneOffLink" :to="oneOffLink" data-testid="upstream-marker-one-off-link">Open the one-off</router-link>
+                    </div>
+                    <div v-if="newestCollection" data-testid="upstream-marker-newest">
+                        Newest ingested documents: collection version {{ newestCollection.version }}, ingested on {{ dateOf(newestCollection.ingestedDate) }}
+                    </div>
+                </template>
             </template>
 
-            <div v-if="follow" class="upstream-marker-line" data-testid="upstream-marker-follow">
+            <div v-if="expanded && follow" class="upstream-marker-line" data-testid="upstream-marker-follow">
                 <router-link v-if="followLink" :to="followLink" data-testid="upstream-marker-follow-link">Open the follow</router-link>
                 <span v-if="follow.lastRun" class="upstream-marker-text" data-testid="upstream-marker-last-sync">
                     Last sync of its follow: {{ labelOf(runStateLabel, follow.lastRun.state) }}<template v-if="follow.lastRun.finishedDate">, {{ dateOf(follow.lastRun.finishedDate) }}</template>
@@ -50,15 +61,16 @@
                 <span class="upstream-marker-text">{{ runStopSentence.ITEM_GONE }}</span>
             </div>
 
-            <div v-if="subject === 'ITEM'" data-testid="upstream-marker-depth">
+            <div v-if="expanded && subject === 'ITEM'" data-testid="upstream-marker-depth">
                 Version lines at depth {{ origin.depth }}<template v-if="labelOf(depthOriginLabel, origin.depthOrigin)">, {{ labelOf(depthOriginLabel, origin.depthOrigin) }}</template>
+                <upstream-info-tip :tip="VERSION_LINES_AT_DEPTH_HELP" testid="upstream-marker-depth-help" />
             </div>
 
-            <div v-if="canFollow" class="upstream-marker-line">
+            <div v-if="expanded && canFollow" class="upstream-marker-line">
                 <n-button size="small" data-testid="upstream-marker-follow-item" @click="showStart = true">Follow this item</n-button>
             </div>
 
-            <n-collapse v-if="subject === 'RELEASE' && collections.length" class="upstream-snapshot" data-testid="upstream-snapshot" @item-header-click="onSnapshotHeader">
+            <n-collapse v-if="expanded && subject === 'RELEASE' && collections.length" class="upstream-snapshot" data-testid="upstream-snapshot" @item-header-click="onSnapshotHeader">
                 <n-collapse-item title="Ingested documents (read-only)" name="snapshot">
                     <div v-for="c in collections" :key="c.version" class="upstream-snapshot-version" :data-testid="'upstream-snapshot-version-' + c.version">
                         <div><strong>Collection version {{ c.version }}</strong><span v-if="c.upstreamCreatedDate">, created upstream {{ dateOf(c.upstreamCreatedDate) }}</span>, ingested on {{ dateOf(c.ingestedDate) }}</div>
@@ -126,6 +138,8 @@ import {
     vexImportStateLabel, vexModeLabel,
 } from '@/utils/upstreamLabels'
 import UpstreamFollowStartModal from './UpstreamFollowStartModal.vue'
+import UpstreamInfoTip from './UpstreamInfoTip.vue'
+import { ONE_OFF_HELP, UPDATE_STATE_HELP, VERSION_LINES_AT_DEPTH_HELP } from '@/utils/upstreamHelp'
 
 const props = defineProps<{
     /** A value of MarkerSubject. */
@@ -155,9 +169,18 @@ const follows = ref<any[] | null>(null)
 const vexImports = ref<Record<string, any>>({})
 const vexImportsRead = ref(false)
 const showStart = ref(false)
+/** Whether the details show; every page starts with the headline and any warning only. */
+const expanded = ref(false)
 let readNumber = 0
 
 const sourceName = computed((): string => source.value?.name || UNKNOWN_SOURCE)
+
+/** The one line the marker shows folded: where it came from and what it is upstream. */
+const headline = computed((): string => (props.subject === MarkerSubject.ITEM
+    ? `Ingested from ${sourceName.value}: ${labelOf(itemKindLabel, origin.value?.kind)} ${origin.value?.upstreamName ?? ''}`
+    : `Ingested from ${sourceName.value}: upstream release ${origin.value?.upstreamVersion ?? ''}`))
+
+const noLongerUpdated = computed((): boolean => origin.value?.updateState === 'NO_LONGER_UPDATED')
 
 /** The upstream item the marker's follow is looked up by: the item itself, or the item of the release. */
 const itemUuid = computed((): string | null => (props.subject === MarkerSubject.ITEM ? origin.value?.uuid : origin.value?.item) ?? null)
@@ -289,11 +312,19 @@ async function readFollows (sourceUuid: string, mine: number) {
 }
 
 watch(() => [available.value, props.uuid, props.orgUuid, props.subject], () => { read() }, { immediate: true })
+// another component or release on the same view starts folded again
+watch(() => [props.uuid, props.subject], () => { expanded.value = false })
 </script>
 
 <style scoped>
 .upstream-marker {
     margin: 4px 0;
+}
+.upstream-marker-headline-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
 }
 .upstream-marker-line {
     margin-top: 4px;

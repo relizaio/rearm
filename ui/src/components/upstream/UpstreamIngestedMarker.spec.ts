@@ -25,6 +25,7 @@ const {
 } = await import('@/utils/upstreamMarkerQueries')
 const { GET_UPSTREAM_SOURCE } = await import('@/utils/upstreamSourceQueries')
 const { itemMappingLabel, oneOffFrozenSentence, runStopSentence } = await import('@/utils/upstreamLabels')
+const { ONE_OFF_HELP, UPDATE_STATE_HELP, VERSION_LINES_AT_DEPTH_HELP } = await import('@/utils/upstreamHelp')
 
 const ORG = '11111111-2222-3333-4444-555555555555'
 const SOURCE = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -111,9 +112,15 @@ function answer (a: Answers) {
 
 const sent = (doc: any) => query.mock.calls.filter(c => c[0].query === doc)
 
-async function mountMarker (subject: 'ITEM' | 'RELEASE', isOrgAdmin = false) {
+/** Mounts the marker and, unless told not to, opens its details (it starts folded). */
+async function mountMarker (subject: 'ITEM' | 'RELEASE', isOrgAdmin = false, expand = true) {
     const w = mount(Marker, { props: { subject, orgUuid: ORG, uuid: subject === 'ITEM' ? COMPONENT : RELEASE, isOrgAdmin }, global })
     await flushPromises()
+    const toggle = w.find('[data-testid="upstream-marker-toggle"]')
+    if (expand && toggle.exists()) {
+        await toggle.trigger('click')
+        await flushPromises()
+    }
     return w
 }
 
@@ -274,5 +281,78 @@ describe('T-582: the marker of a release and its snapshot', () => {
         expect(w.find('[data-testid="upstream-marker-gone"]').exists()).toBe(false)
         expect(w.find('[data-testid="upstream-marker-one-off"]').exists()).toBe(false)
         expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
+    })
+})
+
+describe('the marker folded and unfolded', () => {
+    const testid = (w: any, id: string) => w.find(`[data-testid="${id}"]`)
+
+    it('starts as one line: the headline and the toggle, no title and no details', async () => {
+        answer({ origin: item(), source: SOURCE_ROW, follows: [coveringFollow()] })
+        const w = await mountMarker('ITEM', false, false)
+        expect(testid(w, 'upstream-marker-headline').text()).toBe('Ingested from Acme TEA: Product ' + HOSTILE)
+        expect(testid(w, 'upstream-marker-toggle').text()).toBe('Show details')
+        expect(testid(w, 'upstream-marker-toggle').attributes('aria-expanded')).toBe('false')
+        expect(w.text()).not.toContain('Ingested from an upstream source')
+        for (const id of ['upstream-marker-update-state', 'upstream-marker-depth', 'upstream-marker-follow', 'upstream-marker-adopted']) {
+            expect(testid(w, id).exists(), id).toBe(false)
+        }
+        expect(w.text()).not.toContain('uuid on the source')
+        w.unmount()
+    })
+
+    it('opens to the title and the details with their info icons, and folds again', async () => {
+        answer({ origin: item(), source: SOURCE_ROW, follows: [coveringFollow()] })
+        const w = await mountMarker('ITEM', false, false)
+        await testid(w, 'upstream-marker-toggle').trigger('click')
+        await flushPromises()
+        expect(w.text()).toContain('Ingested from an upstream source')
+        expect(testid(w, 'upstream-marker-toggle').text()).toBe('Hide details')
+        expect(testid(w, 'upstream-marker-update-state').text()).toBe('Kept up to date')
+        expect(testid(w, 'upstream-marker-update-state-help').attributes('aria-label')).toBe(UPDATE_STATE_HELP.UPDATED)
+        expect(testid(w, 'upstream-marker-depth').text()).toContain('Version lines at depth 2')
+        expect(testid(w, 'upstream-marker-depth-help').attributes('aria-label')).toBe(VERSION_LINES_AT_DEPTH_HELP)
+        await testid(w, 'upstream-marker-toggle').trigger('click')
+        await flushPromises()
+        expect(testid(w, 'upstream-marker-depth').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('keeps the warnings of an item folded: no longer updated, and a follow whose last run found the item gone', async () => {
+        answer({ origin: item({ updateState: 'NO_LONGER_UPDATED' }), source: SOURCE_ROW, follows: [coveringFollow('ITEM_GONE')] })
+        const w = await mountMarker('ITEM', false, false)
+        expect(testid(w, 'upstream-marker-update-state').text()).toBe('No longer updated')
+        expect(testid(w, 'upstream-marker-update-state-help').attributes('aria-label')).toBe(UPDATE_STATE_HELP.NO_LONGER_UPDATED)
+        expect(testid(w, 'upstream-marker-item-gone').text()).toContain(runStopSentence.ITEM_GONE)
+        expect(testid(w, 'upstream-marker-follow').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('keeps the warnings of a release folded: gone and a rewritten collection; the one-off and its icon open with the details', async () => {
+        answer({ origin: release({ integrity: 'UPSTREAM_REWROTE_COLLECTION' }), source: SOURCE_ROW, follows: [] })
+        const w = await mountMarker('RELEASE', false, false)
+        expect(testid(w, 'upstream-marker-headline').text()).toBe('Ingested from Acme TEA: upstream release 1.4.0')
+        expect(testid(w, 'upstream-marker-gone').exists()).toBe(true)
+        expect(testid(w, 'upstream-marker-rewrote').exists()).toBe(true)
+        expect(testid(w, 'upstream-marker-one-off').exists()).toBe(false)
+        expect(testid(w, 'upstream-snapshot').exists()).toBe(false)
+        expect(testid(w, 'upstream-marker-update-state').exists()).toBe(false)
+        await testid(w, 'upstream-marker-toggle').trigger('click')
+        await flushPromises()
+        expect(testid(w, 'upstream-marker-one-off').text()).toContain(oneOffFrozenSentence)
+        expect(testid(w, 'upstream-marker-one-off-help').attributes('aria-label')).toBe(ONE_OFF_HELP)
+        expect(testid(w, 'upstream-snapshot').exists()).toBe(true)
+        w.unmount()
+    })
+
+    it('folds again when it is shown for another component', async () => {
+        answer({ origin: item(), source: SOURCE_ROW, follows: [] })
+        const w = await mountMarker('ITEM')
+        expect(testid(w, 'upstream-marker-depth').exists()).toBe(true)
+        await w.setProps({ uuid: 'bbbbbbbb-0000-4000-8000-000000000003' })
+        await flushPromises()
+        expect(testid(w, 'upstream-marker-toggle').text()).toBe('Show details')
+        expect(testid(w, 'upstream-marker-depth').exists()).toBe(false)
+        w.unmount()
     })
 })

@@ -146,6 +146,15 @@ describe('T-561: resolving a TEI', () => {
         w.unmount()
     })
 
+    it('putsAnInfoIconBesideTheSourceLabel', async () => {
+        answer([])
+        const w = await mountPanel(true)
+        const label = w.get('[data-testid="upstream-tei-form"]').findAll('label').find(l => l.text().includes('Source'))
+        expect(label, 'the Source label').toBeTruthy()
+        expect(label!.find('.n-icon').exists()).toBe(true)
+        w.unmount()
+    })
+
     it('sendsTheChosenSourceWhenOneIsNamed', async () => {
         answer([])
         mutate.mockResolvedValue({ data: { resolveUpstreamTei: oneOff('RESOLVING') } })

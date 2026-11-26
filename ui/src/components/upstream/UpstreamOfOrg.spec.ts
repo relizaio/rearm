@@ -107,6 +107,19 @@ describe('the Upstream page of an organization', () => {
         w.unmount()
     })
 
+    it('puts an info icon on the Depth and On drift column headers', async () => {
+        answer([aFollow()])
+        const w = await mountPage(ADMIN)
+        const headers = w.get('[data-testid="upstream-follows-table"]').findAll('th')
+        for (const name of ['Depth', 'On drift']) {
+            const th = headers.find(x => x.text() === name)
+            expect(th, `the ${name} header`).toBeTruthy()
+            expect(th!.find('.n-icon').exists(), name).toBe(true)
+        }
+        expect(headers.find(x => x.text() === 'Item')!.find('.n-icon').exists()).toBe(false)
+        w.unmount()
+    })
+
     it('shows an administrator the Follow an item button and mounts the start modal', async () => {
         answer([aFollow()])
         const w = await mountPage(ADMIN)
