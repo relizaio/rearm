@@ -9,7 +9,7 @@ RUN npm ci --ignore-scripts
 COPY ./ .
 # Trust-store probe: the node that ran npm ci refuses the compromised chains.
 RUN node ci/trust-gate/trust-gate.mjs
-RUN echo "b26010fef1b7f29b43e0918a028ee974841316cf1c71e302943d4b95dc9d53c8  docs/workflows/readiness-rules.md" > /tmp/readiness-rules.sha256 && sha256sum -c /tmp/readiness-rules.sha256
+RUN echo "f1729926b31213911f73c2999f8a150a5fafa4890ba3ef3e107eb3cc8965a9e9  docs/workflows/readiness-rules.md" > /tmp/readiness-rules.sha256 && sha256sum -c /tmp/readiness-rules.sha256
 RUN npm run docs:build
 RUN echo "2284da03c650f772c431be567aa657796b1d47b86eeedecda1be1118efc3cc89  docs/workflows/fda-checker-rules.md" > /tmp/rules.sha256 && sha256sum -c /tmp/rules.sha256
 RUN test ! -e ci/regulated-outputs/regulated-outputs.mjs || node --input-type=module -e "import { PAGES, NOT_COMPARED } from './ci/regulated-outputs/regulated-outputs.mjs'; if (PAGES['fda-checker-rules'] !== 'docs/workflows/fda-checker-rules.md' || Object.hasOwn(NOT_COMPARED, 'fda-checker-rules')) { console.error('docs/workflows/fda-checker-rules.md is in this documentation: ci/regulated-outputs/regulated-outputs.mjs must map fda-checker-rules to it in PAGES and leave it out of NOT_COMPARED (FDAW-125)'); process.exit(1) }"

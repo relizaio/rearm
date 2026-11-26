@@ -247,7 +247,8 @@ describe('FDAW-16 row 13: readinessRows and the readiness terms of draftButtons'
         expect(one(DEVICE, { writable: true, canWriteOrg: true }).tag).toBe('Review')
         // the verbs and their labels of 3.8, and the three organization-wide ones
         expect(D.READINESS_VERB_LABELS).toEqual({ ADD_SUPPLIERS: 'Add suppliers', ASSESS_SUPPORT: 'Assess support',
-            DESCRIBE_VENDORED: 'Describe vendored code', JUSTIFY_HASHES: 'Justify missing hashes', EDIT_COVER_SUMMARY: 'Edit cover summary' })
+            DESCRIBE_VENDORED: 'Describe vendored code', JUSTIFY_HASHES: 'Justify missing hashes', EDIT_COVER_SUMMARY: 'Edit cover summary',
+            ASSESS_FINDINGS: 'Assess findings' })
         expect(D.ORG_WIDE_VERBS).toEqual(['ADD_SUPPLIERS', 'ASSESS_SUPPORT', 'DESCRIBE_VENDORED'])
         expect(D.readinessRows(draft({ readiness: null }), { writable: true, canWriteOrg: true })).toEqual([])
     })

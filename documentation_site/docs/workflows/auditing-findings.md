@@ -205,6 +205,8 @@ When creating or updating a finding analysis, you will be able to work with the 
 
 Findings in `FALSE_POSITIVE`, `NOT_AFFECTED` or `RESOLVED` state are **suppressed** and excluded from active finding counts.
 
+Confirm and Finalize of a regulatory package need every finding of the release assessed: not in triage, with a discovery method, and what its state asks for (a justification or an explanation for Not Affected and False Positive, an explanation for Resolved, and a risk level, at least one risk control and a response, recommendation or workaround for Exploitable); a known exploited finding also needs an explanation. See [Readiness rules](./readiness-rules). An assessment that was never given a discovery method, such as one made before ReARM's analysis dialogs offered the field or created by a VEX import, has none until one is set.
+
 
 
 ## Managing Existing Analysis Records

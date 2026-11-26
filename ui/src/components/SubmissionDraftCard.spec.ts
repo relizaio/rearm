@@ -299,8 +299,8 @@ describe('SubmissionDraftCard (FDAW-32 row 7)', () => {
 // FDAW-16 architecture round 3, section 4 row 14: the readiness block of the card (3.8), its verbs by the two
 // facts of F-30, text 13 under the rows, and texts 9 and 16 for a build without readiness.
 describe('SubmissionDraftCard: readiness (FDAW-16 row 14)', () => {
-    const TEXT_13 = 'These items are read from this build. Fix them, then rebuild the draft. An item without a button, or an entry a '
-        + 'button does not list, is corrected in the SBOM uploaded to the release, or to the component release that carries the entry.'
+    const TEXT_13 = 'Fix these items, then rebuild the draft. A must-fix item without a button, or an entry a button does not list, is '
+        + 'corrected in the SBOM uploaded to the release, or to the component release that carries the entry, unless its text names another place.'
     const TEXT_9 = 'Readiness was not checked for this build; rebuild the draft'
     const TEXT_16 = 'Readiness was not checked for this build; return the draft to editing and rebuild it'
     const ORG_SENTENCE = 'Add suppliers changes organization-wide data and needs organization write access, which an'

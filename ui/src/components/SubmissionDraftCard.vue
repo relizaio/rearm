@@ -111,6 +111,7 @@ const props = withDefaults(defineProps<{
     secondConfirmer?: boolean | null
     isWritable?: boolean
     canWriteOrg?: boolean
+    canWriteFindingAnalysis?: boolean
     busy?: boolean
     stillRunning?: boolean
     names?: Record<string, any>
@@ -121,6 +122,7 @@ const props = withDefaults(defineProps<{
     secondConfirmer: null,
     isWritable: false,
     canWriteOrg: false,
+    canWriteFindingAnalysis: false,
     busy: false,
     stillRunning: false,
     names: () => ({}),
@@ -161,7 +163,8 @@ const confirmationLine = computed(() => draftConfirmationLine(props.draft, props
 const buttons = computed(() => draftButtons(props.draft, { secondConfirmer: props.secondConfirmer, writable: props.isWritable,
     busy: props.busy, currentUser: props.currentUser, lifecycle: props.lifecycle, head: props.head }))
 const anyButton = computed(() => Object.values(buttons.value).some(b => b.shown))
-const readiness = computed(() => readinessRows(props.draft, { writable: props.isWritable, canWriteOrg: props.canWriteOrg }))
+const readiness = computed(() => readinessRows(props.draft, { writable: props.isWritable, canWriteOrg: props.canWriteOrg,
+    canWriteFindingAnalysis: props.canWriteFindingAnalysis }))
 const uncheckedText = computed(() => props.draft?.state === 'AWAITING_CONFIRMATION' ? READINESS_UNCHECKED_AWAITING : READINESS_UNCHECKED)
 
 // The draft zip (FDAW-122): offered at job BUILT, to everyone who sees the card; the server decides who gets it.
