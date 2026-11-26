@@ -13,6 +13,8 @@ const ENTRY_FIELDS = `
     docVersion uploadedBy actedBy actedAt acceptComment rejectReason acceptedVia acceptedByName
     acceptedAt acceptedByUploader supersededBy
     comparedRecordUuid comparedWith overridesScope overridesLevel overridesRecordUuid carried shownForPurl
+    sourceRedacted appliesToRelease appliesToReleaseVersion appliesToComponent appliesToComponentName
+    appliesToReleaseArchived
 `
 
 export const GET_SAFETY_PROPOSALS = gql`
@@ -31,6 +33,23 @@ export const GET_SAFETY_RECORDS_BY_RELEASE = gql`
     query GetSafetyContextRecordsByRelease($org: ID!, $release: ID!, $includeSuperseded: Boolean, $limit: Int, $offset: Int) {
         getSafetyContextRecordsByRelease(org: $org, release: $release, includeSuperseded: $includeSuperseded,
             limit: $limit, offset: $offset) { ${ENTRY_FIELDS} }
+    }
+`
+
+/**
+ * The release's levels and, for a product release, each component release's levels, with the most
+ * stringent level per scheme and the counts of rows left out.
+ */
+export const GET_SAFETY_RELEASE_VIEW = gql`
+    query GetSafetyContextReleaseView($org: ID!, $release: ID!, $includeSuperseded: Boolean, $limit: Int, $offset: Int) {
+        getSafetyContextReleaseView(org: $org, release: $release, includeSuperseded: $includeSuperseded,
+            limit: $limit, offset: $offset) {
+            release productView totalRows
+            rows { ${ENTRY_FIELDS} }
+            summary { schemeKey level levelRank releaseCount recordCount fromCarriedOnly unrankedLevels }
+            constituentReleaseCount evaluatedReleaseCount hiddenReleaseCount hiddenLevelCount
+            pendingInventoryReleaseCount complete incompleteReasons
+        }
     }
 `
 

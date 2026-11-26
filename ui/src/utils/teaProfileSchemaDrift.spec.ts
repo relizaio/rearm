@@ -163,8 +163,9 @@ describe('TEA publication documents (TEA-5) and the edition gate', () => {
         }
     })
 
-    // SAFE-11: present in the UI before the Pro schema; remove once rearm-saas main has it.
-    const TRANSITION_RIDE_ALONG_STATUSES = ['SKIPPED_UNKNOWN_TYPE']
+    // Present in the UI before the Pro schema; remove each once rearm-saas main has it.
+    // SKIPPED_UNKNOWN_TYPE: SAFE-11. SKIPPED_SAFETY_NOT_ACCEPTED: the SAFETY_CONTEXT review-state rule.
+    const TRANSITION_RIDE_ALONG_STATUSES = ['SKIPPED_UNKNOWN_TYPE', 'SKIPPED_SAFETY_NOT_ACCEPTED']
 
     it.runIf(proSchema)('the ride-along statuses equal the Pro TeaRideAlongStatus, and every one but PUBLISHED has a summary label', () => {
         const pro = [...new Set([...enumValuesOf(proSchema!, 'TeaRideAlongStatus'), ...TRANSITION_RIDE_ALONG_STATUSES])]
