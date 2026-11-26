@@ -1,9 +1,24 @@
 {{- /*
 Ingress NetworkPolicies (TPF-90): every chart pod is reachable only from the
-pods that need it, on the port it listens on. Ingress only: nothing here
-restricts what a pod may connect to (policyTypes carries Ingress alone), so
-outbound traffic, DNS included, is untouched. Egress is a documented
-follow-up.
+pods that need it, on the port it listens on. They carry policyTypes Ingress
+alone, so they restrict nothing a pod may connect to.
+
+Egress (TPF-179): ONE opt-in policy, <release>-rebom-backend-egress, for the
+rebom backend pod only (networkPolicy.rebomBackend.egress.enabled, default
+false; off renders nothing). It carries policyTypes Egress alone and allows
+DNS, the chart's rebom postgres and artifact service pods (by pod selector,
+on the pod's port: a Service is matched after translation to its pod) and
+public IPv4 addresses. Everything else is refused by not being allowed:
+private, carrier-grade NAT, link-local and other non-public IPv4 ranges,
+every IPv6 address and every other pod. Public IPv6 addresses are allowed
+only when public.ipFamilies names IPv6: then 2000::/3 without 6to4, Teredo
+and the documentation prefixes, and still nothing outside it (unique-local
+and link-local included). IPv6 is not in the default because a cluster's and
+a network's own IPv6 ranges are usually global unicast, inside 2000::/3: the
+operator who turns it on lists them in public.extraExcept. The outbound
+traffic of every other pod (DNS, GitHub, OSV, Dependency-Track, registries,
+SMTP, webhooks, external postgres, S3) stays unrestricted. Loopback never
+leaves the pod, so no NetworkPolicy sees it.
 
 Pods are selected by the labels their workloads already carry in
 spec.selector (immutable, so they are the stable identity of the pod); no
@@ -43,6 +58,24 @@ Values (networkPolicy.*):
                                 also let the ingress controller reach that
                                 service directly (needed only by a cluster
                                 with IngressRoutes outside this chart)
+  rebomBackend.egress.enabled   render the egress policy of the rebom pod
+                                (needs enabled above; independent of
+                                rebomBackend.enabled, the ingress opt-out)
+  rebomBackend.egress.dns       to: peers of the DNS rule (empty: any
+                                destination); ports: DNS ports, UDP and TCP
+                                (empty: 53)
+  rebomBackend.egress.public    ipFamilies: IPv4 and/or IPv6 blocks of the
+                                public rule (unset: IPv4; empty list: no
+                                public rule);
+                                ports: TCP ports of the public rule (empty:
+                                every port and protocol); extraExcept: CIDRs
+                                taken out of the public rule (ranges of the
+                                cluster and of your network that are not
+                                private: with IPv6 usually all of them)
+  rebomBackend.egress.extraEgress
+                                raw egress rules appended (an external
+                                postgres, an internal TEA server or
+                                enrichment endpoint); each needs a "to"
 */ -}}
 {{- define "rearm.networkPolicy.serviceOn" -}}
 {{- $svc := index .np .key | default dict -}}
@@ -104,6 +137,10 @@ in any namespace when the chart renders its Traefik IngressRoutes; else empty
 {{- end -}}
 
 {{- $np := .Values.networkPolicy | default dict }}
+{{- $eg := ($np.rebomBackend | default dict).egress | default dict }}
+{{- if and $eg.enabled (not $np.enabled) }}
+{{- fail "networkPolicy.rebomBackend.egress.enabled is true but networkPolicy.enabled is false: no NetworkPolicy would be rendered, the egress policy of the rebom pod included. Set networkPolicy.rebomBackend.egress.enabled=false as well, or keep networkPolicy.enabled true and switch the ingress policies off per service (networkPolicy.<service>.enabled=false)." }}
+{{- end }}
 {{- if $np.enabled }}
 {{- $icYaml := include "rearm.networkPolicy.effectiveIngressController" (dict "np" $np "ctx" .) }}
 {{- $ic := ternary (fromYaml $icYaml) dict (ne $icYaml "") }}
@@ -280,6 +317,127 @@ spec:
         - port: 4000
           protocol: TCP
     {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "rebomBackend" "ports" (list 4000)) | nindent 4 }}
+{{- end }}
+{{- if $eg.enabled }}
+{{- $dns := $eg.dns | default dict }}
+{{- $pub := $eg.public | default dict }}
+{{- $families := ternary $pub.ipFamilies (list "IPv4") (hasKey $pub "ipFamilies") | default list }}
+{{- range $families }}
+{{- if not (has . (list "IPv4" "IPv6")) }}
+{{- fail (printf "networkPolicy.rebomBackend.egress.public.ipFamilies: %q is not IPv4 or IPv6." (toString .)) }}
+{{- end }}
+{{- end }}
+{{- $except4 := list }}
+{{- $except6 := list }}
+{{- range $pub.extraExcept }}
+{{- if contains ":" (toString .) }}
+{{- if not (regexMatch "^[23][0-9a-fA-F]{3}:" (toString .)) }}
+{{- fail (printf "networkPolicy.rebomBackend.egress.public.extraExcept: %s is outside 2000::/3, the only IPv6 block the public rule allows, so it is already refused: remove it." (toString .)) }}
+{{- end }}
+{{- $except6 = append $except6 (toString .) }}
+{{- else }}
+{{- $except4 = append $except4 (toString .) }}
+{{- end }}
+{{- end }}
+{{- range $i, $rule := $eg.extraEgress }}
+{{- if not (and (kindIs "map" $rule) $rule.to) }}
+{{- fail (printf "networkPolicy.rebomBackend.egress.extraEgress[%d] has no \"to\": a rule without peers allows every destination, private ranges included. Name the peers (ipBlock, podSelector or namespaceSelector)." $i) }}
+{{- end }}
+{{- end }}
+{{- if and .Values.use_external_postgres (not $eg.extraEgress) }}
+{{- fail "networkPolicy.rebomBackend.egress.enabled with use_external_postgres: the chart cannot name the external rebom database (rebom_postgres_host), so the policy would cut rebom off from it unless its address is public. Add a rule for it to networkPolicy.rebomBackend.egress.extraEgress, for example: - to: [{ipBlock: {cidr: 10.20.0.15/32}}] with ports: [{port: 5432, protocol: TCP}] (the flyway init container always dials 5432; add rebom_postgres_port if it differs)." }}
+{{- end }}
+---
+# Egress of the rebom backend pod (TPF-179): what is not listed is refused.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-rebom-backend-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      app: rebom
+      name: rebom-backend
+  policyTypes:
+    - Egress
+  egress:
+    # DNS. No "to" (the default) is every destination on these ports.
+    - ports:
+        {{- range ($dns.ports | default (list 53)) }}
+        - port: {{ . }}
+          protocol: UDP
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+      {{- with $dns.to }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- if not .Values.use_external_postgres }}
+    # The chart's rebom postgres pod (main container and flyway init container).
+    - to:
+        {{- include "rearm.networkPolicy.peer" (dict "ctx" . "labels" (dict "name" "postgres" "app" "rebom")) | nindent 8 }}
+      ports:
+        - port: 5432
+          protocol: TCP
+    {{- end }}
+    {{- if .Values.ociArtifactService.enabled }}
+    # The chart's artifact service pod (Service port 80, pod port 8083).
+    - to:
+        {{- include "rearm.networkPolicy.peer" $oci | nindent 8 }}
+      ports:
+        - port: 8083
+          protocol: TCP
+    {{- end }}
+    {{- if $families }}
+    # Public addresses.
+    - to:
+        {{- if has "IPv4" $families }}
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 168.63.129.16/32
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.168.0.0/16
+              - 198.18.0.0/15
+              - 240.0.0.0/4
+              {{- range $except4 }}
+              - {{ . | quote }}
+              {{- end }}
+        {{- end }}
+        {{- if has "IPv6" $families }}
+        - ipBlock:
+            cidr: "2000::/3"
+            except:
+              - "2001::/32"
+              - "2001:db8::/32"
+              - "2002::/16"
+              - "3fff::/20"
+              {{- range $except6 }}
+              - {{ . | quote }}
+              {{- end }}
+        {{- end }}
+      {{- with $pub.ports }}
+      ports:
+        {{- range . }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+      {{- end }}
+    {{- end }}
+    {{- with $eg.extraEgress }}
+    # networkPolicy.rebomBackend.egress.extraEgress
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}
 {{- if and (not .Values.use_external_postgres) (eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "rebomPostgres")) "true") }}
 ---

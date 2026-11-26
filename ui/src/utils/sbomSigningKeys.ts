@@ -32,21 +32,22 @@ export const JWKS_VERIFY_COMMAND = 'rearm bomutils verify-signature --key <this 
  */
 export const PUBLIC_KEYS_NOTE = 'Publishing the organization\'s public signing keys at a public URL (JWKS), so consumers can'
     + ' verify signed exports without an account, is upcoming experimental functionality and is not available yet.'
-export const UNSUPPORTED_TEXT = 'This server does not offer SBOM export signing yet. A ReARM CE installation gains it at its next sync.'
+export const UNSUPPORTED_TEXT = 'This server does not offer SBOM export signing yet. The server runs an older version of ReARM, from before this feature. Updating the server adds it.'
 
 /** The confirm before Generate replaces a CURRENT key (Swal.fire options). */
 export const ROTATE_CONFIRM = Object.freeze({
     title: 'Rotate the SBOM signing key?',
-    text: 'The current key is retired and new exports sign with the new key. Retired keys stay published'
-        + ' in the JWKS so documents signed with them keep verifying.',
+    text: 'The current key is retired and new exports sign with the new key. Documents signed with the retired key'
+        + ' keep verifying with its public key. Copy that public key before you rotate: this section shows the public key'
+        + ' of the current key only.',
     confirmButtonText: 'Rotate',
 })
 
 /** The confirm before a revoke (Swal.fire options). */
 export const REVOKE_CONFIRM = Object.freeze({
     title: 'Revoke this SBOM signing key?',
-    text: 'Verification of documents signed with this key will report KEY_REVOKED. If it is the current key,'
-        + ' exports are unsigned until a new key exists.',
+    text: 'The key is marked REVOKED. Consumers are not told: a copy of its public key still verifies documents signed'
+        + ' with it, so tell them to stop trusting it. If it is the current key, exports are unsigned until a new key exists.',
     confirmButtonText: 'Revoke',
 })
 
@@ -79,7 +80,7 @@ export function generateLabel (hasCurrent: boolean): string {
     return hasCurrent ? 'Rotate key' : 'Generate key'
 }
 
-/** A list query refused as schema drift: this server has no SBOM signing (a CE mirror before its sync). */
+/** A list query refused as schema drift: this server has no SBOM signing (a server older than the feature). */
 export function isSbomSigningUnsupported (err: unknown): boolean {
     return isSchemaDriftError(err)
 }

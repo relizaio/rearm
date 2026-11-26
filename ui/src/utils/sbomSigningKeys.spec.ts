@@ -51,20 +51,27 @@ describe('the confirm and hint texts', () => {
     it('are the design texts', () => {
         expect(ROTATE_CONFIRM).toEqual({
             title: 'Rotate the SBOM signing key?',
-            text: 'The current key is retired and new exports sign with the new key. Retired keys stay published in the JWKS so documents signed with them keep verifying.',
+            text: 'The current key is retired and new exports sign with the new key. Documents signed with the retired key keep verifying with its public key. Copy that public key before you rotate: this section shows the public key of the current key only.',
             confirmButtonText: 'Rotate',
         })
         expect(REVOKE_CONFIRM).toEqual({
             title: 'Revoke this SBOM signing key?',
-            text: 'Verification of documents signed with this key will report KEY_REVOKED. If it is the current key, exports are unsigned until a new key exists.',
+            text: 'The key is marked REVOKED. Consumers are not told: a copy of its public key still verifies documents signed with it, so tell them to stop trusting it. If it is the current key, exports are unsigned until a new key exists.',
             confirmButtonText: 'Revoke',
         })
         expect(IMPORT_HINT).toBe('An Ed25519 private key as PKCS#8 PEM (BEGIN PRIVATE KEY). The key is encrypted at rest with this installation\'s encryption settings.')
     })
 
-    it('name what a consumer sees: KEY_REVOKED, retired, PKCS#8', () => {
-        expect(REVOKE_CONFIRM.text).toContain('KEY_REVOKED')
+    it('say what an administrator must do, and promise no key list', () => {
         expect(ROTATE_CONFIRM.text).toContain('retired')
+        expect(ROTATE_CONFIRM.text).toContain('before you rotate')
+        expect(REVOKE_CONFIRM.text).toContain('REVOKED')
+        expect(REVOKE_CONFIRM.text).toContain('stop trusting')
+        for (const text of [ROTATE_CONFIRM.text, REVOKE_CONFIRM.text]) {
+            for (const word of ['JWKS', 'published', 'KEY_REVOKED']) {
+                expect(text).not.toContain(word)
+            }
+        }
         expect(IMPORT_HINT).toContain('PKCS#8')
     })
 })

@@ -9,8 +9,10 @@ expectations, and show you, check by check, what the document has and what it is
 check runs on the document you would hand over: the release BOM export, or a BOM artifact as
 ReARM serves it. Nothing is stored: each score is taken when you ask for it.
 
-SBOM scoring reaches a ReARM CE installation at its next sync from Pro; until then the buttons
-answer "SBOM scoring is not available on this server".
+SBOM scoring works the same on ReARM Community Edition and ReARM Pro. The scoring engine is part of
+the rebom service, which the Helm chart and the Docker Compose file of ReARM Community Edition
+install. A server from before SBOM scoring (an older version) answers "SBOM scoring is not available
+on this server".
 
 ## What a score is
 

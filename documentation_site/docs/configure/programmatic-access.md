@@ -155,9 +155,11 @@ customer or an auditor that consumes your SBOMs, so that it can read what the or
 published on the [Transparency Exchange API](../tea/) (TEA). It authenticates at the TEA token
 endpoint of your organization and nowhere else:
 
-- it reaches no programmatic GraphQL API, no artifact or signature download and no CLI, and it
-  backs no browser login of the CLI: the programmatic token endpoint answers `invalid_client` for
-  it, exactly as for an unknown key;
+- it reaches no programmatic GraphQL API, no artifact or signature download and no CLI command
+  that talks to the ReARM API, and it backs no browser login of the CLI: the programmatic token
+  endpoint answers `invalid_client` for it, exactly as for an unknown key. The CLI's `rearm tea`
+  commands read TEA and take it through variables of their own, see
+  [Reading with the ReARM CLI](../tea/#reading-with-the-rearm-cli);
 - it reads only what its grants cover, and only objects the organization published on TEA;
 - the TEA endpoints accept tokens of external keys only, so no other key reaches TEA either.
 

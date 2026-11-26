@@ -8,7 +8,11 @@ import { toGraphQLError } from './types/errors';
 import { bomToExcel, bomToCsv } from './services/bom/bomExportService';
 import { verifySignature as runVerifySignature, VerifyInput, VerifyResult } from './services/signatureVerifier';
 import { GraphQLError } from 'graphql';
+import { randomBytes } from 'crypto';
 import { logger } from './logger';
+import * as TeaService from './services/tea/teaService';
+import { requireTeaCaller, TeaRequestContext } from './services/tea/teaCallerGate';
+import { internalMessage, TeaOutcome, TeaReason, teaResult, TeaResultBase } from './services/tea/teaOutcome';
 
 /**
  * Wrap resolver function with structured error handling
@@ -26,6 +30,28 @@ function withErrorHandling<T>(
 			throw new GraphQLError(graphqlError.message, {
 				extensions: graphqlError.extensions,
 			});
+		}
+	};
+}
+
+/**
+ * A TEA resolver (TPF-180 design 3.2, 3.4): the caller gate is its first statement, before any
+ * validation, probe, slot or log line; then the service function. An exception nobody expected is
+ * FAILED with reason INTERNAL and a reference that is also in the one log line.
+ */
+function teaResolver<R extends TeaResultBase>(
+	operationName: string,
+	run: (args: any) => Promise<R>
+): (parent: unknown, args: any, context: TeaRequestContext) => Promise<R | TeaResultBase> {
+	return async (_parent, args, context) => {
+		const refused = requireTeaCaller(context);
+		if (refused) return refused;
+		try {
+			return await run(args);
+		} catch (error) {
+			const ref = randomBytes(4).toString('hex');
+			logger.error({ err: error, ref, operationName }, 'TEA operation failed unexpectedly');
+			return teaResult(TeaOutcome.FAILED, TeaReason.INTERNAL, null, internalMessage(ref));
 		}
 	};
 }
@@ -96,7 +122,9 @@ const resolvers = {
 			async (_: any, input: { org: string }): Promise<boolean> =>
 				BomService.isEnrichmentConfigured(input.org),
 			'isEnrichmentConfigured'
-		)
+		),
+		teaStatus: teaResolver('teaStatus', () => TeaService.teaStatus()),
+		teaFetchedFileChunk: teaResolver('teaFetchedFileChunk', (args) => TeaService.teaFetchedFileChunk(args))
 	},
 	Mutation: {
 		addBom: withErrorHandling(async (_:any, bomInput: BomInput): Promise<BomRecord> => BomService.addBom(bomInput), 'addBom'),
@@ -124,7 +152,15 @@ const resolvers = {
 		}, 'deleteBearIntegration'),
 		verifySignature: withErrorHandling(async (_:any, input: { input: VerifyInput }): Promise<VerifyResult> => {
 			return runVerifySignature(input.input);
-		}, 'verifySignature')
+		}, 'verifySignature'),
+		teaResolve: teaResolver('teaResolve', (args) => TeaService.teaResolve(args.input)),
+		teaProduct: teaResolver('teaProduct', (args) => TeaService.teaProduct(args.input)),
+		teaComponent: teaResolver('teaComponent', (args) => TeaService.teaComponent(args.input)),
+		teaReleases: teaResolver('teaReleases', (args) => TeaService.teaReleases(args.input)),
+		teaRelease: teaResolver('teaRelease', (args) => TeaService.teaRelease(args.input)),
+		teaFetchCollection: teaResolver('teaFetchCollection', (args) => TeaService.teaFetchCollection(args.input)),
+		teaStoreFetchedSbom: teaResolver('teaStoreFetchedSbom', (args) => TeaService.teaStoreFetchedSbom(args.input)),
+		teaReleaseFetch: teaResolver('teaReleaseFetch', (args) => TeaService.teaReleaseFetch(args.fetchId))
 	}
 }
 export default resolvers;

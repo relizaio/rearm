@@ -194,6 +194,9 @@ export const eventTypeOptions = [
     // License seat events (Pro, TPF-165 D9): a refused sign-in or a skipped SSO group lift, delivered
     // to the organization's admins.
     { label: 'License seats', value: 'LICENSE_SEAT_EVENT', proOnly: true },
+    // Upstream source alerts (Pro, TPF-185): drift held or adapted, a new component, a lineage held
+    // elsewhere and a failing source, delivered to the organization's admins.
+    { label: 'Upstream sources', value: 'UPSTREAM_ALERT', proOnly: true },
 ]
 
 export const AGENT_BOARD_EVENT_TYPES = ['AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_RETURNED',
@@ -250,7 +253,9 @@ export const severityOptions = [
 export const SEVERITY_BEARING_EVENT_TYPES = ['NEW_VULN_AFFECTS_RELEASES', 'VULNERABILITY_RECORD_UPDATED',
     'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED', ...AGENT_BOARD_EVENT_TYPES,
     // carries a fixed HIGH severity on the server (TPF-165 D9)
-    'LICENSE_SEAT_EVENT']
+    'LICENSE_SEAT_EVENT',
+    // each kind of upstream alert carries a fixed severity on the server (TPF-185)
+    'UPSTREAM_ALERT']
 
 /** True when a minimum-severity gate can ever match, given these event types. */
 export function severityAppliesTo (eventTypes: string[] | null | undefined): boolean {

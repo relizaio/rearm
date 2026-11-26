@@ -1,0 +1,6 @@
+networkPolicy:
+  rebomBackend:
+    egress:
+      enabled: true
+      extraEgress:
+        - ports: [ { port: 443, protocol: TCP } ]

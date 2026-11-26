@@ -1,0 +1,57 @@
+#!/bin/sh
+# A stand-in for the rearm CLI in the TEA rows marked stub (TPF-180 design section 4). A row copies
+# it into a fresh directory, writes behaviour files beside it and puts that directory first on PATH.
+# It cannot be steered through its environment: the runner gives it none of the test's.
+#
+# Records: probes/<pid> for `rearm tea machine` alone, runs/<pid>/argv (one element per line, as
+# <length>:<value>) and runs/<pid>/env for every other start, pid (its own pid) and starts (the
+# pids of the runs in the order they started).
+#
+# Behaviour files of a run (all optional): run.exit (exit code, default 0), run.stdout and
+# run.stderr (copied to the streams), run.dir (a directory copied to the value of --dir=),
+# run.sleep (seconds to sleep; with run.child a child process sleeps too and its pid is written to
+# child.pid), run.signal (the stub signals itself). Of the probe: probe.exit, probe.stderr,
+# probe.stdout (default: the machine mode's usage error, exit 2).
+here=$(cd "$(dirname "$0")" && pwd)
+
+if [ "$#" -eq 2 ] && [ "$1" = "tea" ] && [ "$2" = "machine" ]; then
+    mkdir -p "$here/probes"
+    : > "$here/probes/$$"
+    if [ -f "$here/probe.stdout" ]; then cat "$here/probe.stdout"; fi
+    if [ -f "$here/probe.stderr" ]; then
+        cat "$here/probe.stderr" >&2
+    elif [ ! -f "$here/probe.exit" ]; then
+        printf '%s\n' '{"formatVersion":1,"kind":"TEA_ERROR","exitCode":2,"reason":"USAGE","message":"a verb is required","url":null,"httpStatus":null,"address":null,"addressClass":null,"phase":null,"hint":null,"ignoredProxyVariables":[]}' >&2
+    fi
+    if [ -f "$here/probe.exit" ]; then exit "$(cat "$here/probe.exit")"; fi
+    exit 2
+fi
+
+run="$here/runs/$$"
+mkdir -p "$run"
+for a in "$@"; do
+    printf '%s:%s\n' "${#a}" "$a" >> "$run/argv"
+done
+env > "$run/env"
+printf '%s\n' "$$" > "$here/pid"
+printf '%s\n' "$$" >> "$here/starts"
+
+if [ -d "$here/run.dir" ]; then
+    for a in "$@"; do
+        case "$a" in
+            --dir=*) cp -R "$here/run.dir" "${a#--dir=}" ;;
+        esac
+    done
+fi
+if [ -f "$here/run.sleep" ]; then
+    if [ -f "$here/run.child" ]; then
+        sleep 1000 &
+        printf '%s\n' "$!" > "$here/child.pid"
+    fi
+    sleep "$(cat "$here/run.sleep")"
+fi
+if [ -f "$here/run.stdout" ]; then cat "$here/run.stdout"; fi
+if [ -f "$here/run.stderr" ]; then cat "$here/run.stderr" >&2; fi
+if [ -f "$here/run.signal" ]; then kill -s "$(cat "$here/run.signal")" $$; fi
+if [ -f "$here/run.exit" ]; then exit "$(cat "$here/run.exit")"; fi
+exit 0

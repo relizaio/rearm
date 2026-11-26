@@ -14,7 +14,7 @@ const DIRECTIVE = 7
  * The "Include support metadata" switch of the Export Release BOM dialog (SCORE-21, SCORE-12
  * ADR-2, tests T-15, T-19, T-20): shown whenever the server offers the option, disabled with a
  * hint unless the RELEASE organization's export state is ENABLED (round 2 ADR-11), absent with
- * the sync-lag hint when the server does not offer it. ReleaseView is never mounted in tests,
+ * the older-server hint when the server does not offer it. ReleaseView is never mounted in tests,
  * so the template is parsed and walked and the script read for its wiring; the gate, the hint
  * texts and the load on open are RUN in utils/useExportSupportSwitch.spec.ts, and what a
  * disabled switch sends is supportMetadataArg's, run in exportMetadataFallback.spec.ts.
@@ -26,7 +26,9 @@ const code = source
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
 const ast: any = parseSfc(source).descriptor.template?.ast
 
-const SYNC_LAG = 'This server does not offer the support-metadata disclosure yet'
+const OLDER_SERVER = 'This server does not offer the support-metadata disclosure yet'
+/** TPF-219: the promise the older-server hint made before; none of it may come back. */
+const OLD_PROMISE = ['next sync', 'gains it', 'CE installation']
 
 /** Every element the predicate accepts, with its ancestors (root first). */
 function find (pred: (n: any) => boolean, root: any = ast): any[][] {
@@ -61,7 +63,7 @@ const definition = (opening: string): string => {
     return code.slice(at, end < 0 ? undefined : end)
 }
 const openExportModal = (): string => code.match(/function openExportModal \(\) \{[\s\S]*?\n\}/)?.[0] || ''
-const syncLag = find((n) => n.tag === 'div' && text(n).includes(SYNC_LAG))
+const olderServer = find((n) => n.tag === 'div' && text(n).includes(OLDER_SERVER))
 
 describe('ReleaseView export dialog: the support metadata switch', () => {
     it('shows the switch whenever the server offers the option, not only when the org setting is on', () => {
@@ -89,13 +91,18 @@ describe('ReleaseView export dialog: the support metadata switch', () => {
         }
     })
 
-    it('keeps the sync-lag hint for a server that does not offer the option, exclusive with the org hint', () => {
-        expect(syncLag).toHaveLength(1)
-        expect(directive(syncLag[0][syncLag[0].length - 1], 'if')).toBe('!orgSupportInjectionSupported')
+    // T-463 (TPF-219): the server is older than the option; no edition is named and no sync promised.
+    it('keeps the older-server hint for a server that does not offer the option, exclusive with the org hint', () => {
+        expect(olderServer).toHaveLength(1)
+        const node = olderServer[0][olderServer[0].length - 1]
+        expect(directive(node, 'if')).toBe('!orgSupportInjectionSupported')
+        expect(text(node)).toBe(OLDER_SERVER + ', so that option is not shown.'
+            + ' The server runs an older version of ReARM, from before this feature. Updating the server adds it.')
+        for (const old of OLD_PROMISE) expect(text(node)).not.toContain(old)
         // Both hints and the switch share one parent and its other conditions, so the two v-if
         // expressions alone decide which shows: supported && !enabled vs !supported.
-        expect(hint[0][hint[0].length - 2]).toBe(syncLag[0][syncLag[0].length - 2])
-        expect(ifs(hint[0].slice(0, -1))).toEqual(ifs(syncLag[0].slice(0, -1)))
+        expect(hint[0][hint[0].length - 2]).toBe(olderServer[0][olderServer[0].length - 2])
+        expect(ifs(hint[0].slice(0, -1))).toEqual(ifs(olderServer[0].slice(0, -1)))
     })
 
     // supportMetadataArg(false, x) is null, so a disabled switch sends the organization default

@@ -53,6 +53,8 @@ export interface ShellResult {
     stderr: string;                      // first maxStderrBytes (default 64 KiB)
     timedOut: boolean;                   // our timer fired
     stdoutOverflow: boolean;             // stdout passed maxStdoutBytes; process was killed
+    stderrOverflow: boolean;             // stderr passed maxStderrBytes; the rest was dropped (the process runs on)
+    pid?: number;                        // the child's pid; absent when the process never started
     spawnError?: NodeJS.ErrnoException;  // the process never started, e.g. code ENOENT
 }
 
@@ -60,6 +62,15 @@ export interface ShellExecDetailedOptions {
     timeoutMs: number;
     maxStdoutBytes: number;
     maxStderrBytes?: number;
+    /** The complete environment of the child. When given, nothing of rebom's environment is inherited. */
+    env?: NodeJS.ProcessEnv;
+    /**
+     * Start the child as the leader of its own process group and kill the whole group (the child's
+     * children included) on timeout or overflow. Off by default.
+     */
+    killProcessGroup?: boolean;
+    /** Called once with the child's pid right after it was started (to register it for a shut-down). */
+    onSpawn?: (pid: number) => void;
 }
 
 const DEFAULT_MAX_STDERR_BYTES = 64 * 1024;
@@ -79,13 +90,27 @@ export function shellExecDetailed(cmd: string, args: string[], opts: ShellExecDe
         let stderrBytes = 0;
         let timedOut = false;
         let stdoutOverflow = false;
+        let stderrOverflow = false;
         let settled = false;
 
-        const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        // Only the options a caller asked for are added, so callers without them spawn exactly as before.
+        const spawnOptions: Record<string, unknown> = { stdio: ['ignore', 'pipe', 'pipe'] };
+        if (opts.env !== undefined) spawnOptions.env = opts.env;
+        if (opts.killProcessGroup) spawnOptions.detached = true;
+        const child = spawn(cmd, args, spawnOptions);
+        if (child.pid !== undefined && opts.onSpawn) opts.onSpawn(child.pid);
+
+        const kill = () => {
+            if (opts.killProcessGroup && child.pid !== undefined) {
+                killProcessGroup(child.pid);
+            } else {
+                child.kill('SIGKILL');
+            }
+        };
 
         const timer = setTimeout(() => {
             timedOut = true;
-            child.kill('SIGKILL');
+            kill();
         }, opts.timeoutMs);
 
         const finish = (result: ShellResult) => {
@@ -99,7 +124,7 @@ export function shellExecDetailed(cmd: string, args: string[], opts: ShellExecDe
             if (stdoutOverflow) return;
             if (stdoutBytes + chunk.length > opts.maxStdoutBytes) {
                 stdoutOverflow = true;
-                child.kill('SIGKILL');
+                kill();
                 return;
             }
             stdoutChunks.push(chunk);
@@ -107,6 +132,7 @@ export function shellExecDetailed(cmd: string, args: string[], opts: ShellExecDe
         });
 
         child.stderr.on('data', (chunk: Buffer) => {
+            if (stderrBytes + chunk.length > maxStderrBytes) stderrOverflow = true;
             if (stderrBytes >= maxStderrBytes) return;
             const part = chunk.subarray(0, maxStderrBytes - stderrBytes);
             stderrChunks.push(part);
@@ -124,6 +150,7 @@ export function shellExecDetailed(cmd: string, args: string[], opts: ShellExecDe
                 stderr: '',
                 timedOut,
                 stdoutOverflow,
+                stderrOverflow,
                 spawnError: err
             });
         });
@@ -135,10 +162,28 @@ export function shellExecDetailed(cmd: string, args: string[], opts: ShellExecDe
                 stdout: Buffer.concat(stdoutChunks).toString('utf8'),
                 stderr: Buffer.concat(stderrChunks).toString('utf8'),
                 timedOut,
-                stdoutOverflow
+                stdoutOverflow,
+                stderrOverflow,
+                pid: child.pid
             });
         });
     });
+}
+
+/**
+ * SIGKILL to the process group led by pid. Errors are ignored: the group may be gone already.
+ * Falls back to the pid alone when the group cannot be signalled.
+ */
+export function killProcessGroup(pid: number): void {
+    try {
+        process.kill(-pid, 'SIGKILL');
+    } catch {
+        try {
+            process.kill(pid, 'SIGKILL');
+        } catch {
+            // already gone
+        }
+    }
 }
 
 export async function createTmpFiles(dataArr: any[]): Promise<string[]> {

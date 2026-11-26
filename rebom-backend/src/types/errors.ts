@@ -147,6 +147,26 @@ export class BomVersionConflictError extends Error {
     }
 }
 
+/**
+ * A document would continue a lineage (a serialNumber the organization already holds) that the
+ * caller did not name. Raised only under the NEW_OR_NAMED lineage policy, which the TEA store passes
+ * for documents fetched from a TEA source: who may continue a lineage is the ReARM backend's
+ * decision, and rebom only refuses to do it unasked.
+ */
+export class BomLineageNotPermittedError extends Error {
+    constructor(
+        message: string,
+        public serialNumber: string,
+        public storedVersion: string | number | null,
+        public newVersion: string | number | null,
+        public existingUuid: string
+    ) {
+        super(message);
+        this.name = 'BomLineageNotPermittedError';
+        Error.captureStackTrace(this, this.constructor);
+    }
+}
+
 export class BomDataIntegrityError extends Error {
     constructor(
         message: string,
@@ -202,6 +222,7 @@ export const ERROR_CODES = {
     OCI_STORAGE_ERROR: 'OCI_STORAGE_ERROR',
     BOM_DATA_INTEGRITY_ERROR: 'BOM_DATA_INTEGRITY_ERROR',
     BOM_VERSION_CONFLICT: 'BOM_VERSION_CONFLICT',
+    BOM_LINEAGE_NOT_PERMITTED: 'BOM_LINEAGE_NOT_PERMITTED',
     BOM_SCORE_ERROR: 'BOM_SCORE_ERROR',
     INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
@@ -300,6 +321,21 @@ export function toGraphQLError(error: Error): {
             message: error.message,
             extensions: {
                 code: ERROR_CODES.BOM_VERSION_CONFLICT,
+                details: {
+                    serialNumber: error.serialNumber,
+                    storedVersion: error.storedVersion,
+                    newVersion: error.newVersion,
+                    existingUuid: error.existingUuid,
+                },
+            },
+        };
+    }
+
+    if (error instanceof BomLineageNotPermittedError) {
+        return {
+            message: error.message,
+            extensions: {
+                code: ERROR_CODES.BOM_LINEAGE_NOT_PERMITTED,
                 details: {
                     serialNumber: error.serialNumber,
                     storedVersion: error.storedVersion,

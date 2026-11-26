@@ -210,3 +210,10 @@ use `.env`.
   [Moving to rearm-postgres 0.1.7](https://docs.rearmhq.com/installation/#rearm-postgres-0-1-7).
 - **Logs**: `docker compose logs -f rearm-core` (or `rearm-ui`,
   `keycloak`, `traefik`, ...).
+- **rebom's outbound connections are not restricted here.** Docker Compose
+  has no equivalent of the Helm chart's opt-in egress NetworkPolicy for the
+  rebom pod (`networkPolicy.rebomBackend.egress`), so the only guard on where
+  rebom may connect when it fetches from TEA servers is the one in the rearm
+  CLI it runs, which refuses loopback, link-local and unspecified addresses,
+  a fixed list of cloud metadata addresses, and the addresses of the
+  container it runs in.

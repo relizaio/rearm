@@ -1,0 +1,6 @@
+networkPolicy:
+  rebomBackend:
+    egress:
+      enabled: true
+      public:
+        ipFamilies: []

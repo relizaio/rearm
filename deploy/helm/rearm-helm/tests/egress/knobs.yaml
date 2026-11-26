@@ -1,0 +1,14 @@
+networkPolicy:
+  rebomBackend:
+    egress:
+      enabled: true
+      dns:
+        to:
+          - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+            podSelector: { matchLabels: { k8s-app: kube-dns } }
+          - ipBlock: { cidr: 169.254.20.10/32 }
+        ports: [53, 5353]
+      public:
+        ipFamilies: [IPv4, IPv6]
+        ports: [443, 80]
+        extraExcept: [ 11.0.0.0/8, "2001:db8:42::/48" ]

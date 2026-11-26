@@ -181,6 +181,22 @@ describe('license seat events are not team events (TPF-168)', () => {
     })
 })
 
+describe('upstream alerts are not team events (TPF-185)', () => {
+    it('never offers UPSTREAM_ALERT to an ownership-scoped subscription: it names no component', async () => {
+        const { ownedComponentEventTypes, EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS } = await import('./teamNotificationEventTypes')
+        expect(EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS.has('UPSTREAM_ALERT')).toBe(true)
+        expect([...EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS].sort()).toEqual([
+            'AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_QUEUE_AGE', 'AGENT_TASK_RETURNED',
+            'INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED', 'LICENSE_SEAT_EVENT', 'UPSTREAM_ALERT', 'VEX_STATE_CHANGED',
+        ])
+        const offered = ownedComponentEventTypes([
+            { label: 'Upstream sources', value: 'UPSTREAM_ALERT', proOnly: true },
+            { label: 'Release created', value: 'RELEASE_CREATED' },
+        ]).map(o => o.value)
+        expect(offered).toEqual(['RELEASE_CREATED'])
+    })
+})
+
 describe('Pro-only team events (TEA-5)', () => {
     it('offers the TEA publication events on Pro and drops them on CE, whose schema has no such value', async () => {
         const { ownedComponentEventTypes } = await import('./teamNotificationEventTypes')

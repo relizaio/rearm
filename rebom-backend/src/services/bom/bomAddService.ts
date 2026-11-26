@@ -1,6 +1,6 @@
 import { logger } from '../../logger';
 import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto, canonicalUuid } from '../../types';
-import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError, BomVersionConflictError } from '../../types/errors';
+import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError, BomVersionConflictError, BomLineageNotPermittedError } from '../../types/errors';
 import * as BomRepository from '../../bomRepository';
 import * as BomLineageRepository from '../../bomLineageRepository';
 import * as SpdxRepository from '../../spdxRepository';
@@ -37,13 +37,46 @@ const AUGMENT_ON_STORAGE = true;
  */
 export type BomOrigin = 'UPLOAD' | 'MERGE';
 
+/**
+ * Who may continue a lineage (a serialNumber the organization already holds). `ANY`: every caller,
+ * the behaviour of every existing route. `NEW_OR_NAMED`: only a new lineage, or the one the caller
+ * names in `named` (the TEA store, for documents from a TEA source; TPF-180 design 3.6.4).
+ * In-process only, like the origin: never read from a request.
+ */
+export const LineagePolicyKind = {
+  ANY: 'ANY',
+  NEW_OR_NAMED: 'NEW_OR_NAMED'
+} as const;
+export type LineagePolicy =
+  | { kind: typeof LineagePolicyKind.ANY }
+  | { kind: typeof LineagePolicyKind.NEW_OR_NAMED, named: string | null };
+
+export const ANY_LINEAGE: LineagePolicy = { kind: LineagePolicyKind.ANY };
+
+/** How an add ended: a new row, or the stored row of an identical document (nothing written). */
+export const AddDisposition = {
+  CREATED: 'CREATED',
+  EXISTING: 'EXISTING'
+} as const;
+export type AddDisposition = typeof AddDisposition[keyof typeof AddDisposition];
+
+export interface AddBomOutcome {
+  record: BomRecord;
+  disposition: AddDisposition;
+}
+
 export async function addBom(bomInput: BomInput, origin: BomOrigin = 'UPLOAD'): Promise<BomRecord> {
+  return (await addBomDetailed(bomInput, origin)).record;
+}
+
+/** addBom with a result that says how it ended, and the lineage policy. */
+export async function addBomDetailed(bomInput: BomInput, origin: BomOrigin = 'UPLOAD', lineagePolicy: LineagePolicy = ANY_LINEAGE): Promise<AddBomOutcome> {
   const input = withCanonicalOrg(bomInput);
   const format: BomFormat = (input.bomInput as any).format || 'CYCLONEDX';
   if (format === 'SPDX') {
-    return await addSpdxBom(input);
+    return await addSpdxBom(input, lineagePolicy);
   } else {
-    return await addCycloneDxBom(input, origin);
+    return await addCycloneDxBom(input, origin, lineagePolicy);
   }
 }
 
@@ -133,8 +166,29 @@ type LineageContext = {
   // The serialNumber the refusal names: the document's, as the caller sent it.
   serialNumber: string,
   bomVersion: string | number | undefined,
-  path: 'CYCLONEDX' | 'SPDX'
+  path: 'CYCLONEDX' | 'SPDX',
+  policy: LineagePolicy
 };
+
+/**
+ * The lineage rule of NEW_OR_NAMED (TPF-180 design 3.6.4): when the lineage has a stored row, the
+ * caller must have named that lineage. Checked before anything is pushed and again under the
+ * lineage lock. Nothing to check under ANY.
+ */
+function checkLineagePermitted(
+  policy: LineagePolicy, lineageKey: string, serialNumber: string,
+  latest: { uuid: string, bomVersion: any } | null, bomVersion: any
+): void {
+  if (policy.kind !== LineagePolicyKind.NEW_OR_NAMED || !latest) {
+    return;
+  }
+  if (BomLineageRepository.canonicalSerialNumber(policy.named ?? '') === lineageKey) {
+    return;
+  }
+  throw new BomLineageNotPermittedError(
+    `A BOM with serialNumber ${serialNumber} is already stored; this source may continue it only when the caller names it.`,
+    serialNumber, latest.bomVersion ?? null, bomVersion ?? null, latest.uuid);
+}
 
 /**
  * The version check (SCORE-45 ADR-4 step 3): a document under a stored
@@ -168,6 +222,8 @@ async function insertBomRowWithLineage(ctx: LineageContext, queryText: string, q
   return withTransaction(async client => {
     await BomLineageRepository.lockLineage(client, ctx.org, ctx.lineageKey);
     const latest = await BomLineageRepository.latestStoredVersion(client, ctx.org, ctx.lineageKey);
+    checkLineagePermitted(ctx.policy, ctx.lineageKey, ctx.serialNumber,
+      latest && { uuid: latest.uuid, bomVersion: latest.bom_version }, ctx.bomVersion);
     checkVersionAbove(ctx.serialNumber, latest && { uuid: latest.uuid, bomVersion: latest.bom_version }, ctx.bomVersion);
     return client.query(queryText, queryParams);
   });
@@ -186,7 +242,7 @@ async function insertBomRowWithLineage(ctx: LineageContext, queryText: string, q
  * @param bomInput - BOM input containing the raw BOM and metadata
  * @returns BOM record (existing or newly created)
  */
-async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin): Promise<BomRecord> {
+async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin, lineagePolicy: LineagePolicy): Promise<AddBomOutcome> {
   // Step 1: Process and validate BOM
   const rawBom = bomInput.bomInput.bom;
   // CycloneDX 1.7 is published upstream but no library in our stack
@@ -306,7 +362,7 @@ async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin): Promise<B
       existingVersion: duplicateBom.meta?.bomVersion
     }, "Duplicate CycloneDX BOM detected (identical raw file) - returning existing record");
     
-    return duplicateBom;
+    return { record: duplicateBom, disposition: AddDisposition.EXISTING };
   }
 
   const lineage: LineageContext = {
@@ -314,13 +370,17 @@ async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin): Promise<B
     lineageKey: BomLineageRepository.canonicalSerialNumber(serialNumber),
     serialNumber,
     bomVersion: rebomOptions.bomVersion,
-    path: 'CYCLONEDX'
+    path: 'CYCLONEDX',
+    policy: lineagePolicy
   };
 
   // Not a duplicate - a different file claiming the same identity has to claim
   // a higher version, or it is asking us to rewrite artifacts that are already
-  // stored and already scanned.
+  // stored and already scanned. Under NEW_OR_NAMED it must also be a lineage the
+  // caller named, decided here before anything is pushed.
   const latestBom = await findLatestBomBySerialNumber(serialNumber, bomInput.bomInput.org);
+  checkLineagePermitted(lineagePolicy, lineage.lineageKey, serialNumber,
+    latestBom && { uuid: latestBom.uuid, bomVersion: latestBom.meta?.bomVersion }, rebomOptions.bomVersion);
   checkVersionAbove(serialNumber, latestBom && { uuid: latestBom.uuid, bomVersion: latestBom.meta?.bomVersion }, rebomOptions.bomVersion);
 
   // Step 5: Store artifacts in OCI
@@ -417,10 +477,10 @@ async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin): Promise<B
     });
   }
   
-  return bomRecord;
+  return { record: bomRecord, disposition: AddDisposition.CREATED };
 }
 
-async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
+async function addSpdxBom(bomInput: BomInput, lineagePolicy: LineagePolicy): Promise<AddBomOutcome> {
   try {
     const spdxContent = bomInput.bomInput.bom;
     
@@ -469,7 +529,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
           if (existingByNamespace.converted_bom_uuid) {
             const existingBomRecords = await BomRepository.bomById(existingByNamespace.converted_bom_uuid);
             if (existingBomRecords && existingBomRecords.length > 0) {
-              return existingBomRecords[0];
+              return { record: existingBomRecords[0], disposition: AddDisposition.EXISTING };
             }
           }
           throw new BomNotFoundError(
@@ -562,7 +622,11 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       ? BomLineageRepository.canonicalSerialNumber(existingSerialNumber)
       : BomLineageRepository.canonicalSerialNumber(serialNumber);
     const lineage: LineageContext = {
-      org: bomInput.bomInput.org, lineageKey, serialNumber: lineageKey, bomVersion, path: 'SPDX'
+      org: bomInput.bomInput.org, lineageKey, serialNumber: lineageKey, bomVersion, path: 'SPDX',
+      // Under NEW_OR_NAMED the lineage the caller names is the one it updates.
+      policy: lineagePolicy.kind === LineagePolicyKind.NEW_OR_NAMED
+        ? { kind: LineagePolicyKind.NEW_OR_NAMED, named: existingSerialNumber ?? null }
+        : lineagePolicy
     };
     
     // Converted, therefore a distinct document from the SPDX file that was
@@ -622,7 +686,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       logger.error({ err, bomUuid: bomRecord.uuid }, 'Async enrichment trigger failed');
     });
     
-    return bomRecord;
+    return { record: bomRecord, disposition: AddDisposition.CREATED };
 
   } catch (error) {
     logger.error({ err: error }, "Error processing SPDX BOM");

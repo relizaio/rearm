@@ -49,7 +49,8 @@ function publication (over: Record<string, any> = {}): any {
 describe('teaPublishConfirm and teaHideConfirm (54)', () => {
     it('PRIVATE answers a plain dialog naming the source and the revision', () => {
         const c = teaPublishConfirm(view(), NAMES)
-        expect(c.title).toBe('Publish shop-api 1.4.0 on TEA?')
+        expect(c.titleText).toBe('Publish shop-api 1.4.0 on TEA?')
+        expect(c).not.toHaveProperty('title')
         expect(c.text).toBe('Published as a TEA component release under the organization TEA profile (revision 3). '
             + 'Visibility: PRIVATE: readable with an external key that covers this component.')
         expect(c.showCancelButton).toBe(true)
@@ -61,7 +62,7 @@ describe('teaPublishConfirm and teaHideConfirm (54)', () => {
     it('names a perspective source by name, and asks to Re-publish once a publication exists', () => {
         const c = teaPublishConfirm(view({ profileSource: 'FOLLOWED_PERSPECTIVE', profileSourceObject: 'p-1',
             publication: publication({ state: 'HIDDEN' }) }), NAMES)
-        expect(c.title).toBe('Re-publish shop-api 1.4.0 on TEA?')
+        expect(c.titleText).toBe('Re-publish shop-api 1.4.0 on TEA?')
         expect(c.text).toContain('under the perspective Payments TEA profile (revision 3).')
         expect(c.confirmButtonText).toBe('Re-publish')
     })

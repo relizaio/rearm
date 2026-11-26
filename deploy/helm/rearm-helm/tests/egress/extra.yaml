@@ -1,0 +1,11 @@
+networkPolicy:
+  rebomBackend:
+    egress:
+      enabled: true
+      extraEgress:
+        - to: [ { ipBlock: { cidr: 10.30.4.0/24 } } ]
+          ports: [ { port: 443, protocol: TCP } ]
+        - to:
+            - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: bear } }
+              podSelector: { matchLabels: { app: bear } }
+          ports: [ { port: 8080, protocol: TCP } ]

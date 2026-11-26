@@ -72,6 +72,14 @@ A subscription's `eventTypes` list controls what it can match:
   never evaluates shows up in [Delivery History](#delivery-history) as
   *nothing at all*, not as a failure. If a subscription you expect to fire
   produces no rows whatsoever, an unevaluatable filter is a candidate cause.
+- Numbers in a filter. The score keys (`event.cvssScore` and `event.epssScore` on
+  `NEW_VULN_AFFECTS_RELEASES`, `event.oldEpssScore` and `event.newEpssScore` on
+  `VULNERABILITY_RECORD_UPDATED`) are decimals: CVSS from 0 to 10, EPSS from 0 to 1,
+  and 0 when the vulnerability has no score. Counts such as `event.addedCount` are
+  whole numbers. Either kind can be compared with a whole or a decimal number
+  (`event.cvssScore >= 7`, `event.addedCount > 0`). Arithmetic needs both sides of
+  one kind: write `event.epssScore * 100.0 > 50` or `event.epssScore * double(100) > 50`,
+  not `event.epssScore * 100 > 50`, which fails to evaluate.
 - Each route on a subscription sets a minimum severity (`CRITICAL` / `HIGH` /
   `MEDIUM` / ...); only events at or above that threshold on that route are
   sent to its targets.
