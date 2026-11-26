@@ -9,14 +9,19 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.AgentTaskData;
+import io.reliza.model.AgentTaskData.CarriedRound;
+import io.reliza.model.AgentTaskData.ConditionSkip;
 import io.reliza.model.AgentTaskInput.InputKind;
 import io.reliza.model.AgentTaskInput.InputResolution;
 import io.reliza.model.AgentTaskInput.InputScope;
@@ -86,16 +91,43 @@ public class AgentTaskInputService {
 		return List.copyOf(merged.values());
 	}
 
-	/** One requirement's verdict: the binding when met, the reason when not. */
-	public record InputVerdict(RequiredInput requirement, ResolvedInput resolved, String unmetReason) {
-		public boolean met() { return resolved != null; }
+	/**
+	 * One requirement's verdict: the binding when met, the reason when not. A waived verdict (task TPF-155) is met
+	 * with no binding: only a role routing passed over by its runWhen produces the document, so nothing waits on it.
+	 */
+	public record InputVerdict(RequiredInput requirement, ResolvedInput resolved, String unmetReason, boolean waived) {
+		public InputVerdict(RequiredInput requirement, ResolvedInput resolved, String unmetReason) {
+			this(requirement, resolved, unmetReason, false);
+		}
+
+		public boolean met() { return resolved != null || waived; }
 	}
 
 	/** Verdicts for every effective requirement of a task, in declaration order. */
 	public List<InputVerdict> evaluate(AgentBoardData board, AgentTaskRoleConfigData rc, AgentTaskData td) {
 		List<InputVerdict> out = new ArrayList<>();
+		Set<RearmSpecificationType> waived = null == td ? Set.of() : td.waivedByConditionSkips();
+		// The task's own inputs are never waived (task TPF-155, F-9): they are what the coordinator asked for.
+		Set<String> own = null == td || null == td.getRequiredInputs() ? Set.of()
+				: td.getRequiredInputs().stream().filter(Objects::nonNull).map(RequiredInput::mergeKey)
+						.collect(Collectors.toSet());
 		for (RequiredInput ri : effectiveRequirements(rc, td)) {
-			out.add(evaluateOne(board, td, ri));
+			InputVerdict v = evaluateOne(board, td, ri);
+			// A split child carrying its parent's reviewed design (task TPF-161, D5): a TASK-scope document the task has
+			// not produced itself, by this requirement's resolution, resolves to the carried round. Before the waived
+			// branch and not own-filtered: the carried pin is a separate requirement whose verdict stays as it is.
+			if (!v.met() && InputKind.DOCUMENT == ri.kind() && InputScope.TASK == ri.scope() && null == ri.release()
+					&& null != td && !ownRoundDecides(td, ri, resolutionOf(board, ri))) {
+				CarriedRound carried = td.carriedRoundOf(ri.specification());
+				if (null != carried && null != carried.release()) v = evaluatePinned(td, ri.pinnedTo(carried.release()));
+			}
+			if (!v.met() && InputKind.DOCUMENT == ri.kind() && InputScope.TASK == ri.scope() && null == ri.release()
+					&& !own.contains(ri.mergeKey()) && waived.contains(ri.specification())) {
+				ConditionSkip by = td.conditionSkipWaiving(ri.specification());
+				v = new InputVerdict(ri, null, v.unmetReason() + "; waived: only " + (null == by ? "a skipped role" : by.role())
+						+ " produces it and routing passed that role over", true);
+			}
+			out.add(v);
 		}
 		return out;
 	}
@@ -107,17 +139,44 @@ public class AgentTaskInputService {
 
 	/** The bindings to pin on an assignment: what the agent is to work from. */
 	public List<ResolvedInput> bindings(AgentBoardData board, AgentTaskRoleConfigData rc, AgentTaskData td) {
-		return evaluate(board, rc, td).stream().filter(InputVerdict::met)
+		return evaluate(board, rc, td).stream().filter(v -> null != v.resolved())
 				.map(InputVerdict::resolved).toList();
 	}
 
 	private InputVerdict evaluateOne(AgentBoardData board, AgentTaskData td, RequiredInput ri) {
 		if (null != ri.release()) return evaluatePinned(td, ri);
-		InputResolution mode = ri.resolution() != null ? ri.resolution()
-				: (board.getDefaultInputResolution() != null ? board.getDefaultInputResolution()
-						: InputResolution.LATEST_PASSING);
+		InputResolution mode = resolutionOf(board, ri);
 		if (ri.kind() == InputKind.DOCUMENT) return evaluateDocument(board, td, ri, mode);
 		return evaluateRelease(board, td, ri, mode);
+	}
+
+	/** The requirement's resolution, else the board's default, else LATEST_PASSING. */
+	private static InputResolution resolutionOf(AgentBoardData board, RequiredInput ri) {
+		if (null != ri.resolution()) return ri.resolution();
+		return null != board && null != board.getDefaultInputResolution() ? board.getDefaultInputResolution()
+				: InputResolution.LATEST_PASSING;
+	}
+
+	/**
+	 * Whether the task's own rounds decide a TASK-scope document requirement, so a carried round is not used (task
+	 * TPF-161, D5): under STRICT_LATEST any own round of the document, not superseded (the newest decides, even below
+	 * the floor); under LATEST_PASSING an own round, not superseded, at or above the requirement's floor (a stray
+	 * draft does not end the carried binding, as an older passing own round would not be passed over either).
+	 */
+	private boolean ownRoundDecides(AgentTaskData td, RequiredInput ri, InputResolution mode) {
+		if (null == td.getReleases()) return false;
+		for (UUID r : td.getReleases()) {
+			Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(r);
+			if (ord.isEmpty()) continue;
+			DocumentRef doc = ord.get().getDocument();
+			if (null == doc || doc.specification() != ri.specification() || !td.getUuid().equals(doc.task())
+					|| doc.superseded()) {
+				continue;
+			}
+			if (InputResolution.STRICT_LATEST == mode) return true;
+			if (maturity(ord.get().getLifecycle()) >= maturity(ri.minLifecycle())) return true;
+		}
+		return false;
 	}
 
 	/**

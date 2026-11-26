@@ -4,7 +4,9 @@
 
 package io.reliza.model;
 
+import java.time.Instant;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -150,6 +152,13 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 	private UserStatus status = UserStatus.ACTIVE;
 	@JsonProperty(CommonVariables.REGISTRY_USER_ID_FIELD)
 	private Integer registryUserId;
+	/**
+	 * The last sign-in (TPF-167, TPF-165 D11), an ISO-8601 UTC instant written in place by
+	 * UserRepository.stampLastLogin; absent until the first stamp. Read through
+	 * {@link #getLastLoginInstant()}, which tolerates a value that does not parse.
+	 */
+	@JsonProperty
+	private String lastLoginDate;
 
 	@JsonIgnore
 	private String remoteIp;
@@ -172,6 +181,21 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 	
 	public String getEmail() {
 		return email;
+	}
+
+	/** The last sign-in as an instant; null when absent or unparseable (also a zoned value is read). */
+	@JsonIgnore
+	public Instant getLastLoginInstant() {
+		if (StringUtils.isBlank(lastLoginDate)) return null;
+		try {
+			return Instant.parse(lastLoginDate);
+		} catch (DateTimeParseException e) {
+			try {
+				return ZonedDateTime.parse(lastLoginDate.replaceAll("\\[.*\\]$", "")).toInstant();
+			} catch (DateTimeParseException e2) {
+				return null;
+			}
+		}
 	}
 
 	public Integer getRegistryUserId() {
@@ -517,6 +541,7 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 		updatedUserData.setPoliciesAccepted(ud.isPoliciesAccepted());
 		updatedUserData.setGlobalAdmin(ud.isGlobalAdmin());
 		updatedUserData.setRegistryUser(ud.getRegistryUserId());
+		updatedUserData.lastLoginDate = ud.lastLoginDate;
 		return updatedUserData;
 	}
 	

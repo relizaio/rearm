@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 
@@ -29,12 +28,8 @@ import io.reliza.common.CommonVariables.UserGroupStatus;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.IntegrationData;
-import io.reliza.model.UserData;
 import io.reliza.model.UserGroup;
 import io.reliza.model.UserGroupData;
-import io.reliza.model.UserPermission;
-import io.reliza.model.UserPermission.PermissionFunction;
-import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.dto.CreateUserGroupDto;
 import io.reliza.model.dto.UpdateUserGroupDto;
 import io.reliza.model.WhoUpdated;
@@ -54,15 +49,11 @@ public class UserGroupService {
 
 	@Autowired
 	@Lazy
-	private OrganizationService organizationService;
-
-	@Autowired
-	@Lazy
-	private UserService userService;
-
-	@Autowired
-	@Lazy
 	private NotificationChannelService notificationChannelService;
+
+	@Autowired
+	@Lazy
+	private SeatGate seatGate;
 	
 	
 	public Optional<UserGroup> getUserGroup(UUID groupUuid) {
@@ -132,6 +123,9 @@ public class UserGroupService {
 	 * Validates name uniqueness on rename and name conflicts on restore.
 	 */
 	public UserGroupData updateUserGroupComprehensive(UpdateUserGroupDto updateUserGroupDto, WhoUpdated wu) throws RelizaException {
+		// license seats (TPF-167, P4/P5): member adds, permission changes and restores are judged on the
+		// census after the save; renames, removals and reductions pass the judge
+		SeatGate.Change seats = seatGate.beginSeatChange();
 		Optional<UserGroup> existingGroup = userGroupRepository.findById(updateUserGroupDto.getGroupId());
 		if (existingGroup.isEmpty()) {
 			throw new RelizaException("User group not found: " + updateUserGroupDto.getGroupId());
@@ -159,54 +153,10 @@ public class UserGroupService {
 
 		UserGroupData updatedUgd = UserGroupData.updateUserGroupData(ugd, updateUserGroupDto);
 
-		// check if group permissions are being elevated from read to write
-		boolean wasWrite = hasWritePermissions(ugd);
-		boolean willBeWrite = hasWritePermissions(updatedUgd);
-		if (!wasWrite && willBeWrite) {
-			int newWriteUsers = countNewWriteUsersInGroup(updatedUgd);
-			if (newWriteUsers > 0) {
-				organizationService.validateWriteUserElevationAllowedByLicense(newWriteUsers);
-			}
-		}
-
 		Map<String, Object> recordData = Utils.OM.convertValue(updatedUgd, new TypeReference<Map<String, Object>>() {});
 		UserGroup savedUG = saveUserGroup(ug, recordData, wu);
+		seatGate.assertFitsAfterWrite(seats);
 		return UserGroupData.dataFromRecord(savedUG);
-	}
-	
-	private int countNewWriteUsersInGroup(UserGroupData ugd) {
-		Set<UUID> userUuids = ugd.getAllUsers();
-		if (userUuids == null || userUuids.isEmpty()) return 0;
-		int count = 0;
-		for (UUID userUuid : userUuids) {
-			var oud = userService.getUserData(userUuid);
-			if (oud.isPresent()) {
-				UserData ud = oud.get();
-				boolean alreadyWrite = false;
-				for (UUID orgUuid : ud.getOrganizations()) {
-					var combined = organizationService.obtainCombinedUserOrgPermissions(ud, orgUuid);
-					for (UserPermission p : combined.getOrgPermissionsAsSet(orgUuid)) {
-						if (p.getType() == PermissionType.ADMIN || p.getType() == PermissionType.READ_WRITE) { alreadyWrite = true; break; }
-						if (null != p.getFunctions() && p.getFunctions().contains(PermissionFunction.FINDING_ANALYSIS_WRITE)) { alreadyWrite = true; break; }
-						if (null != p.getApprovals() && !p.getApprovals().isEmpty()) { alreadyWrite = true; break; }
-					}
-					if (alreadyWrite) break;
-				}
-				if (!alreadyWrite) count++;
-			}
-		}
-		return count;
-	}
-
-	private boolean hasWritePermissions(UserGroupData ugd) {
-		Set<UserPermission> perms = ugd.getOrgPermissions(ugd.getOrg());
-		for (UserPermission p : perms) {
-			if (p.getType() == PermissionType.ADMIN || p.getType() == PermissionType.READ_WRITE) return true;
-			if (null != p.getFunctions()
-					&& p.getFunctions().contains(PermissionFunction.FINDING_ANALYSIS_WRITE)) return true;
-			if (null != p.getApprovals() && !p.getApprovals().isEmpty()) return true;
-		}
-		return false;
 	}
 
 	/**
@@ -282,6 +232,9 @@ public class UserGroupService {
 	 * Adds a user to a user group
 	 */
 	protected UserGroupData addUserToGroup(UUID groupUuid, UUID userUuid, WhoUpdated wu) {
+		// license seats (TPF-167, P4): its callers (the SSO sync, the first login) hold the handle already, so
+		// this returns it and only the after census runs; the safety net of the funnel
+		SeatGate.Change seats = seatGate.beginSeatChange();
 		Optional<UserGroup> existingGroup = userGroupRepository.findById(groupUuid);
 		if (existingGroup.isEmpty()) {
 			throw new IllegalArgumentException("User group not found: " + groupUuid);
@@ -295,6 +248,7 @@ public class UserGroupService {
 		
 		Map<String, Object> recordData = Utils.OM.convertValue(ugd, new TypeReference<Map<String, Object>>() {});
 		UserGroup savedUG = saveUserGroup(ug, recordData, wu);
+		seatGate.assertFitsAfterWrite(seats);
 		return UserGroupData.dataFromRecord(savedUG);
 	}
 	

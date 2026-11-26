@@ -1419,15 +1419,24 @@ public class ReleaseDatafetcher {
 
 	/**
 	 * Batch release create. Authenticates once, then creates every supplied
-	 * release in this single @Transactional unit (all-or-nothing — any failure
-	 * rolls the whole batch back). Per-release product auto-integration is
-	 * deferred during creation and fired once afterwards (after commit, off-thread;
-	 * the queue markers commit with the releases), deduped per affected
-	 * feature set across the whole batch, so a multi-component CI build yields a
-	 * single product auto-integrate rather than one per component version.
+	 * release in this single @Transactional unit (all-or-nothing: any exception,
+	 * checked RelizaException and IOException included, rolls the batch back).
+	 * Per-release product auto-integration is deferred during creation and fired
+	 * once afterwards (after commit, off-thread; the queue markers commit with the
+	 * releases), deduped per affected feature set across the whole batch, so a
+	 * multi-component CI build yields a single product auto-integrate rather than
+	 * one per component version.
+	 *
+	 * <p>What the promise covers: the release records and everything written in
+	 * this transaction (components, branches, releases, variants, deliverables,
+	 * artifact rows, branch relinks, artifacts attached to source code entries)
+	 * roll back. What is committed on its own survives a failed batch and is
+	 * reused by a repeated one: the VCS repository a created component is
+	 * provisioned on, source code entries (without the request's artifacts) and
+	 * files already uploaded to external storage (PFA-1).
 	 */
 	@DgsData(parentType = "Mutation", field = "addReleasesProgrammatic")
-	@Transactional
+	@Transactional(rollbackFor = Exception.class)
 	public List<ReleaseData> addReleasesProgrammatic(DgsDataFetchingEnvironment dfe) throws IOException, RelizaException, Exception {
 		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();

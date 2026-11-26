@@ -104,6 +104,32 @@ class VariableQueries {
 	
 
 	// Similar to FIND_USER_BY_EMAIL but won't filter on active users, used to resolve new registrations
+	/* License seat census (TPF-167 D1, T-4): four statements per census, whatever the number of organizations. */
+	protected static final String CENSUS_ACTIVE_USERS = """
+			SELECT uuid, created_date, cast(record_data as text) FROM rearm.users
+			WHERE coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE'
+			""";
+
+	protected static final String CENSUS_ACTIVE_GLOBAL_ADMINS = """
+			SELECT uuid, created_date, cast(record_data as text) FROM rearm.users
+			WHERE record_data->>'isGlobalAdmin' = 'true'
+			AND coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE'
+			""";
+
+	protected static final String CENSUS_USER_GROUPS = """
+			SELECT uuid, cast(record_data as text) FROM rearm.user_groups
+			""";
+
+	protected static final String CENSUS_ORGANIZATION_UUIDS = """
+			SELECT uuid FROM rearm.organizations
+			WHERE coalesce(record_data->>'status', '') <> 'ARCHIVED'
+			""";
+
+	protected static final String STAMP_USER_LAST_LOGIN = """
+			UPDATE rearm.users SET record_data = jsonb_set(record_data, '{lastLoginDate}', to_jsonb(cast(:at as text)), true)
+			WHERE uuid = :uuid
+			""";
+
 	protected static final String FIND_ANY_USER_BY_EMAIL = """
 		WITH search_emails AS (select uuid as emuuid, jsonb_array_elements(record_data->'allEmails')->>'email'
 		AS email from rearm.users)

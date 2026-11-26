@@ -20,20 +20,15 @@ const errorsAgainst = (schema: GraphQLSchema, doc: any) =>
 describe('the organizations query survives a backend without supportInjection', () => {
     /**
      * Every page derives myorg from this query, so a document the backend cannot answer takes the
-     * whole app down. Both documents select Settings.ssoUsersWithoutRole (TPF-168, license seats),
-     * a Pro field the CE mirror does not declare yet: the operator rule of 2026-11-01 accepts that
-     * drift until the CE sync (UI work targets the Pro schema, no fallback). What these two rows
-     * still guard is that nothing ELSE in either document is unknown to CE, so the CE sync of that
-     * one field is all the mirror needs.
+     * whole app down. Both documents select Settings.ssoUsersWithoutRole (TPF-168), which the CE
+     * schema declares, so neither may carry any error against CE.
      */
-    const CE_ACCEPTED_DRIFT = ['Cannot query field "ssoUsersWithoutRole" on type "Settings".']
-
-    it('CORE is valid against the CE schema except the accepted ssoUsersWithoutRole drift', () => {
-        expect(errorsAgainst(ceSchema, ORGANIZATIONS_CORE)).toEqual(CE_ACCEPTED_DRIFT)
+    it('CORE is valid against the CE schema', () => {
+        expect(errorsAgainst(ceSchema, ORGANIZATIONS_CORE)).toEqual([])
     })
 
-    it('FULL is valid against the CE schema except the accepted ssoUsersWithoutRole drift', () => {
-        expect(errorsAgainst(ceSchema, ORGANIZATIONS_FULL)).toEqual(CE_ACCEPTED_DRIFT)
+    it('FULL is valid against the CE schema', () => {
+        expect(errorsAgainst(ceSchema, ORGANIZATIONS_FULL)).toEqual([])
     })
 
     it('only FULL selects supportInjection', () => {

@@ -199,7 +199,7 @@ public class NotificationSubscriptionService {
                 data.org(), data.resourceGroup(), data.name(), status,
                 data.eventTypes(), data.filter(), data.routes(),
                 data.dedupWindowMinutes(), data.rateLimit(),
-                data.ownedByTeam(), data.managedByTeam());
+                data.ownedByTeam(), data.managedByTeam(), data.includeBoardDocuments());
         @SuppressWarnings("unchecked")
         Map<String, Object> recordData = Utils.OM.convertValue(updated, Map.class);
         sub.setRecordData(recordData);

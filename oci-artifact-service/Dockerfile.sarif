@@ -1,4 +1,4 @@
-FROM golang:1.26.10-trixie@sha256:71068bbd3d7fc160396a7442042f5d3abbe8612a9414760f304ef54a27865c6e AS build-stage
+FROM golang:1.26.11-trixie@sha256:cff05dd6b81c901f2e8249eb6f91c69a60451d0f12c26bfef08e476a85b32d4d AS build-stage
 ARG CODEQL_BUNDLE_VERSION=2.25.4
 ARG CODEQL_URL="https://github.com/github/codeql-action/releases/download/codeql-bundle-v${CODEQL_BUNDLE_VERSION}/codeql-bundle-linux64.tar.gz"
 

@@ -259,6 +259,8 @@ type Query {
 	"""Every assignable TEA host with its assignment (TPF-142). Global administrators only."""
 	teaHostAssignments: [TeaHostAssignment!]!
 	license: LicensePayload
+	"""Every seat holder of the instance, one row per email, from a fresh count (TPF-167). The license query's gate: ADMIN of the default organization, or a global administrator when none is set."""
+	licenseSeatUsers: [LicenseSeatUser]
 	
 	exportAsObomManual(releaseUuid: ID!): String
 
@@ -778,6 +780,8 @@ type Mutation {
 	# system global
 	unSealSystem(secret: String): Boolean
 	uploadLicense(license: String!): LicensePayload
+	"""Deactivates every active account with no role in any organization, never a global administrator and never the caller (TPF-167); reversible through reactivateUser. The license query's gate. Returns how many accounts were deactivated."""
+	removeAccountsWithoutRole: Int
 	finalizeAllReleases: Boolean
 	"""Assign a host to an organization (TPF-142). Global administrators only. Refused: a host outside the allow-list and not the instance host, a host already assigned to another organization, an organization already holding a host, an archived organization."""
 	assignTeaHost(host: String!, org: ID!): TeaHostAssignment!
@@ -2857,10 +2861,19 @@ input GlobalTeamAssignmentRuleInput {
 	ownerTeam: ID!
 }
 
+"""Seat counts of the instance (TPF-167): emails, merged across organizations; a member with no role anywhere holds no seat."""
 type GlobalUserCounts {
+	"""WRITE seats"""
 	writeUsers: Int
+	"""READ seats"""
 	readUsers: Int
+	"""writeUsers + readUsers"""
 	totalUsers: Int
+	"""Accounts with no role in any organization; not counted"""
+	noRoleUsers: Int
+	"""Seat holders who would be refused at sign-in (outside the licensed limits by creation date; global administrators are exempt and never counted here)"""
+	outsideLimit: Int
+	countedAt: DateTime
 }
 
 """A parsed HBOM hardware node (device/firmware) attached to a release."""
@@ -3222,6 +3235,20 @@ enum LevelOfSupport {
 	ACTIVELY_MAINTAINED
 	NO_LONGER_MAINTAINED
 	ABANDONED
+}
+
+"""One seat holder of the instance (TPF-167): an email across every organization."""
+type LicenseSeatUser {
+	email: String!
+	name: String
+	userUuids: [ID!]!
+	organizations: [ID!]!
+	seatType: SeatType!
+	"""Whether this holder would be refused at sign-in: INSIDE, OUTSIDE, or NOT_COUNTED for an account with no role"""
+	admission: SeatAdmission!
+	createdDate: DateTime!
+	lastLoginDate: DateTime
+	globalAdmin: Boolean!
 }
 
 type LicensePayload {
@@ -3713,6 +3740,8 @@ enum NotificationEventTypeEnum {
 	RELEASE_SUBMISSION_CREATED
 	# A regulatory submission was withdrawn (task TEA-35).
 	RELEASE_SUBMISSION_WITHDRAWN
+	# A license seat event for the admins: a refused sign-in or a skipped SSO group lift (TPF-167).
+	LICENSE_SEAT_EVENT
 }
 
 input NotificationFilterInput {
@@ -3941,6 +3970,11 @@ input NotificationSubscriptionInput {
 	# per-team subscription built from the flag would deliver one team's events
 	# to all the others. See ai-plans/team-owned-component-notifications.md.
 	ownedByTeam: ID
+	# TPF-158: also receive the events of a board's document rounds (releases of BOARD_DOCUMENT
+	# components). Omitted, null or false = excluded, which is every subscription written before
+	# this field. Not a filter expression: it gates before the CEL filter and the routes, in both
+	# filter modes, so a CEL author never repeats the exclusion.
+	includeBoardDocuments: Boolean
 }
 
 # Subscription summary. Complex nested config (filter, routes, rateLimit)
@@ -3980,6 +4014,9 @@ type NotificationSubscriptionResult {
 	# through the subscription API -- it is changed on the team that owns it -- so
 	# a client must use this to badge the row and withhold those controls.
 	managedByTeam: ID
+	# TPF-158: the document-round opt-in as stored; null = never set = excluded. A client renders
+	# its toggle from this field in both filter modes (it is not inside filter.presetConfig).
+	includeBoardDocuments: Boolean
 	# Hibernate @Version-managed row revision. The UI captures this on
 	# Edit load and round-trips it as expectedRevision on the next save
 	# so a concurrent edit by another admin is rejected with a clear
@@ -4680,6 +4717,11 @@ input SettingsInput {
 	convention elsewhere.
 	"""
 	fdaAssessmentNarrative: String
+	"""
+	SSO users whose groups claim matches no SSO-connected user group and who hold no pending invitation (TPF-167).
+	Read on the default organization only. PATCH: omitting the field leaves the stored value alone.
+	"""
+	ssoUsersWithoutRole: SsoUsersWithoutRole
 	"""
 	PATCH: omitting the field leaves the stored value alone. There is no clear --
 	the enum's two members already express both states, and null on the wire means

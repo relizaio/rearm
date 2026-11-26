@@ -22,11 +22,9 @@ import io.reliza.model.NotificationSubscriptionStatus;
  * <p>The subscription's contract with customer-authored expressions is:
  * the {@code filter.celExpression} runs against the activation map
  * produced by {@link io.reliza.service.EventActivationMapBuilder}.
- * PRESET-mode subscriptions are still stored with a CEL expression on
- * the row — the preset UI generates the CEL server-side at save time
- * (see Phase 3 of the design doc). The {@code presetConfig} JSONB
- * payload exists so the UI can re-render the same toggle state without
- * re-parsing the generated expression.
+ * PRESET-mode subscriptions are stored with the CEL the UI generated, if
+ * any; the preset UI sends none today and {@code presetConfig} carries its
+ * toggle state opaquely (the server never reads a key out of it).
  *
  * <p>{@code routes} is the post-filter channel-selection table. Once the
  * filter evaluates true, each route is checked against the event's
@@ -86,7 +84,18 @@ public record NotificationSubscriptionData(
          * <p>null = ordinary subscription, which is every row written before
          * this field existed.
          */
-        UUID managedByTeam) {
+        UUID managedByTeam,
+        /*
+         * TPF-158: whether this subscription also receives the events of a board's document rounds
+         * (releases of BOARD_DOCUMENT components). The fan-out gate reads it before the CEL filter
+         * and the routes (NotificationFanOutService.documentGateMatches); it is not CEL, so a CEL
+         * author never repeats the exclusion.
+         *
+         * <p><b>null is load-bearing</b>, as for ownedByTeam and managedByTeam: rows written before
+         * this field existed do not carry the key, and null means excluded, the default. Treat null
+         * and FALSE identically at the consumer site.
+         */
+        Boolean includeBoardDocuments) {
 
     public static final int DEFAULT_DEDUP_WINDOW_MINUTES = 1440;
 
@@ -114,6 +123,18 @@ public record NotificationSubscriptionData(
             RateLimitConfig rateLimit, UUID ownedByTeam) {
         this(org, resourceGroup, name, status, eventTypes, filter, routes,
                 dedupWindowMinutes, rateLimit, ownedByTeam, null);
+    }
+
+    /**
+     * Back-compat constructor for callers that pre-date {@code includeBoardDocuments}
+     * (TPF-158), including the team-materialised seed: null = excluded, the default.
+     */
+    public NotificationSubscriptionData(UUID org, UUID resourceGroup, String name,
+            NotificationSubscriptionStatus status, List<NotificationEventType> eventTypes,
+            FilterConfig filter, List<RouteConfig> routes, Integer dedupWindowMinutes,
+            RateLimitConfig rateLimit, UUID ownedByTeam, UUID managedByTeam) {
+        this(org, resourceGroup, name, status, eventTypes, filter, routes,
+                dedupWindowMinutes, rateLimit, ownedByTeam, managedByTeam, null);
     }
 
     /** True when a team's toggle owns this row, not an operator. */

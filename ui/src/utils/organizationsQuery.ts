@@ -11,9 +11,8 @@ import gql from 'graphql-tag'
  *
  * CORE is the document a backend without Settings.supportInjection can answer (in practice a
  * Pro build older than the field; CE has carried it since the 2026-09 sync, #368). FULL adds
- * only that field. Both select ssoUsersWithoutRole (TPF-168), a Pro field with no fallback (operator
- * rule 2026-11-01: UI work targets the Pro schema; drift against the CE backend is accepted until the
- * CE sync). Split rather than conditional because loadWithSchemaDriftFallback takes two
+ * only that field. Both select ssoUsersWithoutRole (TPF-168), which both schemas declare, with no
+ * fallback. Split rather than conditional because loadWithSchemaDriftFallback takes two
  * documents, and because a single document assembled by string concatenation is the thing
  * scripts/validate-graphql cannot check.
  */

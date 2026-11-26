@@ -244,6 +244,14 @@ public class AgentDesignCheckpointRedesignIntegrationTest extends AgentDesignChe
 			assertEquals(1, toArchitect.getQuestionStack().size(), "the frame pushed");
 			assertEquals(asked.getUuid(), toArchitect.getQuestionStack().get(0).questionsRelease());
 			ReleaseData round2 = redesign(r, t, ARCH);
+			if (reviewers) {
+				// Task TPF-171 (D3): the answer goes through the forward walk, so the reviewers whose passes the new
+				// round made stale review it before the walk reaches the coder and its checkpoint.
+				AgentTaskData toReview = reload(t);
+				assertEquals(TaskStatus.QUEUED, toReview.getStatus());
+				assertEquals("functional_reviewer", toReview.getRole());
+				reviewsPass(r, t);
+			}
 
 			AgentTaskData after = reload(t);
 			assertEquals(TaskStatus.AWAITING_COORDINATOR, after.getStatus(), "reviewers " + reviewers);
@@ -254,7 +262,7 @@ public class AgentDesignCheckpointRedesignIntegrationTest extends AgentDesignChe
 			assertEquals(DesignCheckpointState.PENDING, cp.state());
 			assertTrue(cp.reachedAt().isAfter(first.settledAt()));
 			assertEquals(round2.getUuid(), cp.design().get(0));
-			assertEquals("architect", cp.afterRole());
+			assertEquals(reviewers ? "security_reviewer" : "architect", cp.afterRole());
 			assertTrue(after.getQuestionStack().isEmpty());
 			assertTrue(messages(r, BoardEventKind.INFO, "back to coder").isEmpty());
 			assertEquals(BoardReviewItemStatus.RESOLVED, latestQuestions(after).get("q1"), "closeQuestions answered it");

@@ -1,7 +1,7 @@
 ---
-rearm_cli_min: 26.10.17
-rearm_cli_recommended: 26.10.17
-last_updated: 2026-10-25
+rearm_cli_min: 26.11.5
+rearm_cli_recommended: 26.11.5
+last_updated: 2026-11-10
 ---
 
 # ReARM agent orientation

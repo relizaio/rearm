@@ -12,9 +12,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
@@ -39,12 +39,18 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 
+import io.reliza.common.CommonVariables.OauthType;
 import io.reliza.common.CommonVariables.TableName;
+import io.reliza.common.CommonVariables.UserStatus;
 import io.reliza.common.Utils;
 import io.reliza.model.OrgTotalsTable;
 import io.reliza.model.Organization;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.TotalsCell;
+import io.reliza.model.User;
+import io.reliza.model.UserData;
+import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.repositories.OrganizationRepository;
 import jakarta.persistence.EntityManager;
@@ -54,9 +60,9 @@ import jakarta.persistence.Query;
  * TPF-70 (architecture round 2, test 4.5 row 1): {@code getNumericAnalytics} runs the live totals
  * statement inside one read-only transaction that first sets, in this order, {@code enable_seqscan}
  * off, {@code jit} off and a 30 s {@code statement_timeout}, all {@code SET LOCAL}, and nothing
- * else. TPF-139 / TPF-141 (architecture round 2, 6.1, 6.2, 6.4.1-6.4.4): the four nightly counts
+ * else. TPF-139 / TPF-141 (architecture round 2, 6.1, 6.2, 6.4.1, 6.4.2): the four nightly counts
  * come from the organization record the caller loaded (no second query), null while pending, with
- * counted_at the oldest instant of the non-null counts; both whole-record funnels carry the stored
+ * counted_at the oldest instant of the non-null counts; the whole-record funnel carries the stored
  * totals forward under the row lock before the audit row. Plain Mockito, no Spring context; the
  * injected fields are set by reflection (the {@code OrganizationServiceSettingsValidationTest} idiom).
  */
@@ -132,7 +138,8 @@ class OrganizationServiceTotalsTransactionTest {
 		}
 		assertEquals(BigInteger.ZERO, result.get("admin_and_write_users"));
 		assertEquals(BigInteger.ZERO, result.get("read_only_users"));
-		assertEquals(12, result.size(), result.toString());
+		assertEquals(BigInteger.ZERO, result.get("users_without_role"));
+		assertEquals(13, result.size(), result.toString());
 	}
 
 	private void assertPending(Map<String, Object> result) {
@@ -301,7 +308,44 @@ class OrganizationServiceTotalsTransactionTest {
 		expected.put("counted_at", "2026-11-02T00:00:03.512417Z");
 		expected.put("admin_and_write_users", BigInteger.ZERO);
 		expected.put("read_only_users", BigInteger.ZERO);
+		expected.put("users_without_role", BigInteger.ZERO);
 		assertEquals(expected, result);
+	}
+
+	private User member(PermissionType type) {
+		UserData ud = UserData.userDataFactory("m", "tpf166-" + UUID.randomUUID() + "@totals.io", List.of(org), "sub",
+				OauthType.RELIZA_KEYCLOAK_OWN, true);
+		ud.setStatus(UserStatus.ACTIVE);
+		if (null != type) ud.setPermission(org, PermissionScope.ORGANIZATION, org, type, List.of());
+		User u = new User();
+		u.setUuid(UUID.randomUUID());
+		u.setRecordData(Utils.dataToRecord(ud));
+		return u;
+	}
+
+	/** TPF-166 row 8: the three user figures come from one member list and one group list; no census, no snapshot. */
+	@Test
+	void theUserFiguresReadTheOrganizationOnce() {
+		UserService users = mock(UserService.class);
+		when(users.listUsersByOrg(org, false)).thenReturn(List.of(member(PermissionType.ADMIN),
+				member(PermissionType.READ_ONLY), member(PermissionType.NONE), member(null)));
+		UserGroupService groups = mock(UserGroupService.class);
+		when(groups.getUserGroupsByOrganization(org)).thenReturn(List.of());
+		SeatGate seats = mock(SeatGate.class);
+		ReflectionTestUtils.setField(service, "userService", users);
+		ReflectionTestUtils.setField(service, "userGroupService", groups);
+		ReflectionTestUtils.setField(service, "seatGate", seats);
+
+		Map<String, Object> result = service.getNumericAnalytics(od(new LinkedHashMap<>()));
+
+		verify(users, times(1)).listUsersByOrg(org, false);
+		verifyNoMoreInteractions(users);
+		verify(groups, times(1)).getUserGroupsByOrganization(org);
+		verifyNoMoreInteractions(groups);
+		verifyNoInteractions(seats);
+		assertEquals(BigInteger.ONE, result.get("admin_and_write_users"));
+		assertEquals(BigInteger.ONE, result.get("read_only_users"));
+		assertEquals(BigInteger.TWO, result.get("users_without_role"));
 	}
 
 	/** 6.2.4: a missing cell (example 3) and a failed night (example 4). */
@@ -331,7 +375,7 @@ class OrganizationServiceTotalsTransactionTest {
 		assertEquals(DateTimeFormatter.ISO_INSTANT.format(T1.minusDays(1).toInstant()), failedResult.get("counted_at"));
 	}
 
-	// ---------------------------------------------------------------- 6.4.1-6.4.4 the guard
+	// ---------------------------------------------------------------- 6.4.1, 6.4.2 the guard
 
 	/** An existing organization the funnel rows save; its record carries {@code totals} as given. */
 	private Organization existing(Map<String, TotalsCell> totals) {
@@ -389,5 +433,4 @@ class OrganizationServiceTotalsTransactionTest {
 
 		assertFalse(saved().getRecordData().containsKey("totals"), entity.getRecordData().toString());
 	}
-
 }

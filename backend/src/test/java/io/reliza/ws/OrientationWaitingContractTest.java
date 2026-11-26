@@ -105,7 +105,10 @@ class OrientationWaitingContractTest {
 	void theDesignCheckpointWakesTheCoordinator() throws IOException {
 		String doc = section("waiting").replaceAll("[ \\t]*\\n[ \\t]*", " ");
 		assertTrue(doc.contains("and when an `ALERT` is posted, the design checkpoint (an ALERT) included, which wakes it"
-				+ " even when the task was already `AWAITING_COORDINATOR`."), doc);
+				+ " even when the task was already `AWAITING_COORDINATOR`"), doc);
+		// task TPF-152 (6.2): a waived checkpoint posts an INFO and wakes nothing
+		assertTrue(doc.contains("`AWAITING_COORDINATOR` (a checkpoint the architect waived with --no-split posts an INFO,"
+				+ " not an ALERT: nothing waits, and the move shows in task list --changed-since)."), doc);
 	}
 
 	/** Task RD4-3: a worker's wait with --watch, one paragraph in the waiting section after the coordinator's wake rules. */

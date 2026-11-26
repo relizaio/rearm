@@ -152,6 +152,8 @@ public class ProgrammaticAuthenticationFilter extends OncePerRequestFilter {
 					if (session.isEmpty()) reason = "CLI session revoked or expired";
 					else if (owner.isEmpty()) reason = "CLI session user inactive";
 					else if (!CliSessionService.backs(owner.get(), oak.get(), akd)) reason = "CLI session user left the org or no longer holds the key";
+					// TPF-167 (F-24): before any FREEFORM judgement, for a personal and a Free Form key alike
+					else if (cliSessionService.outsideLicense(owner.get())) reason = "CLI session user outside the licensed number of users";
 					else cliSessionService.touchLastUsed(session.get().getUuid());
 				} else {
 					// the secret the token was exchanged with must still exist, be active and be unchanged

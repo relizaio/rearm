@@ -56,6 +56,15 @@ class OrientationPublishingContractTest {
 				"the version case");
 	}
 
+	/** Task TPF-152 (6.2, W9): an advisory ARCHITECTURE round carries no sign-off, so it cannot waive a checkpoint. */
+	@Test
+	void anAdvisoryRoundCannotWaiveTheCheckpoint() throws IOException {
+		String doc = section("publishing").replaceAll("[ \\t]*\\n[ \\t]*", " ");
+		assertTrue(doc.contains("An advisory ARCHITECTURE round carries no sign-off, so it cannot waive a design checkpoint:"
+				+ " on a board with one, the task stops at the coordinator before the coder's next hop; answer through a"
+				+ " hop and sign off --no-split when the task should keep moving."), doc);
+	}
+
 	@Test
 	void publishJsonCarriesTheChecks() throws IOException {
 		String doc = section("publishing").replaceAll("[ \\t]*\\n[ \\t]*", " ");

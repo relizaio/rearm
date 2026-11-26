@@ -57,6 +57,10 @@ import io.reliza.model.BoardReviewItemIndex;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.BoardReviewItemIndex.BoardReviewItemStatus;
 import io.reliza.model.AgentTaskInput.SplitChild;
+import io.reliza.model.AgentTaskData.CarriedDesign;
+import io.reliza.model.AgentTaskData.CarriedRole;
+import io.reliza.model.AgentTaskData.ConditionSkip;
+import io.reliza.model.AgentTaskData.DesignCheckpointWaiver;
 import io.reliza.model.AgentTaskData.SignOffOutcome;
 import io.reliza.model.AgentTaskData.TaskReturnReason;
 import io.reliza.model.AgentTaskRoleConfigData;
@@ -80,6 +84,7 @@ import io.reliza.service.AgentAuditReadService.AgentRoleConfigRevision;
 import io.reliza.service.AgentAuditReadService.AgentTaskRevision;
 import io.reliza.service.AgentBoardService;
 import io.reliza.service.AgentDeliveryService;
+import io.reliza.service.AgentRoutingService;
 import io.reliza.service.AgentIdentityService;
 import io.reliza.service.AgentService;
 import io.reliza.service.AgentSessionService;
@@ -120,6 +125,7 @@ public class AgentTaskDataFetcher {
 	@Autowired private io.reliza.service.BoardPerspectiveService boardPerspectiveService;
 	@Autowired private AgentAuditReadService agentAuditReadService;
 	@Autowired private AgentTaskService agentTaskService;
+	@Autowired private AgentRoutingService agentRoutingService;
 	@Autowired private AgentSessionService agentSessionService;
 	@Autowired private AgentService agentService;
 	@Autowired private AgentIdentityService agentIdentityService;
@@ -213,6 +219,7 @@ public class AgentTaskDataFetcher {
 			Map.entry("agentTaskReopenProgrammatic", WRITE),
 			Map.entry("agentTaskHoldProgrammatic", SEAT_OR_HOLDER),
 			Map.entry("agentTaskLiftHoldProgrammatic", WRITE),
+			Map.entry("agentTaskConfirmAnswerProgrammatic", WRITE),
 			Map.entry("agentTaskEscalateHoldProgrammatic", WRITE),
 			Map.entry("agentTaskRequireHumanReviewProgrammatic", WRITE),
 			Map.entry("agentBoardPostEventProgrammatic", WRITE),
@@ -814,6 +821,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("seenInputs") List<UUID> seenInputs,
 			@InputArgument("noChange") Boolean noChange,
 			@InputArgument("noCode") Boolean noCode,
+			@InputArgument("noSplit") Boolean noSplit,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
 		ProgKeyContext ctx = authorizeProgrammaticOrg(dfe);
 		resolveCallingAgent(ctx, sessionUuid);
@@ -826,7 +834,7 @@ public class AgentTaskDataFetcher {
 		}
 		// seenInputs null (an older client) skips the check for documents published since the assignment (RD2-34).
 		return agentTaskService.signOff(taskUuid, sessionUuid, oc, note,
-				null != outputs ? outputs : List.of(), seenInputs, noChange, noCode, ctx.wu());
+				null != outputs ? outputs : List.of(), seenInputs, noChange, noCode, noSplit, ctx.wu());
 	}
 
 	@DgsData(parentType = "Mutation", field = "agentTaskReturnProgrammatic")
@@ -1849,6 +1857,29 @@ public class AgentTaskDataFetcher {
 				AgentActor.ofSession(sessionUuid), note, role, ctx.wu());
 	}
 
+	/**
+	 * The seat's verdict on an answer signed off --no-change (task TPF-171, D6, D10): the session must hold the seat,
+	 * and CONFIRMED is refused when the seat's agent gave the answer.
+	 */
+	@DgsData(parentType = "Mutation", field = "agentTaskConfirmAnswerProgrammatic")
+	public AgentTaskData agentTaskConfirmAnswerProgrammatic(@InputArgument("taskUuid") UUID taskUuid,
+			@InputArgument("sessionUuid") UUID sessionUuid, @InputArgument("note") String note,
+			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		ProgKeyContext ctx = authorizeProgrammaticOrg(dfe);
+		AgentTaskData td = requireOrgTask(ctx, taskUuid);
+		AgentBoardData board = requireOrgBoard(ctx, td.getBoard());
+		AgentData seat = requireSeatHolder(ctx, board, sessionUuid);
+		return agentTaskService.confirmAnswer(taskUuid, board, answerVerdictOf(dfe.getArgument("verdict")), note,
+				AgentActor.ofSession(sessionUuid), new AgentTaskService.Confirmer(seat.getUuid(), null), ctx.wu());
+	}
+
+	/** The verdict as the schema spells it, parsed once at the boundary (task TPF-171, 6.1). */
+	private static AgentTaskData.AnswerVerdict answerVerdictOf(Object raw) throws RelizaException {
+		AgentTaskData.AnswerVerdict v = AgentTaskData.AnswerVerdict.parse(raw);
+		if (null == v) throw new RelizaException("verdict is CONFIRMED or REFUSED, not " + raw);
+		return v;
+	}
+
 	@DgsData(parentType = "Mutation", field = "agentTaskEscalateHoldProgrammatic")
 	public AgentTaskData agentTaskEscalateHoldProgrammatic(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("sessionUuid") UUID sessionUuid, @InputArgument("reason") String reason,
@@ -2031,6 +2062,25 @@ public class AgentTaskDataFetcher {
 				parseUuid(producesComponentRaw, "producesComponent"), workLevel,
 				refuseQuestions(parseRequiredInputs(dfe.getArgument("requiredInputs"), "requiredInputs"), "requiredInputs"),
 				false, null, jc.actor(), jc.wu());
+	}
+
+	/**
+	 * A person's verdict on an answer signed off --no-change (task TPF-171, D6, D10): BOARD_WRITE on the board. With a
+	 * personal key, CONFIRMED is refused when the key's owner owns a USER key the answering agent runs on; a browser
+	 * session is not compared.
+	 */
+	@DgsData(parentType = "Mutation", field = "agentTaskConfirmAnswer")
+	public AgentTaskData agentTaskConfirmAnswer(@InputArgument("taskUuid") UUID taskUuid,
+			@InputArgument("note") String note, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
+		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
+				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
+		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
+		AgentBoardData board = agentBoardService.getBoardData(td.getBoard())
+				.orElseThrow(() -> new RelizaException("Board not found: " + td.getBoard()));
+		AgentTaskData.AnswerVerdict verdict = answerVerdictOf(dfe.getArgument("verdict"));
+		return agentTaskService.confirmAnswer(taskUuid, board, verdict, note, jc.actor(),
+				new AgentTaskService.Confirmer(null, null != jc.key() ? jc.user() : null), jc.wu());
 	}
 
 	@DgsData(parentType = "Mutation", field = "agentTaskOrder")
@@ -2556,7 +2606,21 @@ public class AgentTaskDataFetcher {
 				hopBudgetFromInput(input),
 				(Boolean) input.get("blindReview"),
 				commissionsFromInput(input),
-				(Boolean) input.get("coordinatorCheckpoint"));
+				(Boolean) input.get("coordinatorCheckpoint"),
+				runWhenFromInput(input));
+	}
+
+	/**
+	 * A role's runWhen from input (task TPF-155). Left out, null (unchanged); sent as null or not an object, empty
+	 * (cleared); an object, the condition as sent, checked by the service so presets and the file meet the same rule.
+	 */
+	@SuppressWarnings("unchecked")
+	static Optional<AgentTaskRoleConfigData.RunWhen> runWhenFromInput(Map<String, Object> input) {
+		if (null == input || !input.containsKey("runWhen")) return null;
+		if (!(input.get("runWhen") instanceof Map<?, ?> raw)) return Optional.empty();
+		Map<String, Object> m = (Map<String, Object>) raw;
+		return Optional.of(new AgentTaskRoleConfigData.RunWhen(stringList(m.get("taggedAny")),
+				stringList(m.get("taggedNone"))));
 	}
 
 	/**
@@ -3170,6 +3234,70 @@ public class AgentTaskDataFetcher {
 		AgentTaskData td = dfe.getSource();
 		return DataFetcherResult.<List<BoardReviewItem>>newResult().data(agentDocumentService.openReviewItemsOfTask(td))
 				.localContext(new BoardReviewItemContext(null, td)).build();
+	}
+
+	/**
+	 * The design author's waiver on the task (task TPF-152), handed down with the task it was read through, so
+	 * that {@code standing} resolves against the task as this caller read it (F-10).
+	 */
+	@DgsData(parentType = "AgentTask", field = "designCheckpointWaiver")
+	public DataFetcherResult<DesignCheckpointWaiver> taskDesignCheckpointWaiver(DgsDataFetchingEnvironment dfe) {
+		AgentTaskData td = dfe.getSource();
+		return DataFetcherResult.<DesignCheckpointWaiver>newResult().data(td.getDesignCheckpointWaiver())
+				.localContext(td).build();
+	}
+
+	/**
+	 * Routing's pass-overs of conditional roles on the task (task TPF-155), handed down with the task they were read
+	 * through, so that {@code live} resolves against the task as this caller read it.
+	 */
+	@DgsData(parentType = "AgentTask", field = "rolesSkippedByCondition")
+	public DataFetcherResult<List<ConditionSkip>> taskRolesSkippedByCondition(DgsDataFetchingEnvironment dfe) {
+		AgentTaskData td = dfe.getSource();
+		List<ConditionSkip> skips = null == td.getRolesSkippedByCondition() ? List.of() : td.getRolesSkippedByCondition();
+		return DataFetcherResult.<List<ConditionSkip>>newResult().data(skips).localContext(td).build();
+	}
+
+	/**
+	 * The parent's design a split child carries (task TPF-161, D9), handed down with the task it was read through, so
+	 * that each role's {@code live} and the record's {@code standing} resolve against the task as this caller read it.
+	 */
+	@DgsData(parentType = "AgentTask", field = "carriedDesign")
+	public DataFetcherResult<CarriedDesign> taskCarriedDesign(DgsDataFetchingEnvironment dfe) {
+		AgentTaskData td = dfe.getSource();
+		return DataFetcherResult.<CarriedDesign>newResult().data(td.getCarriedDesign()).localContext(td).build();
+	}
+
+	/** Whether the carried pass still rests on the carried rounds (task TPF-161, D4): resolved by the server. */
+	@DgsData(parentType = "AgentTaskCarriedRole", field = "live")
+	public boolean carriedRoleLive(DgsDataFetchingEnvironment dfe) {
+		CarriedRole cr = dfe.getSource();
+		AgentTaskData td = dfe.getLocalContext();
+		return null != td && agentRoutingService.carryLive(td, cr);
+	}
+
+	/** Whether every carried role is live (task TPF-161, D9): resolved by the server. */
+	@DgsData(parentType = "AgentTaskCarriedDesign", field = "standing")
+	public boolean carriedDesignStanding(DgsDataFetchingEnvironment dfe) {
+		AgentTaskData td = dfe.getLocalContext();
+		return null != td && agentRoutingService.carryStanding(td);
+	}
+
+	/** Whether the entry is its role's current one (task TPF-155, C14): resolved by the server, never by a client. */
+	@DgsData(parentType = "AgentTaskConditionSkip", field = "live")
+	public boolean conditionSkipLive(DgsDataFetchingEnvironment dfe) {
+		ConditionSkip cs = dfe.getSource();
+		AgentTaskData td = dfe.getLocalContext();
+		return null != td && null != cs && cs.equals(td.liveConditionSkip(cs.roleUuid(), cs.role()));
+	}
+
+	/** Whether routing would honour the waiver now (task TPF-152, W5): resolved by the server, never by a client. */
+	@DgsData(parentType = "AgentTaskDesignCheckpointWaiver", field = "standing")
+	public boolean designCheckpointWaiverStanding(DgsDataFetchingEnvironment dfe) {
+		AgentTaskData td = dfe.getLocalContext();
+		if (null == td) return false;
+		return agentBoardService.getBoardData(td.getBoard())
+				.map(board -> agentRoutingService.waiverStands(td, board)).orElse(false);
 	}
 
 	/**

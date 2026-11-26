@@ -1,0 +1,41 @@
+# ReARM
+> ReARM is a release governance platform from Reliza. It shows what each software release contains, its current security posture, and whether it is cleared to ship under the organization's policies, while keeping the evidence behind every decision and a record of what actually shipped. It is available as an open source, self-hosted Community Edition (CE) and as managed ReARM Pro plans.
+ReARM sits above SBOM and vulnerability tools. It ingests SBOMs, xBOMs (CycloneDX, SPDX, VEX and more) and scanner findings, rolls them up from component to product level, and checks every release against encoded policies and approvals. It is built for organizations managing hundreds of products, thousands of components and 100,000+ SBOMs.
+ReARM supports compliance work under the EU Cyber Resilience Act (CRA), NIS2, DORA, US Executive Orders 14028 and 14144, FDA Section 524B, and RBI/SEBI guidelines, and supports the OWASP Transparency Exchange API (TEA).
+## Product
+- [SBOM/xBOM management](https://rearmhq.com/product/sbom-xbom-management/): Store, organize, diff and search every SBOM and xBOM. Answer questions like "where does a vulnerable log4j version run?" or "what changed between two versions?"
+- [Findings aggregation](https://rearmhq.com/product/findings-aggregation/): Roll up vulnerabilities and policy violations from SBOM level to product level.
+- [Release policies](https://rearmhq.com/product/release-policies/): Encode release rules once and check every release against them, with approvals and sign-off evidence for auditors.
+- [AI governance](https://rearmhq.com/product/ai-governance/): Attribute, gate and evidence code written by AI coding agents, including which agent wrote it and under what approval it shipped.
+## Use cases
+- [SBOM aggregation](https://rearmhq.com/use-cases/sbom-aggregation/)
+- [VEX exploitability exchange](https://rearmhq.com/use-cases/vex-exploitability-exchange/)
+- [Medical devices](https://rearmhq.com/use-cases/medical-devices/): FDA 524B oriented workflows.
+- [EU CRA](https://rearmhq.com/use-cases/eu-cra/): Cyber Resilience Act readiness.
+- [Deployment governance](https://rearmhq.com/use-cases/deployment-governance/)
+- [Field digital twin](https://rearmhq.com/use-cases/field-digital-twin/): Track what is actually deployed in the field.
+## Docs
+- [Documentation home](https://docs.rearmhq.com/)
+- [Concepts](https://docs.rearmhq.com/concepts/): Products, releases, branches, components and feature sets, and how they relate.
+- [Getting started](https://docs.rearmhq.com/get-started/)
+- [Workflows](https://docs.rearmhq.com/workflows/)
+- [Integrations](https://docs.rearmhq.com/integrations/): Dependency-Track, GitHub, GitLab, Azure DevOps, Jenkins, Snyk, Semgrep, Checkov, Sigstore Cosign, Slack, Microsoft Teams, Microsoft Sentinel and more.
+- [Tutorials](https://docs.rearmhq.com/tutorials/)
+- [Source code (GitHub)](https://github.com/relizaio/rearm): ReARM CE repository.
+## Pricing and editions
+- [Pricing](https://rearmhq.com/pricing/): ReARM CE is free and self-hosted. ReARM Pro Starter is $295/month (1 to 14 users), Standard is $1,450/month (15 to 39 users, adds private VPC, SSO, on-prem option, FDA 524B), Enterprise is $75 per user per month (40+ users, adds air-gapped option). Pro includes a free 60 day trial.
+- [Pricing FAQ](https://rearmhq.com/pricing-faq/)
+- [Comparisons](https://rearmhq.com/comparisons/): ReARM vs Dependency-Track, GUAC, Chainloop, JFrog AppTrust, traditional SCA tools, SBOM management tools, and Pro vs CE.
+## Try it
+- [Public demo](https://demo.rearmhq.com/): Live ReARM instance.
+- [Book a private demo](https://calendly.com/pavel-reliza/30min)
+## Optional
+- [Blog](https://rearmhq.com/blog/)
+- [News](https://rearmhq.com/news/)
+- [Product datasheet (PDF)](https://cdn.rearmhq.com/ReARM_Product_Info_Datasheet_v6_2026-04-16.pdf)
+- [Tutorial video](https://cdn.rearmhq.com/ReARM_Tutorial_V2_2.mp4)
+- [Reliza](https://reliza.io/): The company behind ReARM, BEAR and Oolong.
+- [BEAR](https://github.com/relizaio/bear): Open source agentic SBOM enrichment, included in ReARM Pro.
+- [Discord](https://discord.gg/UTxjBf9juQ)
+- [Privacy](https://rearmhq.com/privacy.html)
+- [Terms](https://rearmhq.com/tos.html)

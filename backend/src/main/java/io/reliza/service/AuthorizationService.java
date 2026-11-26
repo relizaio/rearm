@@ -44,6 +44,7 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.ApiKeyData;
 import io.reliza.model.AuthPrincipal;
 import io.reliza.model.ComponentData;
+import io.reliza.model.FederatedTrustRule;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.AgentBoardData;
@@ -122,6 +123,15 @@ public class AuthorizationService {
 	@Autowired
 	@Lazy
 	private ApiKeyGroupService apiKeyGroupService;
+
+	@Autowired
+	@Lazy
+	private SeatGate seatGate;
+
+	// TPF-174: way (c) of the stored-key judgement, a person who could sign in with the key through a CLI login
+	@Autowired
+	@Lazy
+	private CliSessionService cliSessionService;
 	
 	public AuthHeaderParse authenticateProgrammatic (HttpHeaders headers, ServletWebRequest servletWebRequest) {
 		AuthHeaderParse ahp = null;
@@ -549,29 +559,34 @@ public class AuthorizationService {
 	 * Whether a stored API key would hold a board function on a board when it calls (task 5c70990d,
 	 * the missing-coverage check): judged as {@link #resolveRbacKey} and {@link #bothAuthorize} judge
 	 * the key on a call -- a FREEFORM key's grants; a USER key's intersected with its owner's current
-	 * ones, and nothing once the owner is not an active member. A key that cannot authenticate holds
-	 * nothing: not ACTIVE, or neither a usable secret nor a usable trust rule bound to it (a key an
-	 * identity token exchanges for). FEDERATED identity rows hold nothing here: their functions come
-	 * from the trust rules on each call -- see {@link #federatedRulesCoverBoard}.
+	 * ones. A key that cannot authenticate holds nothing. A key can authenticate when it is ACTIVE and
+	 * any of three ways holds (TPF-174): (a) it has a usable secret; (b) a usable trust rule is bound to
+	 * it (a key an identity token exchanges for); (c) a person could sign in with it through a CLI login
+	 * -- its owner (USER) or holder (FREEFORM) is ACTIVE, a member of the org or a global admin, and not
+	 * outside the licensed number of users ({@link CliSessionService#backerOf}). (c) is judged on who
+	 * could log in, not on whether a session is live now. For a USER key (c) is also the owner rule, so
+	 * a USER key whose owner cannot sign in holds nothing whatever its secrets. FEDERATED identity rows
+	 * hold nothing here: their functions come from the trust rules on each call -- see
+	 * {@link #federatedRulesCoverBoard}.
 	 */
-	public boolean boardPermission(io.reliza.model.ApiKey key, UUID org, UUID board, @NonNull PermissionFunction function,
+	public boolean boardPermission(ApiKey key, UUID org, UUID board, @NonNull PermissionFunction function,
 			CallType ct) {
 		if (null == key || null == org || null == board) return false;
 		ApiTypeEnum type = key.getObjectType();
 		if (ApiTypeEnum.FREEFORM != type && ApiTypeEnum.USER != type) return false;
 		ApiKeyData akd = ApiKeyData.dataFromRecord(key);
 		if (!org.equals(akd.getOrg()) || ApiKeyData.ApiKeyStatus.ACTIVE != akd.getStatus()) return false;
-		boolean secret = akd.effectiveSecrets(key.getApiKey()).stream().anyMatch(s -> s.isUsable() && null != s.getHash());
-		if (!secret && federatedTrustRuleService.listBoundToKey(org, key.getUuid()).stream()
-				.noneMatch(io.reliza.model.FederatedTrustRule::isUsable)) {
-			return false;
-		}
 		UserData owner = null;
 		if (ApiTypeEnum.USER == type) {
-			owner = null == key.getObjectUuid() ? null : userService.getUserData(key.getObjectUuid()).orElse(null);
-			boolean member = null != owner && owner.getStatus() == UserStatus.ACTIVE
-					&& (owner.isGlobalAdmin() || owner.getOrganizations().contains(org));
-			if (!member) return false;
+			// way (c) and the owner rule are one judgement: one user read, no secret or rule read
+			Optional<UserData> backer = cliSessionService.backerOf(key, akd);
+			if (backer.isEmpty()) return false;
+			owner = backer.get();
+		} else if (akd.effectiveSecrets(key.getApiKey()).stream().noneMatch(s -> s.isUsable() && null != s.getHash()) // (a) in memory
+				&& cliSessionService.backerOf(key, akd).isEmpty() // (c) at most one user read; none without a holder
+				&& federatedTrustRuleService.listBoundToKey(org, key.getUuid()).stream()
+						.noneMatch(FederatedTrustRule::isUsable)) { // (b) one query, last
+			return false;
 		}
 		RbacKey rk = new RbacKey(key.getUuid(), akd, org, owner, type, null);
 		return bothAuthorize(rk, ownerSide(rk), org, function, PermissionScope.BOARD, board, ct);
@@ -1436,6 +1451,11 @@ public class AuthorizationService {
 			if (!member) {
 				log.warn("SECURITY: user key {} refused, owner {} is not an active member of org {}", matchingKeyId, ownerUuid, akd.getOrg());
 				throw new AccessDeniedException("Owner of this user key is not an active member of the organization");
+			}
+			// TPF-167 (D7 point 3, F-18): a USER key works only while its owner is admitted
+			if (seatGate.outsideLicense(owner)) {
+				log.warn("SECURITY: user key {} refused, owner {} is outside the licensed number of users", matchingKeyId, ownerUuid);
+				throw new AccessDeniedException("Owner of this user key is outside the licensed number of users");
 			}
 		}
 		if (ahp.getType() == ApiTypeEnum.FEDERATED && !ahp.isFederated()) {

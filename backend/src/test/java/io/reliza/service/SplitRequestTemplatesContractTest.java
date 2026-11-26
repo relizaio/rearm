@@ -32,4 +32,15 @@ class SplitRequestTemplatesContractTest {
 			assertTrue(doc.contains("or return the hop. " + sentence), name + ": the sentence after \"or return the hop\"");
 		}
 	}
+
+	/** Task TPF-161 (D1, D10): a proposal may mark a child the reviewed design covers; the coordinator decides. */
+	@Test
+	void everyWorkerTemplateSaysAProposalMayMarkACoveredChild() throws IOException {
+		String sentence = "A proposed child the parent's reviewed design already covers, adding nothing to it, may say"
+				+ " `\"designFromParent\":true`; the coordinator decides whether it builds from that design.";
+		for (String name : WORKERS) {
+			String doc = template(name);
+			assertTrue(doc.contains("a note you read in `task brief`. " + sentence), name + ": after the split sentence");
+		}
+	}
 }

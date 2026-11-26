@@ -38,6 +38,12 @@ class AgentBoardServiceTest {
 			+ " in the round that saw the fix; what remains is re-raised under a new id whose title names"
 			+ " the old one. The same id still OPEN after the producer's round counts as no progress.\n";
 
+	/** Task TPF-171 (D14): on every board. */
+	private static final String ANSWERS_LINE = "- Answers: a pass that answers a question goes to every role whose pass"
+			+ " no longer stands before the asker gets the task back; signed off --no-change it stops at the coordinator,"
+			+ " who confirms it changes nothing (back to the asker, unless another pass is stale, which is reviewed first)"
+			+ " or refuses it (reviewed as a change).\n";
+
 	private static final String COORDINATOR_FIRST_LINE = "- Before a person: a no-progress or cycle-cap stop parks"
 			+ " for the coordinator first, which may lift it once per stop kind per task or escalate it; the"
 			+ " next identical stop, and every budget stop, goes straight to the operator.\n";
@@ -51,7 +57,7 @@ class AgentBoardServiceTest {
 				+ " nothing OPEN.\n"
 				+ "- Stops: a pair of roles going round more than 3 times, or the same open ids after 1"
 				+ " consecutive round(s), or the budget. At a stop any open item needs a person.\n"
-				+ COORDINATOR_FIRST_LINE + PASSED_LINE + PARTLY_FIXED_LINE,
+				+ COORDINATOR_FIRST_LINE + PASSED_LINE + PARTLY_FIXED_LINE + ANSWERS_LINE,
 				AgentBoardService.routingRules(new AgentBoardData()));
 	}
 
@@ -68,8 +74,20 @@ class AgentBoardServiceTest {
 				+ "- Stops: a pair of roles going round more than 3 times, or the same open ids after 2"
 				+ " consecutive round(s), or the budget. At a stop any blocking item with priority ≤ 1"
 				+ " needs a person; the rest is accepted by policy.\n"
-				+ OPERATOR_ONLY_LINE + PASSED_LINE + PARTLY_FIXED_LINE,
+				+ OPERATOR_ONLY_LINE + PASSED_LINE + PARTLY_FIXED_LINE + ANSWERS_LINE,
 				AgentBoardService.routingRules(board));
+	}
+
+	/** Task TPF-171 (T-14): the answers bullet sits on a board with a checkpoint role too, before the checkpoint's. */
+	@Test
+	void theAnswersBulletIsOnABoardWithACheckpoint() {
+		AgentTaskRoleConfigData coder = new AgentTaskRoleConfigData();
+		coder.setName("coder");
+		coder.setActive(true);
+		coder.setCoordinatorCheckpoint(true);
+		String rules = AgentBoardService.routingRules(new AgentBoardData(), null, List.of(coder));
+		assertTrue(rules.contains(PARTLY_FIXED_LINE + ANSWERS_LINE), rules);
+		assertTrue(rules.contains(ANSWERS_LINE + "- Design checkpoint:"), rules);
 	}
 
 	// ---------- TPF-97 / TPF-109: the served text by version ----------
@@ -185,18 +203,34 @@ class AgentBoardServiceTest {
 		assertEquals(rules, AgentBoardService.servedPrompt(board, null), "a role with no prompt still gets its rules");
 	}
 
-	/** Task SPLIT-5 (3.9): the design checkpoint's bullet, only when an active role in {@code roles} carries the flag. */
+	/**
+	 * Task SPLIT-5 (3.9): the design checkpoint's bullet, only when an active role in {@code roles} carries the flag;
+	 * task TPF-152 (6.1, F-4, T-44): the whole bullet in its switch-on form by default and its switch-off form when the
+	 * board's architectCheckpointWaiver is false.
+	 */
 	@Test
 	void routingRulesNameTheDesignCheckpointOnlyWithAFlaggedRole() {
 		AgentBoardData board = new AgentBoardData();
 		AgentTaskRoleConfigData architect = role("architect", false, true);
 		AgentTaskRoleConfigData coder = role("coder", true, true);
-		String bullet = "- Design checkpoint: before the coder is queued, every task stops at the coordinator with an"
+		String bullet = "- Design checkpoint: before the coder is queued, a task stops at the coordinator with an"
+				+ " ALERT unless the architect signed its newest design round off --no-split; a stopped design the"
+				+ " coordinator reads and splits or sends on, a waived one goes to the coder with an INFO and the"
+				+ " coordinator keeps hold, reopen and split. An architect that recommends a split says so in the design's"
+				+ " last section and in its sign-off note, and signs off without the flag.\n";
+		String offBullet = "- Design checkpoint: before the coder is queued, every task stops at the coordinator with an"
 				+ " ALERT; the coordinator reads the reviewed design and splits the task or sends it on. No pass goes"
 				+ " straight to the coder. An architect that recommends a split says so in the design's last section and"
-				+ " in its sign-off note.\n";
+				+ " in its sign-off note. An architect's --no-split is recorded but ignored on this board: every design"
+				+ " stops at the coordinator.\n";
 		String strict = AgentBoardService.routingRules(board);
 		assertEquals(strict + bullet, AgentBoardService.routingRules(board, null, List.of(architect, coder)));
+		AgentBoardData off = new AgentBoardData();
+		off.setArchitectCheckpointWaiver(false);
+		assertEquals(AgentBoardService.routingRules(off) + offBullet,
+				AgentBoardService.routingRules(off, null, List.of(architect, coder)), "the switch off: today's bullet");
+		assertEquals(AgentBoardService.routingRules(off), AgentBoardService.routingRules(off, null, null),
+				"the switch alone adds no bullet");
 		assertEquals(strict, AgentBoardService.routingRules(board, null, null), "null roles: no flagged role");
 		assertEquals(strict, AgentBoardService.routingRules(board, null, List.of(architect, role("coder", false, true))));
 		assertEquals(strict, AgentBoardService.routingRules(board, null, List.of(architect, role("coder", true, false))),

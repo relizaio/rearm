@@ -20,10 +20,16 @@ import org.junit.jupiter.api.Test;
 import io.reliza.common.Utils;
 import io.reliza.model.AgentTaskData.DesignCheckpoint;
 import io.reliza.model.AgentTaskData.DesignCheckpointState;
+import io.reliza.model.AgentTaskData.DesignCheckpointWaiver;
+import io.reliza.model.AgentTaskData.Promotion;
+import io.reliza.model.AgentTaskData.SignOff;
+import io.reliza.model.AgentTaskData.SignOffOutcome;
+import io.reliza.model.ReleaseData.ReleaseLifecycle;
 
 /**
  * T-14 (task SPLIT-5): the design checkpoint's record and the role flag in JSONB. Rows written before them read as
- * no record and no flag; the record round-trips; settling it stamps the time.
+ * no record and no flag; the record round-trips; settling it stamps the time. T-43 (task TPF-152): the same for the
+ * architect's waiver and the sign-off's noSplit mark, which every copy of the row carries.
  */
 public class AgentTaskDataDesignCheckpointTest {
 
@@ -79,6 +85,51 @@ public class AgentTaskDataDesignCheckpointTest {
 		assertFalse(settled.settledAt().isBefore(before));
 		assertEquals(reached, settled.reachedAt());
 		assertEquals(cp.design(), settled.design());
+	}
+
+	@Test
+	public void aTaskWrittenBeforeTheWaiverReadsNoneAndItsSignOffsNoNoSplit() {
+		AgentTaskData td = Utils.OM.convertValue(Map.of("title", "old", "status", "QUEUED",
+				"signOffs", List.of(Map.of("role", "architect", "outcome", "PASSED", "note", "n"))), AgentTaskData.class);
+		assertNull(td.getDesignCheckpointWaiver());
+		assertNull(td.getSignOffs().get(0).noSplit());
+		assertFalse(td.getSignOffs().get(0).saysNoSplit());
+	}
+
+	@Test
+	public void theWaiverRoundTrips() {
+		DesignCheckpointWaiver w = new DesignCheckpointWaiver(UUID.randomUUID(), UUID.randomUUID(), "architect",
+				UUID.randomUUID(), ZonedDateTime.now(), UUID.randomUUID(), "fits one coder pass");
+		AgentTaskData td = new AgentTaskData();
+		td.setDesignCheckpointWaiver(w);
+		AgentTaskData back = Utils.OM.convertValue(Utils.OM.convertValue(td, Map.class), AgentTaskData.class);
+		DesignCheckpointWaiver read = back.getDesignCheckpointWaiver();
+		assertEquals(w.bySession(), read.bySession());
+		assertEquals(w.byAgent(), read.byAgent());
+		assertEquals("architect", read.role());
+		assertEquals(w.roleUuid(), read.roleUuid());
+		assertTrue(w.at().isEqual(read.at()));
+		assertEquals(w.designRound(), read.designRound());
+		assertEquals("fits one coder pass", read.note());
+	}
+
+	@Test
+	public void noSplitSurvivesEveryCopyOfTheRow() {
+		SignOff row = new SignOff("architect", UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+				ZonedDateTime.now().minusHours(1), ZonedDateTime.now(), SignOffOutcome.PASSED, "fits one coder pass",
+				"prompt-1", null, null, List.of(UUID.randomUUID()), null, null, null, null, null, null, Boolean.TRUE);
+		assertTrue(row.saysNoSplit());
+		assertEquals(Boolean.TRUE, row.withPromotions(List.of(new Promotion(UUID.randomUUID(),
+				ReleaseLifecycle.ASSEMBLED, null))).noSplit(), "withPromotions keeps noSplit (F-1)");
+		assertEquals(Boolean.TRUE, row.withPromotions(List.of()).noSplit(), "withPromotions with nothing made too");
+		assertEquals(Boolean.TRUE, row.withUsage(AgentTaskData.HopUsage.empty()).noSplit(), "withUsage keeps noSplit");
+		assertEquals(Boolean.TRUE, row.withAnswered(UUID.randomUUID()).noSplit(), "withAnswered keeps noSplit");
+		SignOff stored = Utils.OM.convertValue(Utils.OM.convertValue(row, Map.class), SignOff.class);
+		assertEquals(Boolean.TRUE, stored.noSplit());
+		SignOff plain = new SignOff("architect", null, null, null, null, ZonedDateTime.now(), SignOffOutcome.PASSED,
+				"n", null, null, null, List.of(), null, null, null, null, null, null);
+		assertNull(plain.noSplit(), "the 18-argument constructor delegates with null");
+		assertFalse(Utils.OM.convertValue(plain, Map.class).containsKey("noSplit"), "NON_NULL: absent when null");
 	}
 
 	@Test

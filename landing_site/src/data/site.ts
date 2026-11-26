@@ -23,6 +23,7 @@ export const useCaseNav = [
   { label: 'SBOM Aggregation', href: '/use-cases/sbom-aggregation/' },
   { label: 'VEX Exploitability eXchange', href: '/use-cases/vex-exploitability-exchange/' },
   { label: 'Medical Devices', href: '/use-cases/medical-devices/' },
+  { label: 'Functional Safety', href: '/use-cases/functional-safety/' },
   { label: 'Field Digital Twin', href: '/use-cases/field-digital-twin/' },
   { label: 'Deployment Governance, DevOps, BYOC', href: '/use-cases/deployment-governance/' },
   { label: 'EU CRA Compliance', href: '/use-cases/eu-cra/' },
@@ -37,11 +38,13 @@ export const pageHrefs: Record<string, string> = {
   'SBOM Aggregation': '/use-cases/sbom-aggregation/',
   'VEX Exploitability eXchange': '/use-cases/vex-exploitability-exchange/',
   'Medical Devices': '/use-cases/medical-devices/',
+  'Functional Safety': '/use-cases/functional-safety/',
   'Field Digital Twin': '/use-cases/field-digital-twin/',
   'Deployment Governance': '/use-cases/deployment-governance/',
   'Deployment Governance, DevOps, BYOC': '/use-cases/deployment-governance/',
   'EU CRA': '/use-cases/eu-cra/',
   'EU CRA Compliance': '/use-cases/eu-cra/',
+  'OpenChain CRA Checklist': '/use-cases/openchain-cra-mapping/',
   Pricing: '/pricing/',
 };
 
@@ -52,10 +55,23 @@ export type ProdPage = {
   chain: ChainLevel[]; hasRelated: boolean; related: string[]; blocks: PageBlock[];
 };
 export type UcStep = { num: string; title: string; body: string; cap: string };
+export type UcLink = { text: string; href: string };
+export type UcMappingRow = { items: string; asks: string; coverage: 'Supported' | 'Partial'; how: string };
+export type UcMapping = {
+  label: string; intro: string; introLink?: UcLink;
+  groups: { title: string; section: string; rows: UcMappingRow[] }[];
+  outOfScopeTitle: string; outOfScope: string[]; disclaimer: string;
+  docsText: string; docsHref: string; sourceText: string; sourceHref: string;
+};
+export type UcSeeAlso = { eyebrow: string; title: string; body: string; cta: string; href: string };
 export type UcPage = {
   id: string; path: string; label: string; persona: string; h1: string; pain: string;
   a1: string; a2: string; stripLabel: string; strip: string[]; evidence: string;
   publicDemo: boolean; shot: string | false; note: string | false; steps: UcStep[];
+  // Optional: a checklist-to-feature mapping after the steps, a note under the
+  // standards strip (with an optional link to a related page), and a link card
+  // in the steps grid.
+  mapping?: UcMapping; stripNote?: string; stripLink?: UcLink; seeAlso?: UcSeeAlso;
 };
 
 export const levels = design.levels as string[];
@@ -79,8 +95,6 @@ export const fullChain: ChainLevel[] = levels.map((name, i) => ({
 // Integration / client logos, carried over 1:1 from the current site.
 export const integrations = [
   { file: 'dtrack.png', url: 'https://dependencytrack.org', title: 'Dependency-Track' },
-  { file: 'cdx.png', url: 'https://cyclonedx.org', title: 'CycloneDX' },
-  { file: 'spdx.png', url: 'https://spdx.org', title: 'SPDX' },
   { file: 'ado.png', url: 'https://dev.azure.com', title: 'Azure DevOps' },
   { file: 'github.png', url: 'https://github.com', title: 'GitHub' },
   { file: 'gitlab.png', url: 'https://gitlab.com', title: 'GitLab' },
@@ -92,7 +106,6 @@ export const integrations = [
   { file: 'slack.png', url: 'https://slack.com', title: 'Slack' },
   { file: 'cosign.png', url: 'https://github.com/sigstore/cosign', title: 'Sigstore Cosign' },
   { file: 'msteams.png', url: 'https://www.microsoft.com/en-us/microsoft-365/microsoft-teams/group-chat-software', title: 'Microsoft Teams' },
-  { file: 'oci.png', url: 'https://www.opencontainers.org', title: 'Open Container Initiative' },
   { file: 'sendgrid.png', url: 'https://sendgrid.com', title: 'SendGrid' },
   { file: 'semgrep.png', url: 'https://semgrep.dev', title: 'Semgrep' },
   { file: 'checkov.png', url: 'https://www.checkov.io', title: 'Checkov' },
@@ -104,18 +117,46 @@ export const integrations = [
   { file: 'microsoft_sentinel.png', url: '#', title: 'Microsoft sentinel' },
 ];
 
-export const clientsPartners = [
+export const clientsPartners: { file: string; url: string; title: string; badge?: boolean }[] = [
   { file: 'investottawa.png', url: 'https://www.investottawa.ca/', title: 'Invest Ottawa' },
   { file: 'kdm.png', url: 'https://kdmanalytics.com', title: 'KDM Analytics' },
   { file: 'iq.png', url: 'https://www.iqinnovationhub.com', title: 'IQ Innovation Hub' },
-  { file: 'wysdom.png', url: 'https://wysdom.ai', title: 'Wysdom.AI' },
   { file: 'ovh.png', url: 'https://ovhcloud.com', title: 'OVHcloud' },
   { file: 'wicwac.png', url: 'https://wicwac.com', title: 'WicWac' },
   { file: 'semperis.png', url: 'https://www.semperis.com', title: 'Semperis' },
   { file: 'medware_cyber.png', url: 'https://medwarecyber.com/', title: 'MedWare Cyber' },
+  // Official NVIDIA Inception member badge, unmodified (its SVG canvas includes
+  // the required clear space). Sized by .logo-badge so the visible badge stays
+  // at least 30px tall, and carries NVIDIA's legal line below the section.
+  { file: 'nvidia-inception-program-badge.svg', url: 'https://www.nvidia.com/', title: 'NVIDIA Inception Program', badge: true },
 ];
 
+// NVIDIA's required legal attribution, shown wherever the Inception badge is used.
+export const nvidiaLegalLine =
+  '\u00a9 2026 NVIDIA and the NVIDIA logo are trademarks and/or registered trademarks of NVIDIA Corporation in the U.S. and other countries.';
+
+// Shown under the logos on its own line: our marks, then everyone else's.
+export const ownTrademarksLine =
+  'ReARM, Reliza and their logos are trademarks of Reliza Incorporated. All other trademarks and logos are the property of their respective owners.';
+
 export const teaLink = 'https://github.com/cyclonedx/transparency-exchange-api';
+
+// Standards ReARM supports, shown on the home page. Tiles are 2x renders of each
+// standard's official logo on the same #FAF9FF tile as the integration logos
+// (public/logos/standards/); marks without a wordmark carry a label in Sora.
+// `title` is the full name, used for alt text and the tooltip.
+export const standards = [
+  { file: 'tea.png', url: teaLink, title: 'OWASP Transparency Exchange API (TEA)' },
+  { file: 'cyclonedx.png', url: 'https://cyclonedx.org', title: 'CycloneDX' },
+  { file: 'spdx.png', url: 'https://spdx.dev', title: 'SPDX (Software Package Data Exchange)' },
+  { file: 'purl.png', url: 'https://packageurl.org', title: 'Package-URL (purl)' },
+  { file: 'openvex.png', url: 'https://openvex.dev', title: 'OpenVEX' },
+  { file: 'sarif.png', url: 'https://sarifweb.azurewebsites.net', title: 'SARIF (OASIS Static Analysis Results Interchange Format)' },
+  { file: 'oci.png', url: 'https://opencontainers.org', title: 'Open Container Initiative (OCI)' },
+  { file: 'cvss.png', url: 'https://www.first.org/cvss/', title: 'CVSS (FIRST Common Vulnerability Scoring System)' },
+  { file: 'semver.png', url: 'https://semver.org', title: 'Semantic Versioning (SemVer)' },
+  { file: 'calver.png', url: 'https://calver.org', title: 'Calendar Versioning (CalVer)' },
+];
 export const demoVideo = 'https://cdn.rearmhq.com/ReARM_Tutorial_V2_2.mp4';
 
 export const regulations = ['EU CRA', 'NIS2', 'DORA', 'US EO 14028 / 14144', 'FDA 524B', 'RBI / SEBI'];

@@ -16,7 +16,7 @@
 
 #### ReARM CE governs  releases at agentic speed. It tells you what each product is made of, its security posture and stores and manages per-release SBOMs, HBOMs, xBOMs, SAST / DAST scan results, Digital Signatures, Attestations, and other Security Artifacts and Metadata.
 
-## Next ReARM Community Engagement: 2nd ReARM Community Meetup [ReARM Boards: Managing Agentic Coding Squads](https://www.meetup.com/machine-learning-artificial-intelligence-ottawa/events/316974379), November 18, 2026, 12:00pm ET
+## Next ReARM Community Engagement: Pavel Shukhman presenting TEA at [OpenSSF](https://openssf.org/calendar), December 7, 2026, 11:00am ET
 
 https://github.com/user-attachments/assets/a315c5b2-7116-4b4a-bb4b-28e77d3ae9b3
 

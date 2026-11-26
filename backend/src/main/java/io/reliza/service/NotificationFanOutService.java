@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import io.reliza.model.dto.notifications.LicenseSeatEventPayload;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,6 +40,7 @@ import io.reliza.dto.FixedIn.FixedInVerdict;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
+import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.Integration;
 import io.reliza.model.IntegrationData;
@@ -499,6 +501,15 @@ public class NotificationFanOutService {
         // the inbox shows a channel delivery (no target user) to org
         // admins only, and board events name no release for the
         // perspective and component arms to match.
+        // License seat events (TPF-167, TPF-165 D9) reach the org admins snapshotted in the payload, the
+        // board events' targeted shape.
+        if (event.getEventType() == NotificationEventType.LICENSE_SEAT_EVENT) {
+            List<UUID> seatTargets = licenseSeatTargets(event);
+            if (null != seatTargets) {
+                int written = writeTargetedRows(event, seatTargets);
+                log.info("Wrote {} targeted license seat deliveries for outbox event {}", written, event.getUuid());
+            }
+        }
         if (event.getEventType().isAgentBoardEvent()) {
             List<UUID> boardTargets = boardTargets(event);
             if (null != boardTargets) {
@@ -539,15 +550,29 @@ public class NotificationFanOutService {
         // the subscription's declared eventTypes and never the payload, unlike
         // filterMatches, whose CEL expressions do -- see the ordering invariant
         // documented below.
+        //
+        // The document gate (TPF-158) joins the pre-check as a cost-only
+        // shortcut: it reads release.componentKind, which the producer stamped
+        // at write time and enrichment never touches, so the hoisting invariant
+        // holds. The loop below applies the same gate; that one is load-bearing.
+        boolean documentRelease = isBoardDocumentRelease(event);
         boolean anySubWantsThisType = false;
         for (NotificationSubscription sub : subs) {
             NotificationSubscriptionData data = parseSubscription(sub);
-            if (data != null && matchesEventType(data, event)) {
+            if (data != null && matchesEventType(data, event)
+                    && documentGateMatches(data, documentRelease)) {
                 anySubWantsThisType = true;
                 break;
             }
         }
-        if (!anySubWantsThisType) return FanOutOutcome.PROCESSED;
+        if (!anySubWantsThisType) {
+            if (documentRelease) {
+                log.debug("Event {} ({}): a board document round, and none of the {} active "
+                        + "subscriptions of its org opted in with includeBoardDocuments",
+                        event.getUuid(), event.getEventType(), subs.size());
+            }
+            return FanOutOutcome.PROCESSED;
+        }
 
         // Ordering invariant: enrichment MUST run before extractEventSeverity
         // and the subscription loop. CEL filters in filterMatches read the
@@ -635,6 +660,10 @@ public class NotificationFanOutService {
             NotificationSubscriptionData data = parseSubscription(sub);
             if (data == null) continue;
             if (!matchesEventType(data, event)) continue;
+            // Document gate (TPF-158) before the CEL filter, the ownership scope
+            // and the routes: a board's document round reaches only a
+            // subscription that opted in, and a CEL author never repeats it.
+            if (!documentGateMatches(data, documentRelease)) continue;
             if (!filterMatches(data, sub, event)) continue;
             // Ownership scope LAST of the three: event type is a list lookup and
             // the filter is in-memory CEL, while this can hit the database. An
@@ -1184,6 +1213,17 @@ public class NotificationFanOutService {
      * carries none -- a session event, or one written before the snapshot existed -- so the
      * subscription matrix routes it as before. An empty snapshot is a snapshot: nobody receives it.
      */
+    private List<UUID> licenseSeatTargets(NotificationOutboxEvent event) {
+        try {
+            LicenseSeatEventPayload p = LicenseSeatRenderSupport.payload(event);
+            return null == p ? null : p.targetUsers();
+        } catch (Exception e) {
+            log.error("Unparseable license seat payload on event {}; routing it through the subscriptions",
+                    event.getUuid(), e);
+            return null;
+        }
+    }
+
     private List<UUID> boardTargets(NotificationOutboxEvent event) {
         try {
             io.reliza.model.dto.notifications.AgentBoardEventPayload p = Utils.OM.convertValue(event.getRecordData(),
@@ -1550,6 +1590,10 @@ public class NotificationFanOutService {
                 case AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE, AGENT_SESSION_IDLE_WARNING -> {
                     return AgentBoardRenderSupport.severity(event.getEventType());
                 }
+                // License seat events (TPF-167) carry a fixed HIGH.
+                case LICENSE_SEAT_EVENT -> {
+                    return LicenseSeatRenderSupport.severity();
+                }
             }
         } catch (Exception e) {
             log.warn("Full-payload severity extraction failed for event {}; "
@@ -1562,6 +1606,25 @@ public class NotificationFanOutService {
             if (raw != null) return raw;
         }
         return null;
+    }
+
+    /**
+     * TPF-158: is this event about a board's document round, i.e. a release of a BOARD_DOCUMENT
+     * component? Read straight from record_data like readSeverityFromRawMap, so it needs no payload
+     * class and tolerates every shape: no release block, no componentKind key (a payload written
+     * before the kind was stamped), or a non-string value all read as "not a document".
+     */
+    static boolean isBoardDocumentRelease(NotificationOutboxEvent event) {
+        Map<String, Object> recordData = event.getRecordData();
+        if (recordData == null) return false;
+        Object release = recordData.get("release");
+        if (!(release instanceof Map<?, ?> ref)) return false;
+        return ComponentKind.BOARD_DOCUMENT.name().equals(ref.get("componentKind"));
+    }
+
+    /** A document round matches only a subscription that opted in; every other event matches. */
+    private static boolean documentGateMatches(NotificationSubscriptionData data, boolean documentRelease) {
+        return !documentRelease || Boolean.TRUE.equals(data.includeBoardDocuments());
     }
 
     private static NotificationSeverity readSeverityFromRawMap(NotificationOutboxEvent event) {

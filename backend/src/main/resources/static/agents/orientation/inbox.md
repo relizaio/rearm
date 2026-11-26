@@ -1,4 +1,4 @@
-<!-- orientation section: inbox · core 2026-10-25 -->
+<!-- orientation section: inbox · core 2026-11-10 -->
 ## 3. Polling the inbox
 
 While the session is OPEN and you're waiting on a downstream event

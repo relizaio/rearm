@@ -241,7 +241,8 @@ class OrgTotalsEquivalenceTest {
 			assertNull(m.get("counted_at"), m.toString());
 			assertEquals(BigInteger.ZERO, m.get("admin_and_write_users"));
 			assertEquals(BigInteger.ZERO, m.get("read_only_users"));
-			assertEquals(12, m.size(), m.toString());
+			assertEquals(BigInteger.ZERO, m.get("users_without_role"));
+			assertEquals(13, m.size(), m.toString());
 		} finally {
 			cleanup();
 		}
@@ -266,7 +267,7 @@ class OrgTotalsEquivalenceTest {
 			Instant at = Instant.parse((String) countedAt).truncatedTo(ChronoUnit.MILLIS);
 			assertFalse(at.isBefore(t0), at + " before " + t0);
 			assertFalse(at.isAfter(t1), at + " after " + t1);
-			assertEquals(12, m.size(), m.toString());
+			assertEquals(13, m.size(), m.toString());
 
 			assertEquals(List.of("artifacts", "commits", "deliverables", "releases"), jdbc.queryForList(
 					"SELECT jsonb_object_keys(record_data->'totals') AS k FROM rearm.organizations WHERE uuid = ? ORDER BY k",

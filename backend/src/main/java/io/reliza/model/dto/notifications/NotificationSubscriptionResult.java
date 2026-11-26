@@ -49,6 +49,10 @@ public record NotificationSubscriptionResult(
         // now throw for a managed subscription, so without projecting this the
         // UI offers two controls that are guaranteed to fail.
         UUID managedByTeam,
+        // TPF-158: the board-document opt-in as stored; null = never set =
+        // excluded. Projected so a client renders its toggle from this field
+        // in both filter modes (it is not inside filter.presetConfig).
+        Boolean includeBoardDocuments,
         // Hibernate @Version-managed row revision. See
         // NotificationChannelResult.revision javadoc.
         Integer revision) {

@@ -184,6 +184,19 @@ public class VcsRepositoryService {
 
 	/**
 	 * Look up (or create) the org's VCS repository for {@code vcsUri} and return
+	 * its committed UUID; a created row is named after the URI. Same contract as
+	 * {@link #provisionVcsRepository(UUID, String, String, VcsType, WhoUpdated)},
+	 * whose javadoc carries it.
+	 *
+	 * @return the committed VCS repository UUID
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public UUID provisionVcsRepository (UUID orgUuid, String vcsUri, VcsType vcsType, WhoUpdated wu) {
+		return provisionVcsRepository(orgUuid, vcsUri, null, vcsType, wu);
+	}
+
+	/**
+	 * Look up (or create) the org's VCS repository for {@code vcsUri} and return
 	 * its committed UUID.
 	 *
 	 * <p>Runs in its own {@code REQUIRES_NEW} transaction so the row is durably
@@ -207,11 +220,14 @@ public class VcsRepositoryService {
 	 * it by URI via {@link #getVcsRepositoryByUri}. There is no FK to
 	 * garbage-collect against; the orphan is recoverable on retry.
 	 *
+	 * <p>{@code displayName} names the row only when this call creates it; a null
+	 * or empty name derives one from the URI. An existing row keeps its name.
+	 *
 	 * @return the committed VCS repository UUID
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	public UUID provisionVcsRepository (UUID orgUuid, String vcsUri, VcsType vcsType, WhoUpdated wu) {
-		return getVcsRepositoryByUri(orgUuid, vcsUri, null, vcsType, true, wu).get().getUuid();
+	public UUID provisionVcsRepository (UUID orgUuid, String vcsUri, String displayName, VcsType vcsType, WhoUpdated wu) {
+		return getVcsRepositoryByUri(orgUuid, vcsUri, displayName, vcsType, true, wu).get().getUuid();
 	}
 	
 	public List<VcsRepository> listVcsReposByOrg(UUID orgUuid) {

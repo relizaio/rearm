@@ -96,7 +96,13 @@ public enum NotificationEventType {
 	 */
 	RELEASE_SUBMISSION_CREATED,
 	/** A regulatory submission was withdrawn (task TEA-35). */
-	RELEASE_SUBMISSION_WITHDRAWN;
+	RELEASE_SUBMISSION_WITHDRAWN,
+	/**
+	 * A license seat event for the organization's admins (TPF-167, TPF-165 D9): a sign-in refused
+	 * (NO_ROLE, SEAT_FULL, OVER_LIMIT) or an SSO group lift skipped for want of a seat. Targeted at the
+	 * admins snapshotted in the payload; sent immediately.
+	 */
+	LICENSE_SEAT_EVENT;
 
 	/**
 	 * Actionable events ask a specific person to do something now, so they
@@ -107,7 +113,8 @@ public enum NotificationEventType {
 		return this == APPROVAL_REQUESTED || this == APPROVAL_RESOLVED
 				|| this == INSTANCE_DEPLOYMENT_FAILED
 				|| this == AGENT_TASK_NEEDS_PERSON || this == AGENT_TASK_QUEUE_AGE
-				|| this == AGENT_SESSION_IDLE_WARNING;
+				|| this == AGENT_SESSION_IDLE_WARNING
+				|| this == LICENSE_SEAT_EVENT;
 	}
 
 	/**
@@ -133,6 +140,7 @@ public enum NotificationEventType {
 		return this != VEX_STATE_CHANGED
 				&& this != INSTANCE_DEPLOYMENT_CHANGED
 				&& this != INSTANCE_DEPLOYMENT_FAILED
+				&& this != LICENSE_SEAT_EVENT
 				&& !isAgentBoardEvent();
 	}
 

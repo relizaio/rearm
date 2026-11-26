@@ -77,7 +77,9 @@ wait_for "$STUB" "http://127.0.0.1:$STUB_BACKEND/" 409
 wait_for "$STUB" "http://127.0.0.1:$STUB_KEYCLOAK/" 409
 
 # 2. The UI nginx as both charts and compose run it: the image's entrypoint renders the template
-#    with these variables. nginx_start.sh does not run, so client_max_body_size stays 1m.
+#    with these variables. nginx_start.sh does not run, so client_max_body_size stays 1m, and
+#    PROGRAMMATIC_API_TIMEOUT is set here to the default nginx_start.sh would give it: the
+#    entrypoint's envsubst substitutes only defined variables, and nginx refuses the bare placeholder.
 run_ui() { # name, backend port, keycloak port
     docker run -d --name "$1" --network "$NET" \
         -v "$UI_DIR/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
@@ -86,6 +88,7 @@ run_ui() { # name, backend port, keycloak port
         -e HUB_HOST="$STUB" -e HUB_PORT="$2" \
         -e KEYCLOAK_HOST="$STUB" -e KEYCLOAK_PORT="$3" \
         -e KEYCLOAK_ADMIN_ACCESS= -e KEYCLOAK_RELIZA_ADMIN_ACCESS= \
+        -e PROGRAMMATIC_API_TIMEOUT=600 \
         -p 127.0.0.1::80 "$IMAGE" >/dev/null
 }
 run_ui "$UI" 8086 9080
@@ -152,7 +155,7 @@ check() {
 }
 
 JSON=(-H 'Content-Type: application/json' --data '{"query":"{ __typename }"}')
-BACKEND_PATHS=(/v1/stub /api/stub /tea/stub /.well-known/tea/stub /graphql/stub)
+BACKEND_PATHS=(/v1/stub /api/stub /api/programmatic/stub /tea/stub /.well-known/tea/stub /graphql/stub)
 KEYCLOAK_PATHS=(/kauth/stub /kauth/admin/Reliza/stub /kauth/admin/realms/Reliza/stub /kauth/admin/serverinfo /kauth/realms/Reliza/stub /kauth/resources/stub /kauth/js/stub)
 
 echo "-- through the UI nginx, the stub answering"
@@ -178,23 +181,23 @@ for p in "${KEYCLOAK_PATHS[@]}"; do
     check "$row" "$UI_URL" GET "$p" 409 "$(lit keycloak '{"stub":"keycloak"}')" 'Content-Type: application/json'
     row=$((row + 1))
 done
-check 19 "$UI_URL" GET /no/such/ui/route 200 "$SPA_BODY" 'Content-Type: text/html'
-check 20 "$UI_URL" GET /error_pages/generic.html 200 "$GENERIC"
+check 20 "$UI_URL" GET /no/such/ui/route 200 "$SPA_BODY" 'Content-Type: text/html'
+check 21 "$UI_URL" GET /error_pages/generic.html 200 "$GENERIC"
 # nginx's own error (client_max_body_size 1m) stays branded.
-check 21 "$UI_URL" POST /api/stub/upload 413 "$GENERIC" 'Content-Type: text/html' \
+check 22 "$UI_URL" POST /api/stub/upload 413 "$GENERIC" 'Content-Type: text/html' \
     -- -H 'Content-Type: application/octet-stream' --data-binary "@$BIG"
 
 echo "-- through the UI nginx, nothing listening upstream"
-check 22 "$DOWN_URL" POST /graphql 502 "$SERVER_DOWN" 'Content-Type: text/html' -- "${JSON[@]}"
-row=23
+check 23 "$DOWN_URL" POST /graphql 502 "$SERVER_DOWN" 'Content-Type: text/html' -- "${JSON[@]}"
+row=24
 for p in "${BACKEND_PATHS[@]}" "${KEYCLOAK_PATHS[@]}"; do
     check "$row" "$DOWN_URL" GET "$p" 502 "$SERVER_DOWN" 'Content-Type: text/html'
     row=$((row + 1))
 done
-check 35 "$DOWN_URL" GET /no/such/ui/route 200 "$SPA_BODY"
+check 37 "$DOWN_URL" GET /no/such/ui/route 200 "$SPA_BODY"
 
 if [ "$FAILED" -ne 0 ]; then
     echo "error-passthrough: FAILED"
     exit 1
 fi
-echo "error-passthrough: all 35 rows ok"
+echo "error-passthrough: all 37 rows ok"
