@@ -25,7 +25,13 @@ export const FIELD_HELP: Record<string, string> = {
     severity:
         'Your assessment of severity; may differ from public advisories.',
     findingAliases:
-        'Alternative identifiers for the same finding (e.g., GHSA, ALPINE, RHSA).'
+        'Alternative identifiers for the same finding (e.g., GHSA, ALPINE, RHSA).',
+    discoveryMethod:
+        'How the finding was found (FDA premarket cybersecurity guidance V.A.4(b)). Shown once a state other than In Triage is chosen.',
+    riskLevel:
+        'Your assessed risk of this finding for the device, with its risk controls in place. Shown for an exploitable or resolved finding.',
+    controls:
+        'Up to 10 risk controls, each a kind and a one-line description of how the risk is controlled. Shown for an exploitable or resolved finding.'
 }
 
 /** Plain-language summary of which fields each state requires (CISA VEX). */

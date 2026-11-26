@@ -62,6 +62,8 @@ import { Edit } from '@vicons/tabler'
 import { useStore } from 'vuex'
 import { Info20Regular } from '@vicons/fluent'
 import commonFunctions from '@/utils/commonFunctions'
+import { assessmentFieldsAvailable, assessmentSummaryLines, canWriteFindingAnalysis } from '@/utils/assessmentFields'
+import { vulnAnalysisFieldsFragment } from '@/utils/vulnAnalysisQueries'
 
 interface Props {
     show: boolean
@@ -164,13 +166,7 @@ const isWritable = computed(() => {
         return false
     }
 
-    const orgPermission = myuser.value?.permissions?.permissions?.find((p: any) =>
-        p.scope === 'ORGANIZATION' &&
-        p.org === orgUuid &&
-        p.object === orgUuid
-    )
-
-    return !!(orgPermission?.type === 'ADMIN' || orgPermission?.functions?.includes('FINDING_ANALYSIS_WRITE'))
+    return canWriteFindingAnalysis(myuser.value?.permissions?.permissions, orgUuid)
 })
 
 // Create finding row data for the CreateVulnAnalysisModal
@@ -372,6 +368,7 @@ const columns: DataTableColumns<any> = [
                     if (history.details) {
                         tooltipLines.push(`Details: ${history.details}`)
                     }
+                    tooltipLines.push(...assessmentSummaryLines(history))
                     const tooltipContent = tooltipLines.length > 0 ? tooltipLines.join('\n') : 'No additional information'
                     
                     const tag = h(NTag, { 
@@ -441,44 +438,7 @@ const fetchAnalysisRecords = async () => {
                         findingId: $findingId
                         findingType: $findingType
                     ) {
-                        uuid
-                        org
-                        location
-                        locationType
-                        findingId
-                        findingAliases
-                        findingType
-                        scope
-                        scopeUuid
-                        analysisState
-                        analysisJustification
-                        severity
-                        responses
-                        recommendation
-                        workaround
-                        analysisHistory {
-                            state
-                            justification
-                            severity
-                            details
-                            createdDate
-                            responses
-                            recommendation
-                            workaround
-                        }
-                        releaseDetails {
-                            uuid
-                            version
-                        }
-                        branchDetails {
-                            uuid
-                            name
-                        }
-                        componentDetails {
-                            uuid
-                            name
-                            type
-                        }
+                        ${vulnAnalysisFieldsFragment(assessmentFieldsAvailable(myuser.value?.installationType))}
                     }
                 }
             `,

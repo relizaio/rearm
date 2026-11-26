@@ -37,6 +37,12 @@ export const PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS: Option[] = [
     opt('EXCLUDE', 'Exclude findings in triage'),
 ]
 
+/**
+ * Shown under the Suppressed findings option of a VDR or VEX part whose value in the form is EXCLUDE (FDAW-17
+ * 3.2a): a row saved before the INCLUDE default holds EXCLUDE whether or not anyone chose it.
+ */
+export const SUPPRESSED_EXCLUDED_NOTE = 'Suppressed findings are left out of this part. ReARM\'s default is to include them, each marked as suppressed.'
+
 export const PACKAGE_VEX_FORMAT_OPTIONS: Option[] = [
     opt('CYCLONEDX_VEX', 'CycloneDX VEX'),
     opt('OPENVEX', 'OpenVEX'),
@@ -60,6 +66,7 @@ export const PACKAGE_PART_LABELS: Record<string, string> = {
     CLE: 'CLE',
     RAW_ARTIFACTS: 'Raw artifacts',
     CHECK_REPORT: 'Check report',
+    VULNERABILITY_ASSESSMENT: 'Vulnerability assessment summary',
 }
 
 /** Defined in fdaLabels.ts (the release History parses with it) and read here under its old name. */
@@ -219,7 +226,7 @@ export function packageFormFromView (view: any, scope: PackageScope): PackageSet
             defaultSelection: kp.defaultSelection,
             generatorPresent: kp.generatorPresent !== false,
             selection: required ? 'INCLUDE' : (o.selection ?? kp.defaultSelection ?? 'EXCLUDE'),
-            suppressedFindings: o.suppressedFindings ?? 'EXCLUDE',
+            suppressedFindings: o.suppressedFindings ?? 'INCLUDE',
             inTriageFindings: o.inTriageFindings ?? 'EXCLUDE',
             vexFormat: o.vexFormat ?? 'CYCLONEDX_VEX',
             artifactTypes: Array.isArray(o.artifactTypes) ? [...o.artifactTypes] : [],

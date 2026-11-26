@@ -7,7 +7,7 @@ import {
     PACKAGE_COMPONENT_QUESTION_HINT, packageEnabledHelp, packageEnabledLine, packageStateOf, packageFormError, packageFormFromView, packageKindLabel, packagePartFields, packageRemoveConfirm,
     packagePartLabel, packageSettingsInput, packageSourceLine, regulatoryPackagesAvailable,
     PACKAGE_MODE_OPTIONS, PACKAGE_PERSPECTIVE_MODE_OPTIONS, packageInheritConfirm, packageInheritedForm, packageModeOptions,
-    packageInheritConflictHint, PACKAGE_INHERIT, PACKAGE_FIELD_HELP, packageEnabledLabel,
+    packageInheritConflictHint, PACKAGE_INHERIT, PACKAGE_FIELD_HELP, packageEnabledLabel, SUPPRESSED_EXCLUDED_NOTE,
 } from './packageSettings'
 import { ENUM_RE, UUID_RE, expectSwept } from './__fixtures__/fdaSweep'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
@@ -52,6 +52,11 @@ describe('parts and options (row 20)', () => {
         for (const k of Object.keys(PACKAGE_KIND_LABELS)) expect(enumValuesOf(proSchema!, 'PackageKind')).toContain(k)
     })
 
+    it('labels the summary part and holds the excluded note (FDAW-17 3.2a, 3.4)', () => {
+        expect(packagePartLabel('VULNERABILITY_ASSESSMENT')).toBe('Vulnerability assessment summary')
+        expect(SUPPRESSED_EXCLUDED_NOTE).toBe('Suppressed findings are left out of this part. ReARM\'s default is to include them, each marked as suppressed.')
+    })
+
     it('labels the stored check part Check report (FDAW-16 row 16)', () => {
         expect(PACKAGE_PART_LABELS.CHECK_REPORT).toBe('Check report')
         expect(packagePartLabel('CHECK_REPORT')).toBe('Check report')
@@ -86,7 +91,7 @@ describe('the form and the save over two kinds (row 21)', () => {
         expect(f.parts.find(p => p.part === 'VDR')!.selection).toBe('INCLUDE')
         const vex = f.parts.find(p => p.part === 'VEX')!
         expect([vex.selection, vex.suppressedFindings, vex.inTriageFindings, vex.vexFormat])
-            .toEqual(['INCLUDE', 'EXCLUDE', 'EXCLUDE', 'CYCLONEDX_VEX'])
+            .toEqual(['INCLUDE', 'INCLUDE', 'EXCLUDE', 'CYCLONEDX_VEX'])
         expect(f.parts.find(p => p.part === 'RAW_ARTIFACTS')!.artifactTypes).toEqual([])
         expect(f.parts.find(p => p.part === 'DEVICE_SUPPORT_STATEMENT')!.generatorPresent).toBe(false)
         expect(f.sbomProfile).toBe('mine')
@@ -100,6 +105,20 @@ describe('the form and the save over two kinds (row 21)', () => {
         expect(two.mode).toBeNull()
         expect(packageFormFromView(view(TEST_PARTS, { parent: { status: 'NOT_FOUND', settings: null } }), 'ORGANIZATION').sbomProfile)
             .toBe('default')
+    })
+
+    it('FDAW-17 row 17 (c), (d): suppressed findings fill INCLUDE, a stored EXCLUDE stays, and the save sends the fill', () => {
+        const lacking = { mode: 'OVERRIDE', sbomProfile: 'mine', parts: [{ part: 'VDR', options: { selection: 'INCLUDE' } }] }
+        const first = { ...packageFormFromView(view(FDA_PARTS, { stored: lacking }), 'COMPONENT'), mode: 'OVERRIDE' }
+        expect(first.parts.find(p => p.part === 'VDR')!.suppressedFindings).toBe('INCLUDE')
+        expect(first.parts.find(p => p.part === 'VEX')!.suppressedFindings).toBe('INCLUDE')
+        const holding = { mode: 'OVERRIDE', sbomProfile: 'mine', parts: [
+            { part: 'VDR', options: { selection: 'INCLUDE', suppressedFindings: 'EXCLUDE' } }] }
+        expect(packageFormFromView(view(FDA_PARTS, { stored: holding }), 'COMPONENT').parts
+            .find(p => p.part === 'VDR')!.suppressedFindings).toBe('EXCLUDE')
+        const sent = packageSettingsInput(first, 'COMPONENT')
+        expect(sent.parts.find((p: any) => p.part === 'VDR')).toEqual({ part: 'VDR', selection: 'INCLUDE', suppressedFindings: 'INCLUDE' })
+        expect(sent.parts.find((p: any) => p.part === 'VEX').suppressedFindings).toBe('INCLUDE')
     })
 
     it('a save sends one entry per part with the applicable fields only, types deduplicated; FOLLOW sends two keys', () => {

@@ -18,7 +18,7 @@ export const GENERATED_HEAD_OPEN = '<!doctype html>\n<html lang="en">\n<head>\n<
 export const PRINT_SANDBOX = 'allow-same-origin allow-modals'
 
 /** The parts whose stored file is an HTML document of the generator (PackagePart). */
-export const PRINTABLE_PARTS: string[] = ['DEVICE_SUPPORT_STATEMENT']
+export const PRINTABLE_PARTS: string[] = ['DEVICE_SUPPORT_STATEMENT', 'VULNERABILITY_ASSESSMENT']
 
 export const PRINT_BUTTON = 'Print or save as PDF'
 

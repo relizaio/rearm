@@ -23,9 +23,11 @@ const A2 = '22222222-2222-4222-8222-222222222222'
 const M = '33333333-3333-4333-8333-333333333333'
 const operation = (opts: any) => (opts.query ?? opts.mutation)?.definitions?.[0]?.name?.value
 
-// The stored report and the fresh one: the engine's fda golden, the fresh one from a newer engine.
-const STORED = fixtureText('fda.cdx')
-const FRESH = JSON.stringify({ ...JSON.parse(STORED), engine: { ...JSON.parse(STORED).engine, version: '26.11.7' } })
+// The stored report and the fresh one: the engine's fda golden, the stored one naming FDA checker rule set 1 in its
+// fda profile (FDAW-126 3.4), the fresh one from a newer engine and naming none.
+const GOLDEN = JSON.parse(fixtureText('fda.cdx'))
+const STORED = JSON.stringify({ ...GOLDEN, profiles: GOLDEN.profiles.map((p: any) => p.key === 'fda' ? { ...p, ruleSetVersion: '1' } : p) })
+const FRESH = JSON.stringify({ ...GOLDEN, engine: { ...GOLDEN.engine, version: '26.11.7' } })
 
 const CHECK_PART = { part: 'CHECK_REPORT', requirement: 'REQUIRED', outcome: 'PRODUCED', artifact: A2, artifactVersion: '1',
     fileName: 'widget-check-report.json', mediaType: 'application/json', size: 10, sha256: 'b'.repeat(64) }
@@ -89,12 +91,12 @@ describe('ReleaseSubmissionsPanel: Re-run check (FDAW-16 3.9a)', () => {
         w.unmount()
     })
 
-    it('a press asks once for that version and shows both reports under their checkers', async () => {
+    it('a press asks once for that version and shows both reports under their checkers and FDA checker rule sets', async () => {
         const w = await mountPanel()
         await rerunButtons(w)[0].trigger('click')
         await flushPromises()
         expect(rerunCalls().map(([o]) => o.variables)).toEqual([{ submission: HEAD, version: 2 }])
-        expect(byTestId('check-rerun-stored-heading')?.textContent).toBe('Stored (rearm-cli 26.10.15)')
+        expect(byTestId('check-rerun-stored-heading')?.textContent).toBe('Stored (rearm-cli 26.10.15, FDA checker rule set 1)')
         expect(byTestId('check-rerun-fresh-heading')?.textContent).toBe('Now (rearm-cli 26.11.7)')
         expect(byTestId('check-rerun-stored')?.querySelectorAll('.sbom-score-report')).toHaveLength(1)
         expect(byTestId('check-rerun-fresh')?.querySelectorAll('.sbom-score-report')).toHaveLength(1)

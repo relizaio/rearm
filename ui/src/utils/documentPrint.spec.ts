@@ -37,7 +37,7 @@ describe('documentPrint (FDAW-122)', () => {
     it('(a) the start of a generated document, as rearm-saas DraftMark.HEAD_OPEN has it', () => {
         expect(DP.GENERATED_HEAD_OPEN).toBe('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">\n<title>')
         expect(DP.GENERATED_HEAD_OPEN).toHaveLength(170)
-        expect(DP.PRINTABLE_PARTS).toEqual(['DEVICE_SUPPORT_STATEMENT'])
+        expect(DP.PRINTABLE_PARTS).toEqual(['DEVICE_SUPPORT_STATEMENT', 'VULNERABILITY_ASSESSMENT'])
         expect(DP.PRINT_BUTTON).toBe('Print or save as PDF')
         expectSwept([DP.PRINT_BUTTON, DP.NOT_PRINTABLE, DP.PRINT_FAILED].join('\n'))
     })
