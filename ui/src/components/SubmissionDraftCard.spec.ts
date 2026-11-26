@@ -364,6 +364,23 @@ describe('SubmissionDraftCard: readiness (FDAW-16 row 14)', () => {
         expect(block(w).findAll('[data-testid="draft-readiness-row"]').length).toBe(0)
         w.unmount()
     })
+    it('FDAW-140 (FDAW-17 3.10): the card passes its own canWriteFindingAnalysis prop into the rows, not organization write', async () => {
+        const FINDINGS = { rule: 'VULN_KEV_UNASSESSED', severity: 'MUST_FIX', outcome: 'FAIL', count: 1, justified: null,
+            text: '1 known exploited (KEV) finding has no complete assessment and explanation', verb: 'ASSESS_FINDINGS' }
+        const FINDINGS_SENTENCE = 'Assessing findings needs the Finding Analysis Write permission on the organization; an organization'
+            + ' administrator grants it.'
+        const draft = with_({ readiness: { ruleSetVersion: '2', rows: [FINDINGS] } })
+        // organization write alone does not enable it: the card must thread its own canWriteFindingAnalysis prop, not canWriteOrg.
+        let { w } = await mountCard({ draft, isWritable: true, canWriteOrg: true, canWriteFindingAnalysis: false })
+        expect(verbs(w).length).toBe(1)
+        expect((verbs(w)[0].element as HTMLButtonElement).disabled).toBe(true)
+        expect(block(w).find('[data-testid="draft-readiness-org-write"]').text()).toBe(FINDINGS_SENTENCE)
+        w.unmount();
+        ({ w } = await mountCard({ draft, isWritable: true, canWriteOrg: false, canWriteFindingAnalysis: true }))
+        expect((verbs(w)[0].element as HTMLButtonElement).disabled).toBe(false)
+        expect(block(w).find('[data-testid="draft-readiness-org-write"]').exists()).toBe(false)
+        w.unmount()
+    })
     it('the block sits after the stale banner and before the diff; no build, no block', async () => {
         let { w } = await mountCard({ draft: THREE })
         const order = w.findAll('[data-testid]').map((e: any) => e.attributes('data-testid'))
