@@ -44,6 +44,23 @@ describe('the readiness verbs are wired into ReleaseView (FDAW-16 3.8)', () => {
         expect(body).not.toContain('EDIT_COVER_SUMMARY')
     })
 
+    it('Assess findings opens every finding of the release, suppressed shown and KEV-only off (FDAW-17 3.3)', () => {
+        const body = functionBody('onReadinessFix')
+        expect(body).toMatch(/verb === 'ASSESS_FINDINGS' && updatedRelease\.value\?\.uuid\) \{\s*await viewDetailedVulnerabilitiesForRelease\(updatedRelease\.value\.uuid, '', '', \{ kevOnly: false, showSuppressed: true \}\)/)
+        const opener = code.slice(code.indexOf('async function viewDetailedVulnerabilitiesForRelease('),
+            code.indexOf('async function viewDetailedVulnerabilities('))
+        expect(opener).toContain('currentShowSuppressed.value = !!opening.showSuppressed')
+        // the artifact opener resets it, so the next plain open hides suppressed findings again
+        const artifactOpener = code.slice(code.indexOf('async function viewDetailedVulnerabilities('))
+        expect(artifactOpener.slice(0, artifactOpener.indexOf('\n}'))).toContain('currentShowSuppressed.value = false')
+        expect(code).toMatch(/<vulnerability-modal[\s\S]*?:initial-show-suppressed="currentShowSuppressed"[\s\S]*?\/>/)
+    })
+
+    it('the panel gets the Finding Analysis Write fact, not organization write (FDAW-17 3.10)', () => {
+        expect(panelTag()).toMatch(/:can-write-finding-analysis="canWriteFindingAnalysisHere"/)
+        expect(code).toMatch(/const canWriteFindingAnalysisHere[^=]*= computed\(\(\): boolean =>\s*canWriteFindingAnalysis\(/)
+    })
+
     it('openBulkAttest opens on the half it is given, the support half by default', () => {
         const body = functionBody('openBulkAttest')
         expect(body).toMatch(/^function openBulkAttest \(half: 'support' \| 'hashes' \| 'supplier' = 'support'\)/)

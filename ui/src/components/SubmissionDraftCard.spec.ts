@@ -299,8 +299,8 @@ describe('SubmissionDraftCard (FDAW-32 row 7)', () => {
 // FDAW-16 architecture round 3, section 4 row 14: the readiness block of the card (3.8), its verbs by the two
 // facts of F-30, text 13 under the rows, and texts 9 and 16 for a build without readiness.
 describe('SubmissionDraftCard: readiness (FDAW-16 row 14)', () => {
-    const TEXT_13 = 'These items are read from this build. Fix them, then rebuild the draft. An item without a button, or an entry a '
-        + 'button does not list, is corrected in the SBOM uploaded to the release, or to the component release that carries the entry.'
+    const TEXT_13 = 'Fix these items, then rebuild the draft. A must-fix item without a button, or an entry a button does not list, is '
+        + 'corrected in the SBOM uploaded to the release, or to the component release that carries the entry, unless its text names another place.'
     const TEXT_9 = 'Readiness was not checked for this build; rebuild the draft'
     const TEXT_16 = 'Readiness was not checked for this build; return the draft to editing and rebuild it'
     const ORG_SENTENCE = 'Add suppliers changes organization-wide data and needs organization write access, which an'
@@ -362,6 +362,23 @@ describe('SubmissionDraftCard: readiness (FDAW-16 row 14)', () => {
         ({ w } = await mountCard({ draft: with_(AWAIT, { readiness: null }) }))
         expect(testid(w, 'draft-readiness-unchecked').text()).toBe(TEXT_16)
         expect(block(w).findAll('[data-testid="draft-readiness-row"]').length).toBe(0)
+        w.unmount()
+    })
+    it('FDAW-140 (FDAW-17 3.10): the card passes its own canWriteFindingAnalysis prop into the rows, not organization write', async () => {
+        const FINDINGS = { rule: 'VULN_KEV_UNASSESSED', severity: 'MUST_FIX', outcome: 'FAIL', count: 1, justified: null,
+            text: '1 known exploited (KEV) finding has no complete assessment and explanation', verb: 'ASSESS_FINDINGS' }
+        const FINDINGS_SENTENCE = 'Assessing findings needs the Finding Analysis Write permission on the organization; an organization'
+            + ' administrator grants it.'
+        const draft = with_({ readiness: { ruleSetVersion: '2', rows: [FINDINGS] } })
+        // organization write alone does not enable it: the card must thread its own canWriteFindingAnalysis prop, not canWriteOrg.
+        let { w } = await mountCard({ draft, isWritable: true, canWriteOrg: true, canWriteFindingAnalysis: false })
+        expect(verbs(w).length).toBe(1)
+        expect((verbs(w)[0].element as HTMLButtonElement).disabled).toBe(true)
+        expect(block(w).find('[data-testid="draft-readiness-org-write"]').text()).toBe(FINDINGS_SENTENCE)
+        w.unmount();
+        ({ w } = await mountCard({ draft, isWritable: true, canWriteOrg: false, canWriteFindingAnalysis: true }))
+        expect((verbs(w)[0].element as HTMLButtonElement).disabled).toBe(false)
+        expect(block(w).find('[data-testid="draft-readiness-org-write"]').exists()).toBe(false)
         w.unmount()
     })
     it('the block sits after the stale banner and before the diff; no build, no block', async () => {

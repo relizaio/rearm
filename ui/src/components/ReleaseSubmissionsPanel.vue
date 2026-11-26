@@ -50,7 +50,7 @@
             </div>
             <!-- The draft of this kind's next version (FDAW-32 3.6): one card per kind, under its head. -->
             <SubmissionDraftCard v-if="draftOf(k)" :draft="draftOf(k)" :second-confirmer="secondConfirmer" :is-writable="isWritable"
-                :can-write-org="canWriteOrg" :busy="acts.busy.value" :still-running="stillRunning(draftOf(k))" :names="actNames" :current-user="currentUser"
+                :can-write-org="canWriteOrg" :can-write-finding-analysis="canWriteFindingAnalysis" :busy="acts.busy.value" :still-running="stillRunning(draftOf(k))" :names="actNames" :current-user="currentUser"
                 :lifecycle="lifecycle" :head="headOf(k)" @rebuild="acts.rebuild(draftOf(k))" @discard="acts.discard(draftOf(k), actNames)"
                 @confirm="acts.confirm(draftOf(k), actNames)" @return="acts.returnToEditing(draftOf(k), actNames)"
                 @finalize="acts.finalize(draftOf(k), actNames, secondConfirmer)" @refresh="read" @fix="(verb: string) => fix(k, verb)" />
@@ -270,6 +270,7 @@ const props = withDefaults(defineProps<{
     kinds?: string[] | null
     isWritable?: boolean
     canWriteOrg?: boolean
+    canWriteFindingAnalysis?: boolean
     installationType?: string
     componentType?: string | null
     names?: Record<string, string>
@@ -288,6 +289,7 @@ const props = withDefaults(defineProps<{
     kinds: null,
     isWritable: false,
     canWriteOrg: false,
+    canWriteFindingAnalysis: false,
     installationType: 'OSS',
     componentType: null,
     names: () => ({}),
