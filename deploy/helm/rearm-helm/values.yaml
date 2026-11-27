@@ -143,6 +143,12 @@ ociArtifactService:
   enabled: true
   logFormatType: "plain"
   logLevel: "info"
+  # gin mode of the artifact service: "release" (default) or "debug".
+  # "debug" is for debugging only: the service then prints the gin warning,
+  # its route list and gin debug lines at start, and a recovered panic logs
+  # the request headers. Empty means "release"; any other value stops the
+  # render with an error.
+  ginMode: "release"
   usePlainHttp: false
   registryHost: registry.relizahub.com
   registryUser: changeme # change
@@ -274,6 +280,14 @@ rebom:
       serviceHost: http://rearm-oci-artifact
       registryNamespace: 123-placeholder
     enrichmentPendingIfNotConfigured: false
+    # NODE_ENV of the rebom container: production (default) or development.
+    # production turns off GraphQL introspection, the sandbox landing page and
+    # stack traces in error responses. development turns them back on and is
+    # for debugging only. Empty means production; any other value stops the
+    # render with an error. Rendered as NODE_ENV, which takes precedence over
+    # a NODE_ENV in the secret of rebomPropsSecretName. The log level is set
+    # by rebom.backend.logLevel, not by this value.
+    nodeEnv: "production"
     rebomPropsSecretName: ""
 
 # Ingress NetworkPolicies (templates/networkpolicy.yaml): every chart pod is

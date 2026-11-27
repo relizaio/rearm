@@ -27,6 +27,12 @@ spec:
         env:
         - name: REARM_PRODUCT_VERSION
           value: {{ .Chart.AppVersion | quote }}
+        {{- $rebomNodeEnv := .Values.rebom.backend.nodeEnv | default "production" | toString }}
+        {{- if not (has $rebomNodeEnv (list "production" "development")) }}
+        {{- fail (printf "rebom.backend.nodeEnv: %q is not production or development." $rebomNodeEnv) }}
+        {{- end }}
+        - name: NODE_ENV
+          value: {{ $rebomNodeEnv | quote }}
         - name: POSTGRES_HOST
           value: {{ if .Values.use_external_postgres }}{{ .Values.rebom_postgres_host }}{{ else }}{{ .Release.Name }}-rebom-postgres{{ end }}
         - name: POSTGRES_DATABASE

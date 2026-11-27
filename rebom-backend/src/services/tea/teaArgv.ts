@@ -1,6 +1,6 @@
-import { TeaEffectiveLimits, TeaLocalTesting } from './teaConfig';
+import { TEA_LIST_MAX_ROWS, TeaEffectiveLimits, TeaLocalTesting } from './teaConfig';
 import { TEA_ARTIFACT_TYPE_BOM, TEA_ARTIFACT_TYPE_VULNERABILITIES, TeaDocumentClass } from './teaDocument';
-import { isPlainHttp, TeaParentKind, TeaReleaseKind, TeaRequest, TeaVerb } from './teaRequest';
+import { isPlainHttp, TeaParentKind, TeaReleaseKind, TeaRequest, TeaSortOrder, TeaVerb } from './teaRequest';
 
 /**
  * The argument vector of a run (TPF-180 design 3.5, 3.6.5, 3.8). Nothing else builds arguments.
@@ -12,6 +12,12 @@ import { isPlainHttp, TeaParentKind, TeaReleaseKind, TeaRequest, TeaVerb } from 
 /** The CLI's own defaults, kept as constants: nothing in a deployment needs them different. */
 export const TEA_MAX_REDIRECTS = 5;
 export const TEA_MAX_STRING_BYTES = 8192;
+
+/** The CLI's value of each sort order. */
+const SORT_ORDER_FLAG: Record<TeaSortOrder, string> = {
+    [TeaSortOrder.ASC]: 'asc',
+    [TeaSortOrder.DESC]: 'desc'
+};
 
 function flag(name: string, value: string | number): string {
     return `--${name}=${value}`;
@@ -67,6 +73,13 @@ export function buildTeaArgv(request: TeaRequest, limits: TeaEffectiveLimits, lo
             argv.push(flag('api-root', request.apiRoot!), releaseFlag(request.releaseKind, request.releaseUuid),
                 flag('collection-version', request.collectionVersion!), flag('dir', downloadDir!));
             break;
+        case TeaVerb.PRODUCTS:
+        case TeaVerb.COMPONENTS:
+            argv.push(flag('api-root', request.apiRoot!));
+            if (request.idType && request.idValue) argv.push(flag('id-type', request.idType), flag('id-value', request.idValue));
+            if (request.sortOrder) argv.push(flag('sort-order', SORT_ORDER_FLAG[request.sortOrder]));
+            if (request.pageToken) argv.push(flag('page-token', request.pageToken));
+            break;
     }
     argv.push(
         flag('connect-timeout', `${limits.connectTimeoutSeconds}s`),
@@ -78,6 +91,9 @@ export function buildTeaArgv(request: TeaRequest, limits: TeaEffectiveLimits, lo
     );
     if (request.verb === TeaVerb.RELEASES) {
         argv.push(flag('page-size', limits.pageSize!), flag('max-pages', limits.maxPages!));
+    }
+    if (request.verb === TeaVerb.PRODUCTS || request.verb === TeaVerb.COMPONENTS) {
+        argv.push(flag('page-size', limits.pageSize!), flag('max-rows', TEA_LIST_MAX_ROWS));
     }
     if (request.verb === TeaVerb.DOWNLOAD) {
         argv.push(

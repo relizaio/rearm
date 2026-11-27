@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 //
 // TPF-229 (TPF-185 design 3.9 sections 1 to 3, and T-530): the read-only part of the follow page. The header, the version
-// lines with their branch links and their latest version as text, the components table and the last run are shown from the
-// follow; an unfollowed follow, a no-longer-updated item, a stopped run, a refused source read
+// lines with their branch links and their latest version (TPF-245, T-1065 to T-1068: a link to its ReARM release when the
+// line names one in latestRearmRelease, text otherwise), the components table and the last run are shown from the follow; an unfollowed follow, a no-longer-updated item, a stopped run, a refused source read
 // and a refused first read each have their own words; every value is text; the page reads again
 // every 5 seconds while the run is open and never sends a mutation.
 // TPF-230 (design 3.9 sections 4 to 8, T-541): sync now, the run history, the releases, the pending
@@ -315,7 +315,7 @@ describe('the follow page, sections 1 to 3', () => {
     })
 })
 
-describe('T-530 the latest version of a line is text', () => {
+describe('T-530 a line that carries only latestRelease shows its latest version as text', () => {
     const ROW = '55555555-0000-4000-8000-000000000001'
     const B1 = 'ffffffff-0000-4000-8000-000000000011'
     const B2 = 'ffffffff-0000-4000-8000-000000000012'
@@ -353,7 +353,8 @@ describe('T-530 the latest version of a line is text', () => {
     })
 
     // Mutation round 3 (M-18): the cell shows latestVersion, so the follow document must still ask for it.
-    it('asks for exactly lineKey, branch and latestVersion of the lines of the item and of each component', () => {
+    // TPF-245 (T-1068): and latestRearmRelease, the ReARM release the latest version cell links to; never latestRelease.
+    it('asks for exactly lineKey, branch, latestVersion and latestRearmRelease of the lines of the item and of each component', () => {
         const lineSelections: Record<string, string[]> = {}
         const parents: string[] = []
         visit(GET_UPSTREAM_FOLLOW, {
@@ -368,9 +369,90 @@ describe('T-530 the latest version of a line is text', () => {
             },
         })
         expect(lineSelections).toEqual({
-            item: ['lineKey', 'branch', 'latestVersion'],
-            components: ['lineKey', 'branch', 'latestVersion'],
+            item: ['lineKey', 'branch', 'latestVersion', 'latestRearmRelease'],
+            components: ['lineKey', 'branch', 'latestVersion', 'latestRearmRelease'],
         })
+    })
+})
+
+// TPF-245: the latest version of a line links to its ReARM release, built from latestRearmRelease only, as the
+// Releases table builds its links. Every uuid differs from every other, the row uuid in latestRelease from the
+// release uuid in latestRearmRelease in particular, so a link from the wrong field fails.
+describe('T-1065 to T-1067 the latest version of a line links to its ReARM release', () => {
+    const ROW_1 = '55555555-0000-4000-8000-000000000021'
+    const ROW_2 = '55555555-0000-4000-8000-000000000022'
+    const REL_1 = '66666666-0000-4000-8000-000000000021'
+    const REL_2 = '66666666-0000-4000-8000-000000000022'
+    const B1 = 'ffffffff-0000-4000-8000-000000000021'
+    const B2 = 'ffffffff-0000-4000-8000-000000000022'
+    const B3 = 'ffffffff-0000-4000-8000-000000000023'
+    const B4 = 'ffffffff-0000-4000-8000-000000000024'
+
+    function withLines (lines: any[]) {
+        const base = follow()
+        return follow({ item: { ...base.item, lines }, components: [] })
+    }
+
+    function releaseTarget (uuid: string) {
+        return { name: 'ReleaseView', params: { uuid } }
+    }
+
+    function branchTarget (branch: string) {
+        return { name: 'ProductsOfOrg', params: { orguuid: ORG, compuuid: COMPONENT, branchuuid: branch } }
+    }
+
+    it('T-1065 links the latest version of each line to the release in its latestRearmRelease', async () => {
+        const w = await mountPage(withLines([
+            { lineKey: '1.x', branch: B1, latestRelease: ROW_1, latestRearmRelease: REL_1, latestVersion: '1.4.2' },
+            { lineKey: '2.x', branch: B2, latestRelease: ROW_2, latestRearmRelease: REL_2, latestVersion: '2.0.1' },
+        ]))
+        const latest = w.findAll('[data-testid="upstream-follow-line-latest"]')
+        expect(latest).toHaveLength(2)
+        const cells = latest.map((c: any) => c.findAll('a.rl'))
+        expect(cells.map((a: any[]) => a.length)).toEqual([1, 1])
+        expect(cells.map((a: any[]) => JSON.parse(a[0].attributes('data-to')))).toEqual([releaseTarget(REL_1), releaseTarget(REL_2)])
+        expect(cells.map((a: any[]) => a[0].text())).toEqual(['1.4.2', '2.0.1'])
+        expect(latest.map((c: any) => c.get('[data-testid="upstream-follow-line-release-link"]').text())).toEqual(['1.4.2', '2.0.1'])
+
+        const to = links(w)
+        expect(to.some(t => JSON.stringify(t).includes(ROW_1) || JSON.stringify(t).includes(ROW_2))).toBe(false)
+        const lineRows = w.findAll('[data-testid="upstream-follow-line"]')
+        expect(lineRows.map((r: any) => r.findAll('td')[1].findAll('a.rl').map((a: any) => JSON.parse(a.attributes('data-to'))))).toEqual(
+            [[branchTarget(B1)], [branchTarget(B2)]])
+        w.unmount()
+    })
+
+    it('T-1066 shows the latest version as text when latestRearmRelease is absent, null or not a uuid, and links no version it lacks', async () => {
+        const w = await mountPage(withLines([
+            { lineKey: '1.x', branch: B1, latestRelease: ROW_1, latestVersion: '1.4.2' },
+            { lineKey: '2.x', branch: B2, latestRelease: ROW_2, latestRearmRelease: null, latestVersion: '2.0.1' },
+            { lineKey: '3.x', branch: B3, latestRearmRelease: '../x', latestVersion: '3.0.0' },
+            { lineKey: '4.x', branch: B4, latestRearmRelease: REL_1 },
+        ]))
+        const latest = w.findAll('[data-testid="upstream-follow-line-latest"]')
+        expect(latest.map((c: any) => c.text())).toEqual(['1.4.2', '2.0.1', '3.0.0', ''])
+        expect(latest.map((c: any) => c.findAll('a').length)).toEqual([0, 0, 0, 0])
+        expect(w.find('[data-testid="upstream-follow-line-release-link"]').exists()).toBe(false)
+        expect(links(w).some(t => t.name === 'ReleaseView')).toBe(false)
+        w.unmount()
+    })
+
+    it('T-1067 shows a markup-and-path version character for character, creates no element and keeps it out of the target', async () => {
+        const VERSION = '<img src=x onerror="alert(1)">/../release/show/x'
+        const w = await mountPage(withLines([
+            { lineKey: '1.x', branch: B1, latestRelease: ROW_1, latestRearmRelease: REL_1, latestVersion: VERSION },
+            { lineKey: '2.x', branch: B2, latestRelease: ROW_2, latestVersion: VERSION },
+        ]))
+        const latest = w.findAll('[data-testid="upstream-follow-line-latest"]')
+        expect(latest.map((c: any) => c.text())).toEqual([VERSION, VERSION])
+        expect(w.findAll('img')).toHaveLength(0)
+        expect(document.body.querySelectorAll('img')).toHaveLength(0)
+        const first = latest[0].findAll('a.rl')
+        expect(first).toHaveLength(1)
+        expect(JSON.parse(first[0].attributes('data-to') as string)).toEqual(releaseTarget(REL_1))
+        expect(first[0].text()).toBe(VERSION)
+        expect(latest[1].findAll('a')).toHaveLength(0)
+        w.unmount()
     })
 })
 

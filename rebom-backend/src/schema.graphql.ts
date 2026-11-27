@@ -61,6 +61,11 @@ const typeDefs = gql`
     teaProduct(input: TeaObjectInput!): TeaDocumentResult!
     # One component: TEA_COMPONENT.
     teaComponent(input: TeaObjectInput!): TeaDocumentResult!
+    # One page of the products of an API root, sorted by name: TEA_PRODUCT_LIST, typed. One CLI run
+    # and one list request per call; rebom never follows nextPageToken itself and stores nothing.
+    teaProducts(input: TeaListInput!): TeaListResult!
+    # One page of the components of an API root, sorted by name: TEA_COMPONENT_LIST, typed.
+    teaComponents(input: TeaListInput!): TeaListResult!
     # The releases of a product or component, paged: TEA_RELEASE_LIST.
     teaReleases(input: TeaReleasesInput!): TeaDocumentResult!
     # One release with its latest collection and lifecycle: TEA_RELEASE.
@@ -96,6 +101,16 @@ const typeDefs = gql`
   enum TeaCredentialKind { NONE BEARER_TOKEN API_KEY }
   enum TeaParentKind { PRODUCT COMPONENT }
   enum TeaReleaseKind { PRODUCT_RELEASE COMPONENT_RELEASE }
+  # The identifier types of TEA 1.0.0, for the exact lookup of a list.
+  enum TeaIdentifierType { CPE TEI PURL COMPLIANCE_DOCUMENT }
+  # By name; the server breaks ties by uuid.
+  enum TeaSortOrder { ASC DESC }
+  # Whether rows of the server's answer are missing from the page: NONE; MAX_ROWS (the answer held
+  # more rows than rebom keeps); OTHER (a cut this rebom does not know; rows are missing all the same).
+  enum TeaListCut { NONE MAX_ROWS OTHER }
+  # NONE: no page follows. TOKEN: nextPageToken is the token of the next page. TOKEN_UNUSABLE: a
+  # page follows, but the server's token is not one rebom accepts back, so none is returned.
+  enum TeaListNext { NONE TOKEN TOKEN_UNUSABLE }
   # SBOM: TEA artifact type BOM; VEX: VULNERABILITIES; OTHER: every other type, unknown ones included.
   enum TeaDocumentClass { SBOM VEX OTHER }
   enum TeaFileStatus { VERIFIED FAILED NOT_ATTEMPTED NOT_SELECTED }
@@ -163,6 +178,22 @@ const typeDefs = gql`
     pageSize: Int
     # 1 to 1000, at most the page ceiling of this rebom.
     maxPages: Int
+    credential: TeaCredentialInput!
+    limits: TeaLimitsInput
+    correlationId: String
+  }
+  input TeaListInput {
+    apiRoot: String!
+    # The exact lookup by identifier: idType and idValue together or not at all.
+    idType: TeaIdentifierType
+    # 1 to 2048 bytes of printable ASCII.
+    idValue: String
+    # How many rows to ask the server for, 1 to 100, default 100. Not a bound on the answer: see cut.
+    pageSize: Int
+    # The nextPageToken of an earlier result of the same operation, root, filter and sort order.
+    pageToken: String
+    # Absent: the server's default (ascending).
+    sortOrder: TeaSortOrder
     credential: TeaCredentialInput!
     limits: TeaLimitsInput
     correlationId: String
@@ -239,6 +270,35 @@ const typeDefs = gql`
     limits: TeaEffectiveLimits
     # The CLI's JSON line, as it wrote it, when outcome is OK.
     document: String
+  }
+  # Strings of the upstream server, unchanged; idType is an open set.
+  type TeaListIdentifier {
+    idType: String!
+    idValue: String!
+  }
+  # One product or component; every string is the server's text, unchanged (data, never markup).
+  type TeaListRow {
+    uuid: ID!
+    name: String!
+    identifiers: [TeaListIdentifier!]!
+  }
+  type TeaListPage {
+    # In the server's order; an empty page is an empty list.
+    rows: [TeaListRow!]!
+    next: TeaListNext!
+    # Not null exactly when next is TOKEN; at most 4096 bytes of printable ASCII.
+    nextPageToken: String
+    # How many rows the server's answer held.
+    rowsReceived: Int!
+    cut: TeaListCut!
+  }
+  type TeaListResult {
+    teaApiVersion: Int!
+    outcome: TeaOutcome!
+    error: TeaError
+    limits: TeaEffectiveLimits
+    # Not null exactly when outcome is OK.
+    page: TeaListPage
   }
   type TeaFetchedFile {
     number: Int!

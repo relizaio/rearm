@@ -139,6 +139,7 @@ services:
      - REGISTRY_USERNAME=${OCI_REGISTRY_USERNAME:-rearm}
      - REGISTRY_TOKEN=${OCI_REGISTRY_TOKEN:-zotRegistryPass}
      - USE_PLAIN_HTTP=${OCI_USE_PLAIN_HTTP:-true}
+     - GIN_MODE=${OCI_GIN_MODE:-release}
      # Same variable rebom-backend uses for its namespace, so caller and
      # containment check stay consistent by construction.
      - OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-rearm}
@@ -201,6 +202,7 @@ services:
      - OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-rearm}
      - OCI_STORAGE_ENABLED=true
      - OCI_ARTIFACT_SERVICE_HOST=http://oci-artifact-service:8083
+     - NODE_ENV=${REBOM_NODE_ENV:-production}
     depends_on:
      - rebom-postgresql
     deploy:

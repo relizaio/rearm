@@ -18,7 +18,9 @@ ARG TARGETOS
 # 26.11.6 is the first release with the machine mode. 26.11.10 is rearm-cli fc611b39 (#200) built on
 # Go 1.26.11 (CVE-2026-97054); merge-boms and score are unchanged since 26.10.15, so the
 # "rearm-cli 26.10.15" behaviour notes in src/ and test/ still hold.
-ARG REARM_CLI_VERSION=26.11.10
+# 26.11.12 (rearm-cli 021fea5) is the first release with the list verbs `products` and `components`
+# (TPF-240): each without a flag must exit 2 with reason USAGE and `--api-root is required`.
+ARG REARM_CLI_VERSION=26.11.12
 
 # October 2026 eMudhra CA compromise: the fixed Alpine bundle, and Node on it (--use-openssl-ca)
 # until FIXED_NODE is set in ci/trust-gate/trust-gate.mjs.
@@ -70,7 +72,11 @@ RUN wget https://d7ge14utcyki8.cloudfront.net/rearm-download/${REARM_CLI_VERSION
     grep -q 'folds into root' /tmp/engine-check-merge.err && \
     (rearm tea machine > /dev/null 2> /tmp/tea-machine.err; test $? -eq 2) && \
     grep -q '"formatVersion":1,"kind":"TEA_ERROR"' /tmp/tea-machine.err && \
-    rm -f /tmp/engine-check.cdx.json /tmp/engine-check.json /tmp/engine-check-a.cdx.json /tmp/engine-check-b.cdx.json /tmp/engine-check-merged.json /tmp/engine-check-merge.err /tmp/tea-machine.err
+    (rearm tea machine products > /dev/null 2> /tmp/tea-products.err; test $? -eq 2) && \
+    grep -q '"reason":"USAGE"' /tmp/tea-products.err && grep -q -- '--api-root is required' /tmp/tea-products.err && \
+    (rearm tea machine components > /dev/null 2> /tmp/tea-components.err; test $? -eq 2) && \
+    grep -q '"reason":"USAGE"' /tmp/tea-components.err && grep -q -- '--api-root is required' /tmp/tea-components.err && \
+    rm -f /tmp/engine-check.cdx.json /tmp/engine-check.json /tmp/engine-check-a.cdx.json /tmp/engine-check-b.cdx.json /tmp/engine-check-merged.json /tmp/engine-check-merge.err /tmp/tea-machine.err /tmp/tea-products.err /tmp/tea-components.err
 
 # cyclonedx-cli has no musl build for arm64 (v0.32.0 publishes cyclonedx-linux-musl-x64 and
 # cyclonedx-linux-musl-arm only); the arm64 pin is the glibc build and needs gcompat on alpine
@@ -182,6 +188,11 @@ LABEL git_branch=$GIT_BRANCH
 LABEL ci_environment=$CI_ENV
 LABEL version=$VERSION
 
+# Run time default. The Helm chart sets the same variable from
+# rebom.backend.nodeEnv. Not set in the builder: npm ci there needs the
+# dev dependencies for the tests and the build.
+ENV NODE_ENV=production
+
 EXPOSE 4000
 
 CMD ["node", "src/index.js"]
@@ -190,6 +201,8 @@ CMD ["node", "src/index.js"]
 # compromised chains. release copies the marker, so this stage always builds.
 FROM deliverable AS trust-gate
 USER root
+# The shipped stage must carry the production default.
+RUN test "$NODE_ENV" = "production"
 RUN apk add --no-cache curl openssl
 COPY ci/trust-gate/ /gate/
 RUN sh /gate/trust-gate.sh && node /gate/trust-gate.mjs && echo "trust-gate ok $(date -u +%FT%TZ)" > /gate/ok
