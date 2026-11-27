@@ -25,7 +25,7 @@ const fake = vi.hoisted(() => {
         const handler = state.onSpawn;
         setImmediate(() => {
             if (handler) handler(call);
-            else child.emit('exit', 99);
+            else { child.emit('exit', 99); child.emit('close', 99); }
         });
         return child;
     };
@@ -91,6 +91,7 @@ function finish(call: Call, opts: { code?: number, stdout?: string, stderr?: str
     if (opts.stderr) call.child.stderr.emit('data', opts.stderr);
     if (opts.stdout) call.child.stdout.emit('data', opts.stdout);
     call.child.emit('exit', opts.code ?? 0);
+    call.child.emit('close', opts.code ?? 0);
 }
 
 function loggedText(): string {

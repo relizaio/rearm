@@ -23,11 +23,24 @@ export async function shellExec(cmd: string, args: any[], timeout?: number, stde
       if (env !== undefined) options.env = env
       const child = spawn(cmd, args, options)
       let resData = ""
-      child.stdout.on('data', (data: string)=> {
+      // One outcome per call: the first of 'error' (the child never started) and 'close' decides,
+      // a later event is ignored.
+      let settled = false
+      child.on('error', (err: NodeJS.ErrnoException) => {
+          // With a pid the child did start (for example a signal that could not be sent): 'close' still comes.
+          if (child.pid !== undefined) {
+              logger.error(`shell process error after start: ${err?.code ?? 'unknown'}`)
+              return
+          }
+          if (settled) return
+          settled = true
+          reject(new Error(`${cmd} could not be started: ${err?.code ?? 'unknown'}`))
+      })
+      child.stdout?.on('data', (data: string)=> {
           resData += data
       })
     
-      child.stderr.on('data', (data: any) => {
+      child.stderr?.on('data', (data: any) => {
           if (stderrLevel === 'error') {
               logger.error(`shell command error: ${data}`)
           } else {
@@ -35,7 +48,9 @@ export async function shellExec(cmd: string, args: any[], timeout?: number, stde
           }
       })
 
-      child.on('exit', (code: number) => {
+      child.on('close', (code: number) => {
+          if (settled) return
+          settled = true
           if (code !== 0) logger.error(`shell process exited with code ${code}`)
           if (code === 0) {
               if (resData) {
