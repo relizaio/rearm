@@ -43,6 +43,12 @@ spec:
               value: {{ .Values.ociArtifactService.logFormatType | default "plain" | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.ociArtifactService.logLevel | default "info" | quote }}
+            {{- $ginMode := .Values.ociArtifactService.ginMode | default "release" | toString }}
+            {{- if not (has $ginMode (list "release" "debug")) }}
+            {{- fail (printf "ociArtifactService.ginMode: %q is not release or debug." $ginMode) }}
+            {{- end }}
+            - name: GIN_MODE
+              value: {{ $ginMode | quote }}
             - name: USE_PLAIN_HTTP
               value: {{ include "rearm.ociPlainHttp" . | quote }}
             {{- /* Same values key rebom-backend and the backend already use to

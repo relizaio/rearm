@@ -13,7 +13,7 @@ import {
     CHOOSE_UPSTREAM_ONE_OFF, GET_UPSTREAM_ONE_OFF, GET_UPSTREAM_ONE_OFFS, REFRESH_UPSTREAM_ONE_OFF, RESOLVE_UPSTREAM_TEI,
 } from './upstreamOneOffQueries'
 import {
-    GET_ARTIFACT_VEX_IMPORT, GET_COMPONENT_INGESTED_FROM, GET_MARKER_FOLLOWS, GET_RELEASE_INGESTED_FROM, GET_VEX_PROPOSAL_ORIGIN,
+    GET_ARTIFACT_VEX_IMPORT, GET_COMPONENT_INGESTED_FROM, GET_MARKER_FOLLOW, GET_RELEASE_INGESTED_FROM, GET_VEX_PROPOSAL_ORIGIN,
     GET_VEX_PROPOSAL_ORIGINS,
 } from './upstreamMarkerQueries'
 import { proSchema } from './schemaDriftSupport'
@@ -68,7 +68,7 @@ const ONE_OFF_DOCUMENTS: Row[] = [
 const MARKER_DOCUMENTS: Row[] = [
     ['GET_COMPONENT_INGESTED_FROM', GET_COMPONENT_INGESTED_FROM, 'component', 'query'],
     ['GET_RELEASE_INGESTED_FROM', GET_RELEASE_INGESTED_FROM, 'release', 'query'],
-    ['GET_MARKER_FOLLOWS', GET_MARKER_FOLLOWS, 'upstreamFollows', 'query'],
+    ['GET_MARKER_FOLLOW', GET_MARKER_FOLLOW, 'upstreamFollow', 'query'],
     ['GET_ARTIFACT_VEX_IMPORT', GET_ARTIFACT_VEX_IMPORT, 'artifact', 'query'],
     ['GET_VEX_PROPOSAL_ORIGINS', GET_VEX_PROPOSAL_ORIGINS, 'getVexStatementProposals', 'query'],
     ['GET_VEX_PROPOSAL_ORIGIN', GET_VEX_PROPOSAL_ORIGIN, 'getVexStatementProposal', 'query'],
@@ -273,6 +273,7 @@ describe('the marker documents (design 3.11 and 3.12)', () => {
     // T-1080: the source's name is selected on both.
     it('selectsTheFieldsOfTheDesignOnAComponentAndARelease', () => {
         expect(selectedPaths(GET_COMPONENT_INGESTED_FROM)).toEqual([
+            ...['activeFollow', 'coveringFollows'].map(f => 'ingestedFrom.' + f),
             'uuid', 'ingestedFrom',
             ...['uuid', 'source', 'sourceName', 'kind', 'upstreamUuid', 'upstreamName', 'depth', 'depthOrigin', 'mapping', 'updateState'].map(f => 'ingestedFrom.' + f),
         ].sort())
@@ -284,16 +285,16 @@ describe('the marker documents (design 3.11 and 3.12)', () => {
             'uuid', 'ingestedFrom',
             ...['uuid', 'item', 'source', 'sourceName', 'upstreamUuid', 'upstreamVersion', 'upstreamDate', 'state', 'integrity', 'updateState', 'presence',
                 'goneSince', 'lineKey', 'oneOff', 'collections', ...collections.map(f => 'collections.' + f)].map(f => 'ingestedFrom.' + f),
+            'componentDetails', 'componentDetails.ingestedFrom', ...['uuid', 'activeFollow', 'coveringFollows'].map(f => 'componentDetails.ingestedFrom.' + f),
         ].sort())
         for (const name of ['uuid', 'org']) expect(argOf(GET_RELEASE_INGESTED_FROM, name === 'uuid' ? 'releaseUuid' : 'orgUuid')?.value.kind, name).toBe(Kind.VARIABLE)
     })
 
-    it('readsTheActiveFollowsOfOneSourceWithTheirItemsAndLastRun', () => {
-        expect(print(argOf(GET_MARKER_FOLLOWS, 'statuses')!.value)).toBe('[ACTIVE]')
-        for (const name of ['org', 'source']) expect(argOf(GET_MARKER_FOLLOWS, name)?.value.kind, name).toBe(Kind.VARIABLE)
-        expect(selectedPaths(GET_MARKER_FOLLOWS)).toEqual([
-            'uuid', 'item', 'item.uuid', 'components', 'components.uuid', 'lastRun', 'lastRun.state', 'lastRun.stopReason', 'lastRun.finishedDate',
-        ].sort())
+    // T-1096: the one follow the item's fields name, by its uuid; no marker document lists the follows.
+    it('readsTheOneFollowOfTheItemByItsUuidWithItsLastRun', () => {
+        expect(argOf(GET_MARKER_FOLLOW, 'uuid')?.value.kind).toBe(Kind.VARIABLE)
+        expect(selectedPaths(GET_MARKER_FOLLOW)).toEqual(['uuid', 'lastRun', 'lastRun.state', 'lastRun.stopReason', 'lastRun.finishedDate'].sort())
+        for (const [name, doc] of MARKER_DOCUMENTS) expect(rootField(doc).name.value, name).not.toBe('upstreamFollows')
     })
 
     it('readsTheVexImportOfAnArtifactAndTheOriginOfAProposal', () => {

@@ -143,6 +143,12 @@ ociArtifactService:
   enabled: true
   logFormatType: "plain"
   logLevel: "info"
+  # gin mode of the artifact service: "release" (default) or "debug".
+  # "debug" is for debugging only: the service then prints the gin warning,
+  # its route list and gin debug lines at start, and a recovered panic logs
+  # the request headers. Empty means "release"; any other value stops the
+  # render with an error.
+  ginMode: "release"
   usePlainHttp: false
   registryHost: registry.relizahub.com
   registryUser: changeme # change

@@ -21,7 +21,7 @@ export const GET_COMPONENT_INGESTED_FROM = gql`
     query componentIngestedFrom($uuid: ID!) {
         component(componentUuid: $uuid) {
             uuid
-            ingestedFrom { uuid source sourceName kind upstreamUuid upstreamName depth depthOrigin mapping updateState }
+            ingestedFrom { uuid source sourceName kind upstreamUuid upstreamName depth depthOrigin mapping updateState activeFollow coveringFollows }
         }
     }`
 
@@ -33,6 +33,7 @@ export const GET_RELEASE_INGESTED_FROM = gql`
                 uuid item source sourceName upstreamUuid upstreamVersion upstreamDate state integrity updateState presence goneSince lineKey oneOff
                 collections { ${UPSTREAM_COLLECTION_FIELDS} }
             }
+            componentDetails { ingestedFrom { uuid activeFollow coveringFollows } }
         }
     }`
 
@@ -41,12 +42,16 @@ export function ingestedOriginOf (data: any): any | null {
     return data?.component?.ingestedFrom ?? data?.release?.ingestedFrom ?? null
 }
 
-export const GET_MARKER_FOLLOWS = gql`
-    query markerFollows($org: ID!, $source: ID) {
-        upstreamFollows(org: $org, source: $source, statuses: [ACTIVE]) {
+/** The upstream item whose follow the marker shows: the item itself, or the item of the release's component, or null. */
+export function ingestedItemOf (data: any): any | null {
+    return data?.component?.ingestedFrom ?? data?.release?.componentDetails?.ingestedFrom ?? null
+}
+
+/** The one follow a field of the item names, by its uuid: the same read the follow page makes first. */
+export const GET_MARKER_FOLLOW = gql`
+    query markerFollow($uuid: ID!) {
+        upstreamFollow(uuid: $uuid) {
             uuid
-            item { uuid }
-            components { uuid }
             lastRun { state stopReason finishedDate }
         }
     }`
