@@ -139,6 +139,7 @@ services:
      - REGISTRY_USERNAME=${OCI_REGISTRY_USERNAME:-rearm}
      - REGISTRY_TOKEN=${OCI_REGISTRY_TOKEN:-zotRegistryPass}
      - USE_PLAIN_HTTP=${OCI_USE_PLAIN_HTTP:-true}
+     - GIN_MODE=${OCI_GIN_MODE:-release}
      # Same variable rebom-backend uses for its namespace, so caller and
      # containment check stay consistent by construction.
      - OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-rearm}
