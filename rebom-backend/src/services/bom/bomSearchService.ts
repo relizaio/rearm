@@ -106,7 +106,7 @@ async function bomRecordToDto(bomRecord: BomRecord, rootOverride: boolean = true
     uuid: bomRecord.uuid,
     createdDate: bomRecord.created_date,
     lastUpdatedDate: bomRecord.last_updated_date,
-    meta: bomRecord.meta,
+    meta: BomMapper.servedMeta(bomRecord.meta),
     bom: bomRecord.bom as any,
     tags: bomRecord.tags,
     organization: bomRecord.organization,

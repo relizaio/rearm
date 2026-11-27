@@ -180,7 +180,7 @@ describe('the BEAR key goes to the enrichment child in its environment, not its 
         expect(process.env.REARM_BEARAPIKEY).toBe('outside');
     });
 
-    it('T-1003 a failed run returns the stdout as today; no log line and no temp file holds the key', async () => {
+    it('T-1003 a failed run returns the bounded failure text (TPF-261); no log line and no temp file holds the key', async () => {
         const files: string[] = [];
         fake.onSpawn = (call) => {
             files.push(fs.readFileSync(argAfter(call, '-f'), 'utf8'), fs.readFileSync(argAfter(call, '-o'), 'utf8'));
@@ -189,14 +189,14 @@ describe('the BEAR key goes to the enrichment child in its environment, not its 
 
         const result = await enrichCycloneDxBom(bom(), URI, MARK, []);
 
-        expect(result).toStrictEqual({ success: false, error: 'Error during enrichment: x' });
+        expect(result).toStrictEqual({ success: false, error: 'rearm exited with code 1: Error during enrichment: x' });
         expect(fake.calls).toHaveLength(1);
         expectNoKeyInArgs(fake.calls[0], MARK);
-        // shellExec's failure lines are unchanged: the stderr chunk, the exit line, the stdout.
+        // shellExec's failure lines: the stderr chunk and the exit line; the stdout is no longer logged (TPF-261).
         expect(log.error).toHaveBeenCalledWith('shell command error: a stderr chunk');
         expect(log.error).toHaveBeenCalledWith('shell process exited with code 1');
-        expect(log.error).toHaveBeenCalledWith('Error during enrichment: x');
-        expect(log.error).toHaveBeenCalledWith(expect.objectContaining({ error: 'Error during enrichment: x' }),
+        expect(log.error).not.toHaveBeenCalledWith('Error during enrichment: x');
+        expect(log.error).toHaveBeenCalledWith(expect.objectContaining({ error: 'rearm exited with code 1: Error during enrichment: x' }),
             'CycloneDX BOM enrichment failed');
         expect(files).toHaveLength(2);
         for (const text of files) expect(text).not.toContain(MARK);
@@ -264,7 +264,7 @@ describe('the BEAR key goes to the enrichment child in its environment, not its 
         const params = updates[0][1];
         expect(params[0]).toBe('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
         expect(params[1]).toBe(JSON.stringify(EnrichmentStatus.FAILED));
-        expect(params[3]).toBe(JSON.stringify('Error during enrichment: BEAR API authentication failed: Invalid API key'));
+        expect(params[3]).toBe(JSON.stringify('rearm exited with code 1: Error during enrichment: BEAR API authentication failed: Invalid API key'));
         expect(JSON.stringify(runQuery.mock.calls)).not.toContain(MARK);
         expect(loggedText()).not.toContain(MARK);
         expect(process.env.REARM_BEARAPIKEY).toBeUndefined();

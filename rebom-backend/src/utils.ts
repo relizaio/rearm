@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { logger } from './logger';
+import { childFailure, childNotStarted } from './childFailure';
 import { pool, runQuery, withTransaction } from './db';
 
 export function getPool() {
@@ -33,7 +34,7 @@ export async function shellExec(cmd: string, args: any[], timeout?: number, stde
           }
           if (settled) return
           settled = true
-          reject(new Error(`${cmd} could not be started: ${err?.code ?? 'unknown'}`))
+          reject(childNotStarted(cmd, err?.code))
       })
       child.stdout?.on('data', (data: string)=> {
           resData += data
@@ -57,8 +58,7 @@ export async function shellExec(cmd: string, args: any[], timeout?: number, stde
               }
               resolve(resData)
           } else {
-              logger.error(resData)
-              reject(resData)
+              reject(childFailure(cmd, { killedByTimeout: child.killed === true, exitCode: code ?? null, signal: child.signalCode ?? null, timeoutMs: timeout }, resData))
           }
       })
   })

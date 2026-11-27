@@ -225,3 +225,31 @@ Check the value of a running install:
 ```bash
 kubectl -n <ns> exec deploy/<r>-rebom-backend -- printenv NODE_ENV
 ```
+
+## Environment of the tools rebom runs
+
+rebom starts other programs for part of its work: the rearm CLI (merge, enrichment, SPDX conversion, score), cyclonedx-cli (diff, validation), ssh-keygen and gpg (signature checks). Each is started with a short fixed list of environment variables and nothing else of the pod environment, so a tool that reads a file from outside does not hold the database password, the encryption settings or anything else of the secret of `rebom.backend.rebomPropsSecretName`.
+
+- **What the tools get.** All of them: `PATH`, `LANG`, `LC_ALL`. The rearm CLI: a `HOME` that does not exist, so it reads no configuration file. The enrichment run only: `SSL_CERT_FILE`, `SSL_CERT_DIR`, the proxy variables, `REARM_RESILIENTDNS` and the BEAR key of the organisation. cyclonedx-cli: `HOME`, `TMPDIR`, `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT`, `DOTNET_BUNDLE_EXTRACT_BASE_DIR`. gpg: a `GNUPGHOME` made for the one call.
+- **`rebom.backend.childEnvPassthrough`** is a list of extra variable names, empty by default. A listed name is passed, with the value it has in the rebom container, to every tool above, except that the enrichment run never gets a name that starts with `GO` (Go run time settings such as `GODEBUG` and `GOTRACEBACK`), `DEBUG_HTTP2_GOROUTINES` or `SSLKEYLOGFILE`: it is the one tool that holds a credential, the BEAR key, and a Go debug setting can make it print its request headers, the key included, to the rebom log. Such a name still reaches the other tools. Use the list only when a tool needs one more variable and that variable holds no secret:
+
+  ```yaml
+  rebom:
+    backend:
+      childEnvPassthrough:
+        - TZ
+  ```
+
+- **Names only.** An entry is made of letters, digits and underscores, does not start with a digit and is at most 128 characters long. A value that is not a list, or an entry that is not such a name (`NAME=value` included), stops the render with a message that gives the position of the entry, not its text. The list is not a secret: it is part of the pod specification and rebom logs it.
+- **Refused names.** rebom never passes: its own settings (names that start with `POSTGRES_`, `ENCRYPTION_`, `REBOM_` or `REARM_`); a name that contains `PASS`, `PWD`, `SECRET`, `TOKEN`, `KEY`, `SALT`, `CREDENTIAL` or `AUTH`, in any case; `NODE_OPTIONS`, `DOTNET_STARTUP_HOOKS` and names that start with `LD_` or `CORECLR_`; and the names of the first point, which it manages itself and which cannot be added to another tool or changed this way. A refused name is not an error: the pod starts, the name is left out and reported.
+- **A secret with an unusual name is not recognised.** A variable such as a connection string that holds a password is passed when you list it. Do not list it.
+- **One log line at start** says what rebom took: `child environment passthrough`, with the accepted names, the refused names, the accepted names that the enrichment run does not get (`withheldFromEnrichment`) and the number of malformed entries. It is a warning when a name was refused or an entry was malformed, and it never holds a value. With a rebom log level above info the line is written only when it is a warning.
+- **TEA.** The runs that fetch from TEA servers have their own, shorter list and never get the extra names.
+- **Empty list.** An empty or missing value renders no variable. A `REBOM_CHILD_ENV_PASSTHROUGH` (names separated by commas) in the secret of `rebom.backend.rebomPropsSecretName` is then honoured; a chart value that is not empty takes precedence over it.
+- **Upgrading.** An upgrade with an old values file, or with `--reuse-values`, renders nothing new, and the rebom pod is not restarted by this value. The change comes with the rebom-backend image: from the image that has it, a variable you set on the rebom pod for one of the tools (a Go or .NET run time setting, `TZ`, a locale variable other than `LANG` and `LC_ALL`) no longer reaches the tool until its name is listed here, and a Go setting no longer reaches the enrichment run at all. `REARM_` variables and a rearm configuration file in the home directory are no longer read by the CLI, and that cannot be turned back. An image from before the change ignores this value and passes its whole environment to the tools.
+
+Check a running install:
+
+```bash
+kubectl -n <ns> logs deploy/<r>-rebom-backend | grep 'child environment passthrough'
+```
