@@ -78,11 +78,11 @@ class SbomComponentSupportAuditImmutabilityIntegrationTest {
 	}
 
 	@Test
-	void theRepositoryOffersTheInsertAndTheTwoReadsOnly() {
+	void theRepositoryOffersTheInsertAndTheThreeReadsOnly() {
 		assertTrue(Repository.class.isAssignableFrom(SbomComponentSupportAuditRepository.class));
 		assertFalse(CrudRepository.class.isAssignableFrom(SbomComponentSupportAuditRepository.class));
-		assertEquals(List.of("findByBatchIdAndOrgOrderByAssertedDateAsc", "findBySbomComponentUuidOrderByAssertedDateDesc",
-				"save"), Arrays.stream(SbomComponentSupportAuditRepository.class.getMethods()).map(Method::getName)
+		assertEquals(List.of("countSince", "findByBatchIdAndOrgOrderByAssertedDateAsc",
+				"findBySbomComponentUuidOrderByAssertedDateDesc", "save"), Arrays.stream(SbomComponentSupportAuditRepository.class.getMethods()).map(Method::getName)
 						.sorted().toList());
 	}
 }

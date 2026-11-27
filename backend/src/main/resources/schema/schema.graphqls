@@ -2577,6 +2577,18 @@ type SubmissionDraft {
 	confirmation: HeldConfirmation
 	"The draft's act record, oldest first."
 	acts: [SubmissionAct!]!
+	"What moved since the build, recomputed on every read; never stored."
+	changesSinceBuild: ChangesSinceBuild!
+	"Whether the inputs are as the build read them: changesSinceBuild.fingerprintEqual."
+	inputsUnchanged: Boolean!
+}
+
+"""What moved since a draft's build: the fingerprint lines that differ, and the writes behind them, each counted once."""
+type ChangesSinceBuild {
+	count: Int!
+	fingerprintEqual: Boolean!
+	"The names of the fingerprint lines that differ, added or vanished."
+	movedLines: [String!]!
 }
 
 """One part of a submission preview's plan."""

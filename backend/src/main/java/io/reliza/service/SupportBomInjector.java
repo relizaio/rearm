@@ -387,9 +387,17 @@ public final class SupportBomInjector {
 	/**
 	 * Bundle of a component's identity row plus its stored attestation, keyed for the
 	 * injector's {@code factsByKey}. {@code support} is null when the component resolved
-	 * but was never assessed.
+	 * but was never assessed. {@code supportRow} and {@code supportRevision} are the uuid and
+	 * revision of the support row {@code support} was parsed from (FDAW-30 3.5 step 6), null and 0
+	 * when there is none or its payload did not parse.
 	 */
-	public record ComponentSupportFacts(SbomComponent component, SupportData support) {
+	public record ComponentSupportFacts(SbomComponent component, SupportData support, UUID supportRow,
+			int supportRevision) {
+
+		/** Facts without the support row's identity, as before FDAW-30. */
+		public ComponentSupportFacts(SbomComponent component, SupportData support) {
+			this(component, support, null, 0);
+		}
 
 		/** Milestones asserted by this attestation; empty when none (or when unassessed). */
 		public Map<SupportMilestoneType, SupportMilestoneFact> milestones() {

@@ -18,10 +18,15 @@ public interface SbomComponentSupportRepository extends CrudRepository<SbomCompo
 
 	Optional<SbomComponentSupport> findBySbomComponentUuid(UUID sbomComponentUuid);
 
-	/** One row's raw payload, for the isolated bulk read below. */
+	/**
+	 * One row's raw payload, for the isolated bulk read below, with the support row's own uuid and
+	 * revision (FDAW-30 3.5 step 6: the {@code support:} fingerprint line names both).
+	 */
 	interface SupportPayloadRow {
 		UUID getComponentUuid();
 		String getPayload();
+		UUID getSupportUuid();
+		Integer getRevision();
 	}
 
 	/**
@@ -51,7 +56,8 @@ public interface SbomComponentSupportRepository extends CrudRepository<SbomCompo
 	 * table denormalizes org precisely so this costs nothing.
 	 */
 	@Query(value = """
-			SELECT s.sbom_component_uuid AS componentUuid, s.support_data::text AS payload
+			SELECT s.sbom_component_uuid AS componentUuid, s.support_data::text AS payload,
+			       s.uuid AS supportUuid, s.revision AS revision
 			FROM rearm.sbom_component_support s
 			WHERE s.org = CAST(:orgUuidAsString AS uuid)
 			  AND s.sbom_component_uuid = ANY(CAST(string_to_array(:ids, ',') AS uuid[]))

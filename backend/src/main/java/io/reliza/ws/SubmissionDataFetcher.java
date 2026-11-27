@@ -29,6 +29,7 @@ import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.exceptions.SubmissionRefusedException;
+import io.reliza.model.ChangesSinceBuild;
 import io.reliza.model.ComponentData;
 import io.reliza.model.NewVersionReason;
 import io.reliza.model.PackageKind;
@@ -443,6 +444,33 @@ public class SubmissionDataFetcher {
 		if (null == hook || null == d) return List.of();
 		return hook.listActsOfDraft(d.getOrg(), d.getUuid());
 	}
+
+	/**
+	 * What moved since the draft's build, recomputed on read (FDAW-30 3.2); a child of a draft the caller
+	 * already read, which only a signed-in user reaches.
+	 */
+	@DgsData(parentType = "SubmissionDraft", field = "changesSinceBuild")
+	public ChangesSinceBuild changesSinceBuildField(DgsDataFetchingEnvironment dfe) {
+		return changesOf(dfe, dfe.<SubmissionDraftData>getSource());
+	}
+
+	/** Whether the draft's inputs are as its build read them: {@code changesSinceBuild.fingerprintEqual}. */
+	@DgsData(parentType = "SubmissionDraft", field = "inputsUnchanged")
+	public boolean inputsUnchangedField(DgsDataFetchingEnvironment dfe) {
+		return changesOf(dfe, dfe.<SubmissionDraftData>getSource()).fingerprintEqual();
+	}
+
+	/**
+	 * The hook's answer for the draft, kept in the request's context so a query selecting both fields
+	 * recomputes once per draft (FDAW-30 3.2, FDAW-9 risk 8).
+	 */
+	ChangesSinceBuild changesOf(DgsDataFetchingEnvironment dfe, SubmissionDraftData d) {
+		if (null == hook || null == d) return ChangesSinceBuild.NOT_BUILT;
+		return dfe.getGraphQlContext().computeIfAbsent(CHANGES_SINCE_BUILD_KEY + d.getUuid(),
+				k -> hook.changesSince(d));
+	}
+
+	static final String CHANGES_SINCE_BUILD_KEY = "changesSinceBuild:";
 
 	@DgsData(parentType = "Submission", field = "versions")
 	public List<SubmissionVersionData> versions(DgsDataFetchingEnvironment dfe) {

@@ -3,15 +3,19 @@
 */
 package io.reliza.repositories;
 
+import java.time.ZonedDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
+import org.springframework.data.repository.query.Param;
 
 import io.reliza.model.SbomComponentSupportAudit;
 
 /**
- * Append-only. A plain {@link Repository} offering the insert and the two reads: there is
+ * Append-only. A plain {@link Repository} offering the insert and the three reads: there is
  * deliberately no delete or update method here, and none should be added: a support attestation
  * is corrected by superseding it, never by erasing it. The V106 trigger refuses UPDATE and DELETE
  * from every other SQL path too (FDAW-1 F-8). See {@link io.reliza.model.SbomComponentSupportAudit}.
@@ -38,4 +42,14 @@ public interface SbomComponentSupportAuditRepository extends Repository<SbomComp
 	 * reading somebody else's.
 	 */
 	List<SbomComponentSupportAudit> findByBatchIdAndOrgOrderByAssertedDateAsc(UUID batchId, UUID org);
+
+	/**
+	 * The organization's attestation rows of the given components written after {@code after}: the
+	 * support term of a draft build's change count (FDAW-30 3.6, F-10). Keyed by component, because the
+	 * table has no support-row column; the caller passes no empty collection.
+	 */
+	@Query("select count(a) from SbomComponentSupportAudit a where a.org = :org and a.sbomComponentUuid in :components"
+			+ " and a.assertedDate > :after")
+	long countSince(@Param("org") UUID org, @Param("components") Collection<UUID> components,
+			@Param("after") ZonedDateTime after);
 }
