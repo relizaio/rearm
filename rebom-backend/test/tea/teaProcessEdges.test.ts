@@ -53,11 +53,11 @@ function portFree(): Promise<boolean> {
     });
 }
 
-async function started(root: string): Promise<ChildProcess> {
+async function started(root: string, extraEnv: Record<string, string> = {}): Promise<ChildProcess> {
     expect(await portFree(), `port ${PORT} must be free for this test`).toBe(true);
     const proc = spawn(process.execPath, [path.join(BUILD, 'src/index.js')], {
         cwd: BACKEND,
-        env: { ...process.env, REBOM_TEA_CALLER_TOKEN: TOKEN, REBOM_TEA_TMP_ROOT: root, OCI_STORAGE_ENABLED: 'true', MOCK_OCI: 'true', REBOM_VERSION: 'test' },
+        env: { ...process.env, REBOM_TEA_CALLER_TOKEN: TOKEN, REBOM_TEA_TMP_ROOT: root, OCI_STORAGE_ENABLED: 'true', MOCK_OCI: 'true', REBOM_VERSION: 'test', ...extraEnv },
         stdio: ['ignore', 'pipe', 'pipe']
     });
     proc.stdout!.on('data', (chunk) => { output += chunk.toString(); });
@@ -96,5 +96,49 @@ describe('the process', () => {
         expect(await exitOf(child)).toBe(0);
         expect(fs.existsSync(path.join(root, 'work'))).toBe(false);
         expect(fs.existsSync(root)).toBe(true);
+    }, 90_000);
+
+    // TPF-256 child (a): index.ts reads REBOM_CHILD_ENV_PASSTHROUGH once, after the TEA settings
+    const plain = (text: string) => text.replace(/\u001b\[[0-9;]*m/g, '');
+
+    it('reads REBOM_CHILD_ENV_PASSTHROUGH at start and writes the one line of names, at warn when something was refused or malformed', async () => {
+        const root = path.join(tempDir('rebom-proc-'), 'root');
+        child = await started(root, { REBOM_CHILD_ENV_PASSTHROUGH: 'TZ,GODEBUG,POSTGRES_X,FOO=bar' });
+        const text = plain(output);
+        const at = text.indexOf('WARN: child environment passthrough');
+        expect(at, text.substring(0, 2000)).toBeGreaterThanOrEqual(0);
+        const block = text.substring(at, text.indexOf('GraphQL Server ready'));
+        expect(block).toContain('"TZ"');
+        expect(block).toContain('"GODEBUG"');
+        expect(block).toContain('"POSTGRES_X"');
+        expect(block).toContain('malformed: 1');
+        expect(block).not.toContain('FOO');
+        expect(block).not.toContain('bar');
+        expect(text.split('child environment passthrough')).toHaveLength(2);
+    }, 90_000);
+
+    it('without the variable the start writes the line at info with nothing listed', async () => {
+        const root = path.join(tempDir('rebom-proc-'), 'root');
+        child = await started(root, { REBOM_CHILD_ENV_PASSTHROUGH: '' });
+        const text = plain(output);
+        const at = text.indexOf('INFO: child environment passthrough');
+        expect(at, text.substring(0, 2000)).toBeGreaterThanOrEqual(0);
+        const block = text.substring(at, text.indexOf('GraphQL Server ready'));
+        expect(block).toMatch(/accepted: \[\s*\]/);
+        expect(block).toMatch(/refused: \[\s*\]/);
+        expect(block).toContain('malformed: 0');
+        expect(text).not.toContain('WARN: child environment passthrough');
+    }, 90_000);
+
+    it('reads the list after the TEA settings: a refused scratch directory is reported before the line of the list', async () => {
+        const dir = tempDir('rebom-proc-');
+        const notADirectory = path.join(dir, 'a-file');
+        fs.writeFileSync(notADirectory, 'x');
+        child = await started(notADirectory, { REBOM_CHILD_ENV_PASSTHROUGH: 'TZ' });
+        const text = plain(output);
+        const tea = text.indexOf('the TEA operations are not configured');
+        const list = text.indexOf('child environment passthrough');
+        expect(tea, text.substring(0, 2000)).toBeGreaterThanOrEqual(0);
+        expect(list).toBeGreaterThan(tea);
     }, 90_000);
 });
