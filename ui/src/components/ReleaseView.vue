@@ -2399,6 +2399,7 @@ import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDeta
 import { setSbomComponentSupportVars } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
 import { useReleaseDeclaredLicense } from '@/utils/useReleaseDeclaredLicense'
+import { loadReleaseTagKeyOptions } from '@/utils/releaseTagKeyOptions'
 import { EXPRESSION_HINT, RELEASE_CLEARED, RELEASE_INTRO, RELEASE_PLACEHOLDER, RELEASE_SAVED, UNSUPPORTED_NOTE,
     effectiveLicenseLine, licenseUrlHref } from '@/utils/declaredLicense'
 import { useExportSupportSwitch } from '@/utils/useExportSupportSwitch'
@@ -7716,14 +7717,7 @@ async function addTag () {
     }
 }
 async function fetchReleaseKeys () {
-    const response = await graphqlClient.query({
-        query: gql`
-            query releaseTagKeys($orgId: ID!) {
-                releaseTagKeys(orgUuid: $orgId)
-            }`,
-        variables: { orgId: release.value.org }
-    })
-    releaseTagKeys.value = response.data.releaseTagKeys.map((tag: string) => {return {'label': tag, 'value': tag}})
+    releaseTagKeys.value = await loadReleaseTagKeyOptions(graphqlClient, release.value?.org, isWritable.value)
 }
 const cloneReleaseToFsObj = ref({
     showModal: false,
