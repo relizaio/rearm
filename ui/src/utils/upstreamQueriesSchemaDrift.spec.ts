@@ -270,11 +270,12 @@ describe('the one-off documents (TPF-231, design 3.10)', () => {
 })
 
 describe('the marker documents (design 3.11 and 3.12)', () => {
+    // T-1080: the source's name is selected on both.
     it('selectsTheFieldsOfTheDesignOnAComponentAndARelease', () => {
         expect(selectedPaths(GET_COMPONENT_INGESTED_FROM)).toEqual([
             ...['activeFollow', 'coveringFollows'].map(f => 'ingestedFrom.' + f),
             'uuid', 'ingestedFrom',
-            ...['uuid', 'source', 'kind', 'upstreamUuid', 'upstreamName', 'depth', 'depthOrigin', 'mapping', 'updateState'].map(f => 'ingestedFrom.' + f),
+            ...['uuid', 'source', 'sourceName', 'kind', 'upstreamUuid', 'upstreamName', 'depth', 'depthOrigin', 'mapping', 'updateState'].map(f => 'ingestedFrom.' + f),
         ].sort())
         const files = ['number', 'outcome', 'reason', 'message', 'artifact', 'conflictArtifact', 'upstreamArtifactName', 'upstreamArtifactType',
             'documentClass', 'mediaType', 'sizeBytes', 'sha256']
@@ -282,7 +283,7 @@ describe('the marker documents (design 3.11 and 3.12)', () => {
             ...files.map(f => 'files.' + f)]
         expect(selectedPaths(GET_RELEASE_INGESTED_FROM)).toEqual([
             'uuid', 'ingestedFrom',
-            ...['uuid', 'item', 'source', 'upstreamUuid', 'upstreamVersion', 'upstreamDate', 'state', 'integrity', 'updateState', 'presence',
+            ...['uuid', 'item', 'source', 'sourceName', 'upstreamUuid', 'upstreamVersion', 'upstreamDate', 'state', 'integrity', 'updateState', 'presence',
                 'goneSince', 'lineKey', 'oneOff', 'collections', ...collections.map(f => 'collections.' + f)].map(f => 'ingestedFrom.' + f),
             'componentDetails', 'componentDetails.ingestedFrom', ...['uuid', 'activeFollow', 'coveringFollows'].map(f => 'componentDetails.ingestedFrom.' + f),
         ].sort())

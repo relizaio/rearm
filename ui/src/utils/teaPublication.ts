@@ -6,6 +6,7 @@
 import { graphqlRefusalText } from './graphqlErrorText'
 import { teaSourceLabel } from './teaProfile'
 import { artifactDownloadRef, type ArtifactDownloadRef } from './artifactDownload'
+import { isProEdition } from './editionCapabilities'
 
 /** What the confirmation names: the release, and the perspective names a profile source may point at. */
 export interface TeaPublishNames {
@@ -61,11 +62,107 @@ function profileSourceText (view: any, perspectives: Record<string, string>): st
 }
 
 /**
+ * One row of TeaPublishPreview.withoutSbom (task TPF-257): a release the publish would publish that
+ * has no SBOM for the SBOM profile names in profiles. The release itself comes first when it is listed,
+ * then the component releases a product publishes with it, in cascade order.
+ */
+export interface TeaReleaseWithoutSbom {
+    release: string
+    componentName?: string | null
+    version?: string | null
+    profiles: string[]
+}
+
+/** The TeaNoSbomPolicy value that publishes a release without an SBOM with no aggregate for it. */
+export type TeaNoSbomPolicy = 'PUBLISH_WITHOUT_AGGREGATE'
+
+/** The variables of a publish or re-publish: the release, and the no-SBOM policy only when asked for. */
+export interface TeaPublishVariables {
+    release: string
+    noSbom?: TeaNoSbomPolicy
+}
+
+/**
+ * Whether the release page asks before a publish of releases without an SBOM (TPF-257): the read of
+ * TeaPublishPreview.withoutSbom on the click and the publish documents that carry noSbom. The CE schema
+ * does not have those fields until its next sync, so the page sends them on the licensed editions
+ * only and keeps the earlier flow on CE, where a release without an SBOM stays refused with the
+ * server's message. teaProfileSchemaDrift.spec.ts holds a canary that fails once the CE schema
+ * gains the field: then this gate is removed.
+ */
+export function teaNoSbomConfirmAvailable (installationType: string | undefined | null): boolean {
+    return isProEdition(installationType)
+}
+
+/**
+ * The variables of the publish the user confirmed: noSbom PUBLISH_WITHOUT_AGGREGATE only when the
+ * confirmation named at least one release without an SBOM (withoutSbom is the list the dialog was
+ * built from), else the release alone, which the server refuses for a release without an SBOM.
+ */
+export function teaPublishVariables (release: string,
+    withoutSbom: readonly TeaReleaseWithoutSbom[] | null | undefined): TeaPublishVariables {
+    return withoutSbom && withoutSbom.length
+        ? { release, noSbom: 'PUBLISH_WITHOUT_AGGREGATE' }
+        : { release }
+}
+
+/** How many component releases without an SBOM the confirmation names before "and <m> more". */
+export const TEA_NO_SBOM_NAMED_CHILDREN = 20
+
+function releaseName (r: any): string {
+    return [r?.componentName, r?.version].filter(Boolean).join(' ') || r?.release || ''
+}
+
+function profileList (profiles: readonly string[] | null | undefined): string {
+    return (profiles || []).join(', ')
+}
+
+/**
+ * The sentences a confirmation adds for the releases without an SBOM: the release itself (and the
+ * aggregate a re-publish removes from the latest collection), then the component releases.
+ */
+function noSbomParts (view: any, withoutSbom: readonly TeaReleaseWithoutSbom[]): string[] {
+    const parts: string[] = []
+    const own = withoutSbom.find(r => r?.release === view?.release)
+    const children = withoutSbom.filter(r => r !== own)
+    if (own) {
+        const profiles = own.profiles || []
+        parts.push(profiles.length === 1
+            ? 'This release has no SBOM for the SBOM profile ' + profileList(profiles)
+                + ': it is published with no aggregated SBOM for it.'
+            : 'This release has no SBOM for the SBOM profiles ' + profileList(profiles)
+                + ': it is published with no aggregated SBOM for them.')
+        const published: any[] = view?.publication?.aggregateArtifacts || []
+        const removed = profiles.filter(p => published.some(a => a?.profileName === p))
+        if (removed.length) {
+            parts.push('The aggregated SBOM published earlier (' + profileList(removed) + ') is removed from the '
+                + 'latest collection; earlier collection versions keep it.')
+        }
+    }
+    if (children.length) {
+        const named = children.slice(0, TEA_NO_SBOM_NAMED_CHILDREN)
+            .map(r => releaseName(r) + ' (' + profileList(r.profiles) + ')')
+        const more = children.length - named.length
+        parts.push((children.length === 1
+            ? '1 component release has no SBOM and is published with no aggregated SBOM: '
+            : children.length + ' component releases have no SBOM and are published with no aggregated SBOM: ')
+            + named.join('; ') + (more > 0 ? '; and ' + more + ' more' : '') + '.')
+    }
+    return parts
+}
+
+/**
  * The confirmation before Publish (no publication yet) or Re-publish (a PUBLISHED or HIDDEN one).
  * PUBLIC asks with the warning icon and the red button and names the URL anyone can read; a
  * product whose profile publishes its component releases with it says how many.
+ *
+ * withoutSbom (TPF-257) is TeaPublishPreview.withoutSbom read on the click: when it names a release,
+ * the text says which releases are published with no aggregated SBOM, the dialog asks with the
+ * warning icon and the red button whatever the visibility, and the button reads "<verb> without SBOM".
+ * Empty (the default) gives the confirmation of a release with every SBOM. Names stay in text, never html.
  */
-export function teaPublishConfirm (view: any, names: TeaPublishNames): TeaConfirm {
+export function teaPublishConfirm (view: any, names: TeaPublishNames,
+    withoutSbom: readonly TeaReleaseWithoutSbom[] = []): TeaConfirm {
     const republish = !!view?.publication
     const verb = republish ? 'Re-publish' : 'Publish'
     const isPublic = view?.effectiveVisibility === 'PUBLIC'
@@ -82,13 +179,16 @@ export function teaPublishConfirm (view: any, names: TeaPublishNames): TeaConfir
             ? 'Its 1 component release is published with it unless its own TEA profile forbids it.'
             : 'Its ' + n + ' component releases are published with it unless their own TEA profile forbids it.')
     }
+    const listed = withoutSbom || []
+    const noSbom = listed.length > 0
+    if (noSbom) parts.push(...noSbomParts(view, listed))
     const confirm: TeaConfirm = {
         titleText: verb + ' ' + (names?.component ?? '') + ' ' + (names?.version ?? '') + ' on TEA?',
         text: parts.join(' '),
         showCancelButton: true,
-        confirmButtonText: verb,
+        confirmButtonText: noSbom ? verb + ' without SBOM' : verb,
     }
-    if (isPublic) {
+    if (isPublic || noSbom) {
         confirm.icon = 'warning'
         confirm.confirmButtonColor = RED
     }
@@ -202,16 +302,39 @@ function childName (c: any): string {
     return [c?.componentName, c?.version].filter(Boolean).join(' ') || c?.release || ''
 }
 
+/** The summary's part for the release's names without an aggregate (TPF-257), or null. */
+function withoutAggregatePart (result: any): string | null {
+    const names: string[] = Array.isArray(result?.withoutAggregate) ? result.withoutAggregate : []
+    return names.length ? 'no aggregated SBOM for: ' + names.join(', ') : null
+}
+
+/** One line per child published with no aggregated SBOM for some names (TPF-257). */
+function childWithoutAggregateLines (children: any[]): string[] {
+    return children
+        .filter(c => Array.isArray(c?.withoutAggregate) && c.withoutAggregate.length)
+        .map(c => childName(c) + ': published with no aggregated SBOM (' + c.withoutAggregate.join(', ') + ')')
+}
+
 /**
  * The text of the success dialog after a publish or re-publish: the collection version, the
  * aggregate SBOM revision, the ride-along counts with the skip reasons, and for a product the
- * component release counts with each skip and refusal named.
+ * component release counts with each skip and refusal named. A result that names SBOM profiles
+ * without an aggregate (withoutAggregate, TPF-257), on the release or on a child, says so; a result
+ * without the field reads as before.
  */
 export function teaPublishSummary (result: any): string {
     const version = result?.collection?.version ?? result?.publication?.latestVersion
-    if (result?.outcome === 'UNCHANGED') return 'Nothing changed since collection version ' + version
+    const noAggregate = withoutAggregatePart(result)
+    const childNoAggregate = childWithoutAggregateLines(result?.children || [])
+    if (result?.outcome === 'UNCHANGED') {
+        let unchanged = 'Nothing changed since collection version ' + version
+        if (noAggregate) unchanged += '; ' + noAggregate
+        if (childNoAggregate.length) unchanged += '. ' + childNoAggregate.join('; ')
+        return unchanged
+    }
     const lead = result?.outcome === 'REPUBLISHED' ? 'Re-published' : 'Published'
     const parts: string[] = [lead + ': collection version ' + version]
+    if (noAggregate) parts.push(noAggregate)
     const aggregates = aggregateSummary(result)
     const revision = aggregates ? null : aggregateRevision(result)
     if (aggregates) parts.push(aggregates)
@@ -241,6 +364,7 @@ export function teaPublishSummary (result: any): string {
             + refused.length + ' refused')
         text = parts.join('; ')
         const reasons = [
+            ...childNoAggregate,
             ...skippedChildren.map(c => childName(c) + ': ' + childSkipText(c)),
             ...refused.map(c => childName(c) + ': refused' + (c.refusal ? ' (' + c.refusal + ')' : '')
                 + (c.detail ? ': ' + c.detail : '')),
@@ -272,6 +396,26 @@ export function teaConcealedText (publication: any, lifecycle?: string | null): 
     case 'PRODUCT_CONCEALED': return 'Concealed: with its product' + (product ? ' ' + product : '')
     default: return 'Concealed'
     }
+}
+
+/**
+ * The section's state line when the latest collection of a served publication lists no aggregated
+ * SBOM (a release published without an SBOM, TPF-257), else null. It reads the view the page already
+ * loads, so it holds on every edition and for a release published through the API: the publication
+ * is PUBLISHED and the collection of its latest version (the highest the view carries when the
+ * publication names none) has no entry of origin SYNTHETIC. A hidden publication, none, or a latest
+ * version the view does not carry answers null.
+ */
+export function teaNoAggregateText (view: any): string | null {
+    const p = view?.publication
+    if (!p || p.state !== 'PUBLISHED') return null
+    const collections: any[] = Array.isArray(view?.collections) ? view.collections : []
+    const latest = p.latestVersion != null
+        ? collections.find(c => c?.version === p.latestVersion)
+        : [...collections].sort((a, b) => (b?.version ?? 0) - (a?.version ?? 0))[0]
+    if (!latest) return null
+    const entries: any[] = latest.entries || []
+    return entries.some(e => e?.origin === 'SYNTHETIC') ? null : 'The latest collection has no aggregated SBOM.'
 }
 
 /** Where the section says a publication's profile came from: its product for a cascade child, else the source. */

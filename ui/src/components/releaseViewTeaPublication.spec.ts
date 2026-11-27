@@ -203,6 +203,75 @@ describe('the TEA view rides its own gated query, never the shared release fragm
     })
 })
 
+// TPF-257 (design 3.9, row T-891): the publish of releases without an SBOM. The guard against the
+// defect "the UI sends the argument without asking": the policy comes only from teaPublishVariables,
+// with the list the confirmed dialog was built from, and only after the isConfirmed return.
+describe('ReleaseView asks before a TEA publish of releases without an SBOM (T-891)', () => {
+    const fnBody = (name: string) => {
+        const start = code.indexOf(name)
+        expect(start, name).toBeGreaterThan(0)
+        return code.slice(start, code.indexOf('\n}\n', start))
+    }
+
+    it('imports the gate, the variables, the state line and the row type', () => {
+        const imp = source.match(/import\s+\{([^}]*)\}\s+from\s+'@\/utils\/teaPublication'/)
+        for (const h of ['teaNoSbomConfirmAvailable', 'teaPublishVariables', 'teaNoAggregateText', 'TeaReleaseWithoutSbom']) {
+            expect(imp![1], h).toMatch(new RegExp('\\b' + h + '\\b'))
+        }
+    })
+
+    it('the literal PUBLISH_WITHOUT_AGGREGATE does not occur in the component', () => {
+        expect(source).not.toContain('PUBLISH_WITHOUT_AGGREGATE')
+        expect(source).not.toMatch(/noSbom\s*:/)
+    })
+
+    it('reads the list on the click behind the gate, builds the dialog from it, and sends after the isConfirmed return', () => {
+        const body = fnBody('async function runTeaPublish (mutation: any, noSbomMutation: any, field: string)')
+        const gate = body.indexOf('const askNoSbom = teaNoSbomConfirmAvailable(myUser?.installationType)')
+        const read = body.indexOf('await loadTeaReleasesWithoutSbom(view.release)')
+        const failed = body.indexOf('if (listed === null) return')
+        const dialog = body.indexOf('const answer = await Swal.fire(confirm)')
+        const confirmed = body.indexOf('if (!answer.isConfirmed) return')
+        const mutate = body.indexOf('graphqlClient.mutate(')
+        for (const [what, at] of Object.entries({ gate, read, failed, dialog, confirmed, mutate })) expect(at, what).toBeGreaterThan(0)
+        expect(read).toBeGreaterThan(gate)
+        expect(body.slice(gate, read)).toContain('if (askNoSbom) {')
+        expect(failed).toBeGreaterThan(read)
+        expect(dialog).toBeGreaterThan(failed)
+        expect(confirmed).toBeGreaterThan(dialog)
+        expect(mutate).toBeGreaterThan(confirmed)
+        // The dialog and the variables use the same list, which is assigned only before the dialog.
+        expect(body.slice(0, dialog)).toMatch(/teaPublishConfirm\(view, \{[\s\S]*?\}, withoutSbom\)/)
+        expect(body.slice(mutate)).toContain('mutation: askNoSbom ? noSbomMutation : mutation,')
+        expect(body.slice(mutate)).toContain('variables: askNoSbom ? teaPublishVariables(view.release, withoutSbom) : { release: view.release },')
+        const assignments = [...body.matchAll(/\bwithoutSbom\s*=[^=]/g)].map(m => m.index!)
+        expect(assignments.length).toBeGreaterThan(0)
+        for (const at of assignments) expect(at).toBeLessThan(dialog)
+        expect(body).not.toMatch(/withoutSbom\.(push|splice|unshift)/)
+    })
+
+    it('the read is no-cache, shows a failure as the act error and sends nothing, and never runs on page load', () => {
+        const body = fnBody('async function loadTeaReleasesWithoutSbom')
+        expect(body).toContain('query: graphqlQueries.ReleaseTeaPublicationNoSbomGql')
+        expect(body).toContain("fetchPolicy: 'no-cache'")
+        expect(body).toMatch(/catch \(err: any\) \{\s*await Swal\.fire\(\{ titleText: 'Error!', text: teaActErrorText\(err\), icon: 'error' \}\)\s*return null\s*\}/)
+        expect(fnBody('async function loadTeaPublication')).not.toContain('NoSbom')
+        expect(code.split('ReleaseTeaPublicationNoSbomGql').length - 1).toBe(1)
+    })
+
+    it('publish and re-publish hand their no-SBOM documents to runTeaPublish', () => {
+        expect(code).toMatch(/const publishOnTea = \(\) => runTeaPublish\(graphqlQueries\.PublishReleaseOnTeaGql,\s*graphqlQueries\.PublishReleaseOnTeaNoSbomGql, 'publishReleaseOnTea'\)/)
+        expect(code).toMatch(/const republishOnTea = \(\) => runTeaPublish\(graphqlQueries\.RepublishReleaseOnTeaGql,\s*graphqlQueries\.RepublishReleaseOnTeaNoSbomGql, 'republishReleaseOnTea'\)/)
+    })
+
+    it('the TEA section shows the no-aggregate state line beside the concealed line (T-894)', () => {
+        const section = template.slice(template.indexOf('data-testid="tea-section"'))
+        const body = section.slice(0, section.indexOf('<n-data-table'))
+        expect(body).toMatch(/<div v-if="teaConcealedLine" data-testid="tea-concealed">\{\{ teaConcealedLine \}\}<\/div>\s*<div v-if="teaNoAggregateLine" data-testid="tea-no-aggregate">\{\{ teaNoAggregateLine \}\}<\/div>/)
+        expect(code).toMatch(/const teaNoAggregateLine[^=]*= computed\(\(\) => teaNoAggregateText\(teaView\.value\)\)/)
+    })
+})
+
 describe('ReleaseView waits for a TEA act with a spinner', () => {
     const rv = read('./ReleaseView.vue')
     it('runs publish, re-publish and hide through withTeaProgress, one at a time', () => {
