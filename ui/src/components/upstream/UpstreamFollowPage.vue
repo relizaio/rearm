@@ -39,7 +39,10 @@
                             <tr v-for="line in item.lines" :key="line.lineKey" data-testid="upstream-follow-line">
                                 <td>{{ line.lineKey }}</td>
                                 <td><router-link v-if="branchLink(item, line)" :to="branchLink(item, line)">branch</router-link></td>
-                                <td data-testid="upstream-follow-line-latest">{{ line.latestVersion ?? '' }}</td>
+                                <td data-testid="upstream-follow-line-latest">
+                                    <router-link v-if="lineReleaseLink(line)" :to="lineReleaseLink(line)" data-testid="upstream-follow-line-release-link">{{ line.latestVersion }}</router-link>
+                                    <template v-else>{{ line.latestVersion ?? '' }}</template>
+                                </td>
                             </tr>
                         </tbody>
                     </n-table>
@@ -370,6 +373,12 @@ const releaseStateOptions = RELEASE_STATES.map(v => ({ label: labelOf(releaseSta
 function releaseLink (row: any) {
     if (!isUuid(row?.release)) return null
     return { name: 'ReleaseView', params: { uuid: row.release } }
+}
+
+/** A link to the ReARM release of the latest version of a line: from latestRearmRelease only, and only when it is set. */
+function lineReleaseLink (line: any) {
+    if (!line?.latestVersion) return null
+    return releaseLink({ release: line.latestRearmRelease })
 }
 
 let releasesRead = 0
