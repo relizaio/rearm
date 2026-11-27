@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import { describe, expect, it } from 'vitest';
 import { killProcessGroup, shellExecDetailed } from '../../src/utils';
+import { buildChildEnv, ChildTool } from '../../src/childEnv';
 import { isAlive, sleep } from './teaTestKit';
 
 /**
@@ -137,14 +138,15 @@ describe('starting, the environment and the process group', () => {
         expect(none).toEqual([]);
     });
 
-    it('gives the child exactly the environment it was given, or the parent\'s when none is given', async () => {
+    it('gives the child exactly the environment it was given, or the base list of childEnv.ts when none is given (T-1232)', async () => {
         const printEnv = "process.stdout.write(JSON.stringify(Object.keys(process.env).sort()))";
         const only = await shellExecDetailed(NODE, ['-e', printEnv], { timeoutMs: 10000, maxStdoutBytes: 10000, env: { ONLY_THIS: '1' } });
         expect(JSON.parse(only.stdout)).toEqual(['ONLY_THIS']);
         process.env.REBOM_SHELL_EXEC_PROBE = 'x';
         try {
             const inherited = await shellExecDetailed(NODE, ['-e', printEnv], { timeoutMs: 10000, maxStdoutBytes: 10000 });
-            expect(JSON.parse(inherited.stdout)).toContain('REBOM_SHELL_EXEC_PROBE');
+            expect(JSON.parse(inherited.stdout)).toStrictEqual(Object.keys(buildChildEnv(ChildTool.BASE)).sort());
+            expect(JSON.parse(inherited.stdout)).not.toContain('REBOM_SHELL_EXEC_PROBE');
         } finally {
             delete process.env.REBOM_SHELL_EXEC_PROBE;
         }

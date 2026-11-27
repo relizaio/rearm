@@ -13,12 +13,13 @@ const rec = vi.hoisted(() => {
     return { cp, original, calls };
 });
 
-import { shellExec } from '../../src/utils';
+import { shellExec, shellExecDetailed } from '../../src/utils';
+import { buildChildEnv, ChildTool } from '../../src/childEnv';
 
 /**
- * shellExec takes an optional environment as its last parameter (TPF-254 design 3.1; row T-1006):
- * added to the spawn options only when given, the complete environment of the child; without it
- * the options and the inherited environment are what they were.
+ * shellExec takes an optional environment as its last parameter (TPF-254 design 3.1; row T-1006),
+ * the complete environment of the child. Without it the child gets the base list of childEnv.ts and
+ * never rebom's environment (TPF-256 design 3.2; row T-1198); shellExecDetailed the same.
  */
 describe('shellExec with an optional environment', () => {
     const NODE = process.execPath;
@@ -41,7 +42,7 @@ describe('shellExec with an optional environment', () => {
         rec.cp.spawn = rec.original;
     });
 
-    it('T-1006 the spawn options: {} without a timeout, { timeout } with one, {} for (undefined, info), { env } with the same object', async () => {
+    it('T-1006 T-1198 the spawn options: { env } of the base list without a timeout, { timeout, env } with one, { env } for (undefined, info), a given env as the same object', async () => {
         const env = { ONLY_THIS: '1' };
         await shellExec(NODE, ['-e', '0']);
         await shellExec(NODE, ['-e', '0'], 5000);
@@ -50,9 +51,10 @@ describe('shellExec with an optional environment', () => {
         await shellExec(NODE, ['-e', '0'], 5000, 'warn', env);
 
         expect(rec.calls).toHaveLength(5);
-        expect(rec.calls[0].options).toStrictEqual({});
-        expect(rec.calls[1].options).toStrictEqual({ timeout: 5000 });
-        expect(rec.calls[2].options).toStrictEqual({});
+        const base = buildChildEnv(ChildTool.BASE);
+        expect(rec.calls[0].options).toStrictEqual({ env: base });
+        expect(rec.calls[1].options).toStrictEqual({ timeout: 5000, env: base });
+        expect(rec.calls[2].options).toStrictEqual({ env: base });
         expect(rec.calls[3].options).toStrictEqual({ env });
         expect(rec.calls[3].options.env).toBe(env);
         expect(rec.calls[4].options).toStrictEqual({ timeout: 5000, env });
@@ -66,9 +68,33 @@ describe('shellExec with an optional environment', () => {
         expect(names).not.toContain('PATH');
     });
 
-    it('T-1006 without an env the real child inherits rebom\'s environment, the planted variable included', async () => {
-        const names: string[] = JSON.parse(await shellExec(NODE, printNames));
-        expect(names).toContain(PLANTED);
-        expect(names).not.toContain('ONLY_THIS');
+    it('T-1006 T-1198 without an env the real child gets the base list: neither the planted variable nor POSTGRES_PASSWORD', async () => {
+        const savedPassword = process.env.POSTGRES_PASSWORD;
+        process.env.POSTGRES_PASSWORD = 'tpf256-password';
+        try {
+            const names: string[] = JSON.parse(await shellExec(NODE, printNames));
+            expect(names).not.toContain(PLANTED);
+            expect(names).not.toContain('POSTGRES_PASSWORD');
+            expect(names).not.toContain('ONLY_THIS');
+            expect([...names].sort()).toStrictEqual(Object.keys(buildChildEnv(ChildTool.BASE)).sort());
+        } finally {
+            if (savedPassword === undefined) delete process.env.POSTGRES_PASSWORD;
+            else process.env.POSTGRES_PASSWORD = savedPassword;
+        }
+    });
+
+    it('T-1198 shellExecDetailed without an env: { stdio, env } of the base list, with detached when the group is killed', async () => {
+        const opts = { timeoutMs: 10000, maxStdoutBytes: 10000 };
+        const plain = await shellExecDetailed(NODE, printNames, opts);
+        const grouped = await shellExecDetailed(NODE, printNames, { ...opts, killProcessGroup: true });
+        expect(rec.calls).toHaveLength(2);
+        const base = buildChildEnv(ChildTool.BASE);
+        expect(rec.calls[0].options).toStrictEqual({ stdio: ['ignore', 'pipe', 'pipe'], env: base });
+        expect(rec.calls[1].options).toStrictEqual({ stdio: ['ignore', 'pipe', 'pipe'], env: base, detached: true });
+        for (const result of [plain, grouped]) {
+            const names: string[] = JSON.parse(result.stdout);
+            expect(names).not.toContain(PLANTED);
+            expect([...names].sort()).toStrictEqual(Object.keys(base).sort());
+        }
     });
 });

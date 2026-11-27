@@ -54,6 +54,7 @@ import {
 } from '../../src/services/bom/bomProcessingService';
 import { effectiveSkipPatterns } from '../../src/services/bom/enrichmentSkipPatterns';
 import { BEAR_API_KEY_NUL_MESSAGE } from '../../src/services/bom/enrichmentChildEnv';
+import { buildChildEnv, ChildTool } from '../../src/childEnv';
 import { EnrichmentStatus } from '../../src/types';
 
 /**
@@ -129,7 +130,7 @@ describe('the BEAR key goes to the enrichment child in its environment, not its 
         fake.cp.spawn = fake.original;
     });
 
-    it('T-1001 one spawn of rearm: exact arguments without the key, the key and the inherited environment in env, process.env never holds it', async () => {
+    it('T-1001 T-1199 one spawn of rearm: exact arguments without the key, the key and the REARM_ENRICH row in env, no probe, process.env never holds it', async () => {
         process.env[PROBE] = 'probevalue';
         let whileRunning: unknown = 'not read';
         fake.onSpawn = (call) => {
@@ -153,10 +154,10 @@ describe('the BEAR key goes to the enrichment child in its environment, not its 
         expect(call.options.timeout).toBe(1800000);
         expect(call.options.env).not.toBe(process.env);
         expect(call.options.env.REARM_BEARAPIKEY).toBe(MARK);
-        expect(call.options.env[PROBE]).toBe('probevalue');
-        // Everything but the one name is rebom's own environment, inherited as before.
+        expect(Object.prototype.hasOwnProperty.call(call.options.env, PROBE)).toBe(false);
+        // Everything but the one name is the REARM_ENRICH row of childEnv.ts (TPF-256 row T-1199).
         const { REARM_BEARAPIKEY: _key, ...rest } = call.options.env;
-        expect(rest).toStrictEqual({ ...process.env });
+        expect(rest).toStrictEqual(buildChildEnv(ChildTool.REARM_ENRICH));
         expect(whileRunning).toBeUndefined();
         expect(process.env.REARM_BEARAPIKEY).toBeUndefined();
     });

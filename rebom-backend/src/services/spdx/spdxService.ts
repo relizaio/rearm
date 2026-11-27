@@ -4,6 +4,7 @@ import { SpdxMetadata, ConversionResult, RebomOptions } from '../../types';
 import { BomConversionError } from '../../types/errors';
 import { v4 as uuidv4 } from 'uuid';
 import { shellExec, createTempFile, deleteTempFile } from '../../utils';
+import { buildChildEnv, ChildTool } from '../../childEnv';
 import { boundFailureText } from '../../childFailure';
 
 // Known SPDX conversion fixes
@@ -159,7 +160,7 @@ export class SpdxService {
             ];
             
             logger.info(`Running conversion: rearm-cli ${args.join(' ')}`);
-            const result = await shellExec('rearm', args, 60000); // 60 second timeout for rearm-cli
+            const result = await shellExec('rearm', args, 60000, 'error', buildChildEnv(ChildTool.REARM_BOM)); // 60 second timeout for rearm-cli
             logger.debug({ conversionOutputChars: result.length }, "rearm-cli conversion completed");
 
             // Validate the converted CycloneDX file
@@ -172,7 +173,7 @@ export class SpdxService {
             ];
             try {
                 logger.debug("Starting CycloneDX validation");
-                await shellExec('cyclonedx-cli', validateCommand);
+                await shellExec('cyclonedx-cli', validateCommand, undefined, 'error', buildChildEnv(ChildTool.CYCLONEDX_CLI));
                 logger.debug("CycloneDX validation passed");
             } catch (validationError) {
                 logger.error({ err: validationError, outputFile }, "CycloneDX validation failed");

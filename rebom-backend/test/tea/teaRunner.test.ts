@@ -15,6 +15,7 @@ const spawnCalls = vi.hoisted(() => {
 });
 
 import { shellExecDetailed } from '../../src/utils';
+import { buildChildEnv, ChildTool } from '../../src/childEnv';
 import { configureTea, shutdownTea } from '../../src/services/tea/teaService';
 import { runningTeaGroups } from '../../src/services/tea/teaCliRunner';
 import {
@@ -187,11 +188,11 @@ describe('TEA runner', () => {
         await call;
     });
 
-    it('T-49 without the new options shellExecDetailed spawns exactly as before', async () => {
+    it('T-49 without the optional options shellExecDetailed spawns with the pipes and the base list of childEnv.ts, nothing else', async () => {
         spawnCalls.length = 0;
         const result = await shellExecDetailed(process.execPath, ['-e', 'process.stdout.write("x")'], { timeoutMs: 10000, maxStdoutBytes: 100 });
         expect(result.stdout).toBe('x');
         expect(spawnCalls).toHaveLength(1);
-        expect(spawnCalls[0][2]).toEqual({ stdio: ['ignore', 'pipe', 'pipe'] });
+        expect(spawnCalls[0][2]).toStrictEqual({ stdio: ['ignore', 'pipe', 'pipe'], env: buildChildEnv(ChildTool.BASE) });
     });
 });

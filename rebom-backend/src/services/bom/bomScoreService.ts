@@ -4,6 +4,7 @@ import * as path from 'path';
 import { logger } from '../../logger';
 import { shellExecDetailed, ShellResult } from '../../utils';
 import { BomScoreError, BomScoreErrorReason } from '../../types/errors';
+import { buildChildEnv, ChildTool } from '../../childEnv';
 
 /**
  * Stateless SBOM scoring: hands the document to `rearm bomutils score` and returns
@@ -144,7 +145,8 @@ async function runScore(bom: string, profiles: string[], stderrSink: { line?: st
 
         const result = await shellExecDetailed(REARM_CLI, args, {
             timeoutMs: SCORE_TIMEOUT_MS,
-            maxStdoutBytes: SCORE_MAX_REPORT_BYTES
+            maxStdoutBytes: SCORE_MAX_REPORT_BYTES,
+            env: buildChildEnv(ChildTool.REARM_BOM)
         });
         stderrSink.line = firstStderrLine(result.stderr);
         return mapOutcome(result);

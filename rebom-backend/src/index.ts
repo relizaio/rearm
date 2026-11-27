@@ -4,6 +4,7 @@ import { initEncryption } from './services/encryptionService';
 import { startEnrichmentScheduler, stopEnrichmentScheduler } from './services/enrichmentScheduler';
 import { logRawRepositoryCensus } from './services/oci';
 import { configureTea, shutdownTea } from './services/tea/teaService';
+import { configureChildEnv } from './childEnv';
 
 // Global error handlers to prevent process crashes (like Spring Boot)
 // These ensure the service stays running even when unexpected errors occur
@@ -45,6 +46,9 @@ async function startApolloServer() {
 
   // TEA operations: settings, the scratch root and its sweep (read once)
   configureTea(process.env);
+
+  // Extra variable names for the tools rebom runs (REBOM_CHILD_ENV_PASSTHROUGH): read once, one log line
+  configureChildEnv(process.env);
 
   // Start GraphQL server separately
   const server = createGraphqlServer();
