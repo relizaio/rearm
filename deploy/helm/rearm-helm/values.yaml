@@ -266,6 +266,15 @@ rebom:
   backend:
     replicaCount: 1
     logFormatType: "plain"
+    # Log level of the rebom backend: trace, debug, info (default), warn, error,
+    # fatal or silent, in lower case. warn and above hide the info lines (start,
+    # shutdown, scheduler); silent turns off every line, errors included. Any
+    # other value stops the render with an error. Rendered as LOG_LEVEL, which
+    # takes precedence over a LOG_LEVEL in the secret of rebomPropsSecretName.
+    # Empty: LOG_LEVEL is not rendered; the secret decides, or the service
+    # default (info) applies. A rebom image older than the one this chart pins
+    # logs at debug for any LOG_LEVEL: set this to empty with such an image.
+    logLevel: "info"
     oci:
       enabled: "true"
       serviceHost: http://rearm-oci-artifact
