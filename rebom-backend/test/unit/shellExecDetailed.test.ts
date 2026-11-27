@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { shellExecDetailed, shellExec } from '../../src/utils';
 import { logger } from '../../src/logger';
+import { ChildFailureKind, ChildProcessError } from '../../src/childFailure';
 
 // Real processes: the node binary running this suite, with an inline script.
 const NODE = process.execPath;
@@ -106,8 +107,10 @@ describe('shellExec (H-7: behaviour unchanged)', () => {
         await expect(shellExec(NODE, ['-e', 'process.stdout.write("a\\n")'])).resolves.toBe('a');
     });
 
-    it('rejects with stdout on a non-zero exit', async () => {
-        await expect(shellExec(NODE, ['-e', 'process.stdout.write("partial"); process.exit(1)'])).rejects.toBe('partial');
+    it('rejects with a ChildProcessError whose message is the bounded text on a non-zero exit (TPF-261)', async () => {
+        const failure = shellExec(NODE, ['-e', 'process.stdout.write("partial"); process.exit(1)']);
+        await expect(failure).rejects.toBeInstanceOf(ChildProcessError);
+        await expect(failure).rejects.toMatchObject({ kind: ChildFailureKind.EXIT_CODE, exitCode: 1, message: `${NODE} exited with code 1: partial` });
     });
 });
 
@@ -162,8 +165,9 @@ describe('shellExec logs stderr at the level given (SCORE-68 ADR-4)', () => {
         expect(spies.info).not.toHaveBeenCalled();
     });
 
-    it("'info' and exit 3: rejects with stdout, the chunk at info, the exit line still at error", async () => {
-        await expect(shellExec(NODE, ['-e', `${ERR_LINE}; process.exit(3)`], undefined, 'info')).rejects.toBe('out');
+    it("'info' and exit 3: rejects with the bounded text, the chunk at info, the exit line still at error", async () => {
+        await expect(shellExec(NODE, ['-e', `${ERR_LINE}; process.exit(3)`], undefined, 'info')).rejects.toMatchObject({
+            kind: ChildFailureKind.EXIT_CODE, exitCode: 3, message: `${NODE} exited with code 3: out` });
 
         await vi.waitFor(() => expect(sawStderr(spies.info, 'shell command stderr: ')).toBe(true));
         expect(messages(spies.error)).toContain('shell process exited with code 3');
