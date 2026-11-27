@@ -20,7 +20,9 @@ ARG TARGETOS
 # "rearm-cli 26.10.15" behaviour notes in src/ and test/ still hold.
 # 26.11.12 (rearm-cli 021fea5) is the first release with the list verbs `products` and `components`
 # (TPF-240): each without a flag must exit 2 with reason USAGE and `--api-root is required`.
-ARG REARM_CLI_VERSION=26.11.12
+# 26.11.13 (rearm-cli 2e286529) adds TPF-255 and TPF-263: the BEAR enrich commands require the URI
+# (no default); rebom always passes --bearUri, so enrichment is unchanged.
+ARG REARM_CLI_VERSION=26.11.13
 
 # October 2026 eMudhra CA compromise: the fixed Alpine bundle, and Node on it (--use-openssl-ca)
 # until FIXED_NODE is set in ci/trust-gate/trust-gate.mjs.
