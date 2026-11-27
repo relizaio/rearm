@@ -3,15 +3,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * No child process outside the builder (TPF-256 design 3.2; row T-1197): childProcess.ts is the only
- * file under src that may name the Node child process module, and no file spreads or passes
- * process.env. The exception list holds the signature verifier until it moves to the wrapper.
+ * No child process outside the builder (TPF-256 design 3.2; rows T-1197 and T-1212): childProcess.ts
+ * is the only file under src that may name the Node child process module, and no file spreads or
+ * passes process.env. The exception list is empty since the signature verifier moved to the wrapper.
  */
 
 const SRC = path.resolve(__dirname, '../../src');
 const WRAPPER = 'childProcess.ts';
 const MODULE_NAME = 'child' + '_process';
-const SCAN_EXCEPTIONS: readonly string[] = ['services/signatureVerifier.ts'];
+const SCAN_EXCEPTIONS: readonly string[] = [];
 
 const PROCESS_ENV_PATTERNS: readonly RegExp[] = [/\.\.\.\s*process\.env/, /env\s*:\s*process\.env/];
 
@@ -51,14 +51,14 @@ describe('T-1197 the scan of src', () => {
         expect(names.length).toBeGreaterThan(50);
     });
 
-    it('no finding outside the exception list, which is the signature verifier alone', () => {
-        expect(SCAN_EXCEPTIONS).toStrictEqual(['services/signatureVerifier.ts']);
+    it('T-1212 no finding in the tree, and the exception list is empty', () => {
+        expect(SCAN_EXCEPTIONS).toStrictEqual([]);
         expect(scanSources(files, SCAN_EXCEPTIONS)).toStrictEqual([]);
     });
 
-    it('childProcess.ts and the exception are the only files that name the module', () => {
+    it('T-1212 childProcess.ts is the only file that names the module', () => {
         const naming = files.filter((f) => f.text.includes(MODULE_NAME)).map((f) => f.file).sort();
-        expect(naming).toStrictEqual([WRAPPER, ...SCAN_EXCEPTIONS].sort());
+        expect(naming).toStrictEqual([WRAPPER]);
     });
 
     it('each offending text gives a finding', () => {
@@ -82,8 +82,13 @@ describe('T-1197 the scan of src', () => {
         expect(scanSources([{ file: WRAPPER, text: `require('node:${MODULE_NAME}')` }], SCAN_EXCEPTIONS)).toStrictEqual([]);
         expect(scanSources([{ file: WRAPPER, text: 'spawn(c, a, { env: process.env })' }], SCAN_EXCEPTIONS))
             .toStrictEqual([{ file: WRAPPER, rule: 'PROCESS_ENV' }]);
-        expect(scanSources([{ file: 'services/signatureVerifier.ts', text: `import '${MODULE_NAME}'; ({ ...process.env })` }], SCAN_EXCEPTIONS))
+        expect(scanSources([{ file: 'excepted.ts', text: `import '${MODULE_NAME}'; ({ ...process.env })` }], ['excepted.ts']))
             .toStrictEqual([]);
+        expect(scanSources([{ file: 'services/signatureVerifier.ts', text: `import '${MODULE_NAME}'; ({ ...process.env })` }], SCAN_EXCEPTIONS))
+            .toStrictEqual([
+                { file: 'services/signatureVerifier.ts', rule: 'MODULE' },
+                { file: 'services/signatureVerifier.ts', rule: 'PROCESS_ENV' }
+            ]);
         expect(scanSources([{ file: 'x.ts', text: 'process.env.PATH; buildChildEnv(ChildTool.BASE, process.env)' }], SCAN_EXCEPTIONS))
             .toStrictEqual([]);
     });

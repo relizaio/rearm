@@ -29,8 +29,8 @@ ENV NODE_OPTIONS=--use-openssl-ca SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.c
 
 # Install PostgreSQL and unzip for running tests (same approach as the ReARM backend). The ICU and
 # C++ runtime packages of the shipped stage let cyclonedx-cli run here under its shipped settings
-# (TPF-256 design 3.9).
-RUN apk add postgresql postgresql-contrib unzip wget libstdc++ libatomic icu-data-full icu-libs
+# (TPF-256 design 3.9); openssh-keygen and gnupg let the signature verifier tests run the real tools.
+RUN apk add postgresql postgresql-contrib unzip wget libstdc++ libatomic icu-data-full icu-libs openssh-keygen gnupg
 
 # Initialize PostgreSQL database for tests
 RUN mkdir /run/postgresql && \

@@ -15,7 +15,8 @@
 import { promises as fs } from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { spawn } from 'child_process'
+import { spawnChild } from '../childProcess'
+import { buildChildEnv, ChildTool } from '../childEnv'
 import { logger } from '../logger'
 
 export type VerifierVerdict = 'VERIFIED' | 'INVALID_SIGNATURE' | 'UNKNOWN_KEY' | 'ERRORED'
@@ -126,13 +127,13 @@ interface SshArgs {
 
 function runSshKeygenYVerify (args: SshArgs): Promise<VerifyResult> {
   return new Promise((resolve) => {
-    const proc = spawn('ssh-keygen', [
+    const proc = spawnChild('ssh-keygen', [
       '-Y', 'verify',
       '-f', args.allowedSignersPath,
       '-I', args.identity,
       '-n', args.namespace,
       '-s', args.sigPath,
-    ], { stdio: ['pipe', 'pipe', 'pipe'] })
+    ], { stdio: ['pipe', 'pipe', 'pipe'], env: buildChildEnv(ChildTool.SSH_KEYGEN) })
     fs.readFile(args.payloadPath).then((buf) => {
       proc.stdin.write(buf)
       proc.stdin.end()
@@ -197,7 +198,7 @@ function fingerprintSshKey (keyLine: string): Promise<string | null> {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'sshfp-'))
     const keyPath = path.join(tmp, 'k.pub')
     await fs.writeFile(keyPath, keyLine + '\n')
-    const proc = spawn('ssh-keygen', ['-lf', keyPath])
+    const proc = spawnChild('ssh-keygen', ['-lf', keyPath], { env: buildChildEnv(ChildTool.SSH_KEYGEN) })
     let out = ''
     proc.stdout.on('data', (chunk) => { out += chunk })
     proc.on('close', async () => {
@@ -227,7 +228,7 @@ async function verifyGpg (input: VerifyInput): Promise<VerifyResult> {
 
     const gpgHome = path.join(tmpDir, 'gnupg')
     await fs.mkdir(gpgHome, { mode: 0o700 })
-    const env = { ...process.env, GNUPGHOME: gpgHome }
+    const env = { ...buildChildEnv(ChildTool.GPG), GNUPGHOME: gpgHome }
 
     // Import enrolled keys.
     await runProc('gpg', ['--batch', '--import', keysPath], env)
@@ -256,7 +257,7 @@ async function verifyGpg (input: VerifyInput): Promise<VerifyResult> {
 
 function runProc (cmd: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ stdout: string, stderr: string, code: number | null }> {
   return new Promise((resolve) => {
-    const proc = spawn(cmd, args, { env })
+    const proc = spawnChild(cmd, args, { env })
     let stdout = ''
     let stderr = ''
     proc.stdout.on('data', (chunk) => { stdout += chunk })
