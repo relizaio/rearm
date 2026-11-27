@@ -229,6 +229,68 @@ describe('the Upstream page of an organization', () => {
     })
 })
 
+const { GET_UPSTREAM_OFFERED_ITEMS } = await import('@/utils/upstreamOfferQueries')
+const { GET_UPSTREAM_SOURCE } = await import('@/utils/upstreamSourceQueries')
+
+// T-1163 (TPF-243 design 3.8, threat model row v): the list of a source is read only from the start
+// of a follow, which the page mounts for an administrator in the Pro edition only. A member and the
+// CE edition get no dialog, no button and no list request. An administrator's dialog opens on the
+// list of the page's source filter.
+describe('T-1163: the source list from the Upstream page', () => {
+    const OSS_ADMIN = { ...ADMIN, installationType: 'OSS' }
+
+    function answerWithList () {
+        query.mockImplementation(async (args: any) => {
+            if (args.query === GET_UPSTREAM_FOLLOWS) return { data: { upstreamFollows: [aFollow()] } }
+            if (args.query === GET_UPSTREAM_SOURCES) return { data: { upstreamSources: [source()] } }
+            if (args.query === GET_UPSTREAM_SOURCE) {
+                return { data: { upstreamSource: { ...source(), credential: { kind: 'NONE' }, probe: { state: 'DONE', result: 'REACHABLE', message: 'ok' } } } }
+            }
+            if (args.query === GET_UPSTREAM_OFFERED_ITEMS) {
+                return { data: { upstreamOfferedItems: { source: SOURCE, kind: 'PRODUCT', failure: null, sourceFailure: null, message: null, items: [],
+                    next: 'NONE', nextPageToken: null, rowsReceived: 0, rowsDropped: 0, cut: 'NONE' } } }
+            }
+            throw new Error('unexpected query')
+        })
+    }
+
+    const listCalls = () => callsOf(GET_UPSTREAM_OFFERED_ITEMS)
+
+    it.each([['a member', MEMBER], ['CE', OSS_ADMIN]])('%s gets no dialog, no button and no list request', async (_who, user) => {
+        answerWithList()
+        route.query = { source: SOURCE }
+        const w = await mountPage(user)
+        expect(w.findComponent(StartModal).exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-follow-an-item"]').exists()).toBe(false)
+        expect(listCalls()).toEqual([])
+        w.unmount()
+    })
+
+    it('opens the list of the filtered source for an administrator', async () => {
+        answerWithList()
+        route.query = { source: SOURCE }
+        const w = await mountPage(ADMIN)
+        expect(listCalls()).toEqual([])
+        await w.get('[data-testid="upstream-follow-an-item"]').trigger('click')
+        await flushPromises()
+        expect(callsOf(GET_UPSTREAM_SOURCE).map(c => c.variables)).toEqual([{ uuid: SOURCE }])
+        expect(listCalls().map(c => c.variables)).toEqual([{ source: SOURCE, kind: 'PRODUCT', identifier: null, pageSize: 100, pageToken: null }])
+        expect(w.find('[data-testid="upstream-start-empty"]').exists()).toBe(true)
+        w.unmount()
+    })
+
+    it('opens the dialog without a source and sends no list request when no filter is set', async () => {
+        answerWithList()
+        const w = await mountPage(ADMIN)
+        await w.get('[data-testid="upstream-follow-an-item"]').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="upstream-start-gate"]').text()).toBe('Choose a source to see its list.')
+        expect(callsOf(GET_UPSTREAM_SOURCE)).toEqual([])
+        expect(listCalls()).toEqual([])
+        w.unmount()
+    })
+})
+
 // TPF-231 (design 3.3 and 3.10): the tab "By TEI" of the same page, opened by ?tab=tei.
 describe('the tab By TEI of the Upstream page', () => {
     const WRITER = { installationType: 'SAAS', permissions: { permissions: [{ org: ORG, object: ORG, scope: 'ORGANIZATION', type: 'READ_WRITE' }] } }

@@ -15,6 +15,9 @@ export function upstreamSourcesAvailable (installationType: string | undefined |
     return typeof installationType === 'string' && installationType !== '' && isProEdition(installationType)
 }
 
+/** How often a screen reads a source again while its probe is PENDING: the Sources tab and the start of a follow. */
+export const PROBE_POLL_MS = 2000
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NIL_UUID = '00000000-0000-0000-0000-000000000000'
 
