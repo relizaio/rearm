@@ -67,8 +67,9 @@ describe('renderAddendumCsv', () => {
 
     // The prose fields are up to 8,000 characters of operator free text. A quoting failure
     // here shifts every column on the row.
-    it('escapes a narrative containing commas, quotes and newlines', () => {
-        const csv = renderAddendumCsv(data({ narrative: 'We checked, then\nsaid "no date".' }))
+    // FDAW-154: the addendum prints no cover summary, so a labeling statement carries the hostile text
+    it('escapes a header text containing commas, quotes and newlines', () => {
+        const csv = renderAddendumCsv(data({ riskIncreasesNotice: 'We checked, then\nsaid "no date".' }))
         expect(csv).toContain('"We checked, then\nsaid ""no date""."')
     })
 

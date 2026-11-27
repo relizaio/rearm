@@ -129,7 +129,7 @@ describe('generated artifact download and submission facts', () => {
     it('names a regulatory submission part from the composer tags, the manifest named as such', () => {
         const tag = (key: string, value: string) => ({ key, value })
         expect(generatedArtifactOrigin({ tags: [tag('submissionKind', 'FDA_PREMARKET'), tag('submissionPart', 'NARRATIVE'),
-            tag('submissionVersion', '2')] })).toEqual({ title: 'FDA premarket submission (v2)', details: [{ label: 'Part', value: 'Narrative' }] })
+            tag('submissionVersion', '2')] })).toEqual({ title: 'FDA premarket submission (v2)', details: [{ label: 'Part', value: 'Cover summary' }] })
         expect(generatedArtifactOrigin({ tags: [tag('submissionKind', 'FDA_PREMARKET'), tag('submissionManifest', 'true'),
             tag('submissionVersion', '1')] })).toEqual({ title: 'FDA premarket submission (v1)', details: [{ label: 'Part', value: 'Manifest' }] })
         expect(generatedArtifactOrigin({ tags: [tag('submissionKind', 'OTHER_KIND'), tag('submissionPart', 'NEW_PART')] }))

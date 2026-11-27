@@ -1153,7 +1153,7 @@
                                     is left exactly as it was.
                                 </p>
 
-                                <n-form-item label="Assessment justification (submission)">
+                                <n-form-item label="Cover summary template (submission)">
                                     <div style="display: flex; flex-direction: column; width: 100%;">
                                         <n-input v-model:value="orgSettings.fdaAssessmentNarrative"
                                             :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count

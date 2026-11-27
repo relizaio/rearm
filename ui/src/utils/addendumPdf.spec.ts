@@ -72,7 +72,7 @@ describe('buildAddendumDocDefinition', () => {
     it('never truncates: no noWrap and no ellipsis anywhere', () => {
         const long = 'x'.repeat(9000)
         const doc = buildAddendumDocDefinition(data({
-            narrative: long,
+            riskIncreasesNotice: long,
             components: [comp({ levelOfSupport: null, justification: long })]
         }))
         const json = JSON.stringify(doc)
@@ -100,11 +100,13 @@ describe('buildAddendumDocDefinition', () => {
         expect(find('Components with a support attestation')).toBe('4')
     })
 
-    it('labels the narrative source', () => {
-        const org = factsTable(buildAddendumDocDefinition(data())).body
-        expect(org.find((r: any) => r[0].text === 'Justification scope')?.[1].text).toBe('organization default')
-        const rel = factsTable(buildAddendumDocDefinition(data({ narrativeIsPerRelease: true }))).body
-        expect(rel.find((r: any) => r[0].text === 'Justification scope')?.[1].text).toBe('this release')
+    // FDAW-154 3.4: no cover summary rows in the addendum
+    it('prints no assessment justification and no justification scope row', () => {
+        for (const over of [{}, { narrativeIsPerRelease: true }]) {
+            const labels = factsTable(buildAddendumDocDefinition(data(over))).body.map((r: any) => r[0].text)
+            expect(labels).not.toContain('Assessment justification')
+            expect(labels).not.toContain('Justification scope')
+        }
     })
 
     // The CSV emits blank spacer rows between header groups. Rendered as label/value pairs
@@ -247,7 +249,7 @@ describe('findUnrenderableText', () => {
         ['Greek', '\u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac'],
         ['em dash and curly quotes', '\u2014 \u201cq\u201d']
     ])('passes %s, which Roboto draws', (_n, text) => {
-        expect(findUnrenderableText(data({ narrative: text }))).toBeNull()
+        expect(findUnrenderableText(data({ orgName: text }))).toBeNull()
     })
 
     it.each([
@@ -259,7 +261,7 @@ describe('findUnrenderableText', () => {
         ['Devanagari', '\u0939\u093f\u0928\u094d\u0926\u0940'],
         ['an emoji', '\u26a0']
     ])('refuses %s, which Roboto silently drops', (_n, text) => {
-        const msg = findUnrenderableText(data({ narrative: text }))
+        const msg = findUnrenderableText(data({ orgName: text }))
         expect(msg).not.toBeNull()
         expect(msg).toContain('CSV')
     })
@@ -283,7 +285,7 @@ describe('findUnrenderableText', () => {
     // The message has to be actionable: an operator who cannot export the PDF needs to know
     // which characters and what to do instead.
     it('names the offending characters and points at the CSV', () => {
-        const msg = findUnrenderableText(data({ narrative: '\u652f' })) as string
+        const msg = findUnrenderableText(data({ orgName: '\u652f' })) as string
         expect(msg).toContain('\u652f')
         expect(msg).toMatch(/CSV/)
         expect(msg).toMatch(/silently dropped|blank/)

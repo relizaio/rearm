@@ -128,7 +128,7 @@ describe('SubmissionDraftCard (FDAW-32 row 7)', () => {
             movedLines: ['narrative:' + U1, 'overlay:' + HOSTILE] } }) }))
         expect(testid(w, 'draft-stale').text()).toContain('3 changes since this build')
         expect(testid(w, 'draft-stale-lines').findAll('li').map((l: any) => l.text()))
-            .toEqual(['assessment narrative changed', 'manual or rule overlay changed'])
+            .toEqual(['cover summary changed', 'manual or rule overlay changed'])
         expect(testid(w, 'draft-stale').text()).not.toContain(U1)
         w.unmount()
     })

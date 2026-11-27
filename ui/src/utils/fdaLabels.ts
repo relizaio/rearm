@@ -67,7 +67,7 @@ export const HISTORY_SCOPE_LABELS: Record<string, string> = {
     GUARD: 'Guard',
     APPROVED_ENVIRONMENT: 'Approved environment',
     SUPPORT_WINDOW: 'Release support dates',
-    FDA_NARRATIVE: 'FDA assessment narrative',
+    FDA_NARRATIVE: 'Cover summary',
     SYNTHETIC_ARTIFACT: 'Generated artifact',
     TEA_PUBLICATION: 'TEA publication',
     SUBMISSION: 'Regulatory submission',

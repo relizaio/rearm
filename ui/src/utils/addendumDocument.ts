@@ -182,11 +182,7 @@ export function addendumHeaderRows (d: AddendumData): unknown[][] {
         ['Components with no support attestation', d.unassessedComponents],
         []
     ]
-    if (d.narrative) {
-        rows.push(['Assessment justification', d.narrative])
-        rows.push(['Justification scope', d.narrativeIsPerRelease ? 'this release' : 'organization default'])
-        rows.push([])
-    }
+    // FDAW-154 3.4: the cover summary is its own document, not an addendum row
     if (d.patchesMayCeaseStatement) rows.push([PROSE_SLOT_LABELS.patchesMayCease, d.patchesMayCeaseStatement])
     if (d.riskTransferProcessRef) rows.push([PROSE_SLOT_LABELS.riskTransferRef, d.riskTransferProcessRef])
     if (d.riskIncreasesNotice) rows.push([PROSE_SLOT_LABELS.riskIncreases, d.riskIncreasesNotice])

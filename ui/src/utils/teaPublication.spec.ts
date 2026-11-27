@@ -540,7 +540,7 @@ const SHARE = { kind: 'FDA_PREMARKET', latestVersion: 2, state: 'FINAL', profile
 const PRIV_COMPONENT = { ...COMPONENT, profiles: ['default', 'fda'] }
 const LEAD = 'Sharing Pump 1.2.0. Customers get, on TEA: the release SBOM per profile (default, fda), its living VEX, and '
     + 'the device support statement when the organization text is authored. They never get the regulatory package: its '
-    + 'Narrative, Support addendum and VDR are not published, and the package cannot be downloaded from TEA. Package v2 is Final.'
+    + 'Cover summary, Support addendum and VDR are not published, and the package cannot be downloaded from TEA. Package v2 is Final.'
 const T = LEAD + ' Its TEA settings are private: only a customer whose key covers this component can read it.'
 
 describe('FDAW-39 row 22 (h): teaShareConfirm', () => {
@@ -548,8 +548,8 @@ describe('FDAW-39 row 22 (h): teaShareConfirm', () => {
         expect(teaShareConfirm(PRIV_COMPONENT, PNAMES, SHARE)).toEqual({ titleText: 'Share with customers?', text: T,
             showCancelButton: true, confirmButtonText: 'Share' })
         expect([PACKAGE_PART_LABELS.NARRATIVE, PACKAGE_PART_LABELS.SUPPORT_ADDENDUM, PACKAGE_PART_LABELS.VDR])
-            .toEqual(['Narrative', 'Support addendum', 'VDR'])
-        expect(T).toContain('its Narrative, Support addendum and VDR are not published')
+            .toEqual(['Cover summary', 'Support addendum', 'VDR'])
+        expect(T).toContain('its Cover summary, Support addendum and VDR are not published')
         expect(T).not.toContain('cover summary')
         expect(T).not.toContain('zip')
     })

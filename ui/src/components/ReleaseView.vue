@@ -658,7 +658,7 @@
                         :show-icon="false" style="font-size: 12px; max-width: 620px; margin-bottom: 10px;">
                         Every component in this release with its level of support, the end-of-support
                         date where one is attested and the justification where none is, plus the
-                        device support window and the assessment justification. The counts come from
+                        device support window. The counts come from
                         the coverage gauge, so this document and the page always agree.
                     </n-alert>
                     <n-spin :show="bomExportPending" small style="margin-top: 5px;">
@@ -2229,7 +2229,7 @@
                          the assessment block -- three copies of one fact, which is how they
                          come to disagree. -->
                     <div class="container">
-                        <h3>Assessment justification for this release</h3>
+                        <h3>Cover summary for this release</h3>
                         <p class="text-muted" style="max-width: 760px;">
                             Overrides the organization default below, for this release only.
                             Leave it empty to inherit. Clearing a saved override returns this

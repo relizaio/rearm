@@ -40,7 +40,7 @@ export function narrativeInitialText (override: string | null | undefined, orgDe
  * A text equal to the organization default, trimmed, cannot confirm: the release writes its own.
  */
 export function narrativeChoiceError (text: string | null | undefined, orgDefault: string | null | undefined): string | null {
-    if (blank(text)) return 'Write the assessment narrative for this release'
+    if (blank(text)) return 'Write the cover summary for this release'
     if ((text || '').length > FDA_PROSE_MAX_LENGTH) return 'At most ' + FDA_PROSE_MAX_LENGTH + ' characters'
     if ((text || '').trim() === (orgDefault || '').trim()) return NARRATIVE_IS_ORG_DEFAULT
     return null

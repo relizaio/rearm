@@ -82,11 +82,11 @@
         <!-- The assessment narrative a package of a NARRATIVE kind carries, written before the Start form opens
              (FDAW-32 3.6); the form follows the write. The organization default is a starting point only, never
              a choice a package is finalized on (FDAW-16 3.8, F-2). -->
-        <n-modal :show="pending !== null" preset="card" title="Assessment narrative" style="max-width: 720px"
+        <n-modal :show="pending !== null" preset="card" title="Cover summary" style="max-width: 720px"
             data-testid="narrative-prompt" :mask-closable="!narrativeSaving" @update:show="(v: boolean) => { if (!v) closePrompt() }">
             <div v-if="pending" data-testid="narrative-form">
                 <p class="text-muted">
-                    The {{ packageKindLabel(pending.kind) }} package carries the release's assessment narrative.
+                    The {{ packageKindLabel(pending.kind) }} package carries the release's cover summary.
                 </p>
                 <n-space vertical>
                     <div>

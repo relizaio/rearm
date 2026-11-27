@@ -99,6 +99,11 @@ describe('row 2 others', () => {
         expect(D.movedLineLabels(lines)).toEqual(['files of a release changed', 'support data of a component changed',
             'manual or rule overlay changed', 'SBOM merge version changed', 'support disclosure setting changed', 'another input changed'])
         expect(D.movedLineLabels(D.MOVED_LINE_LABELS.map(([p]) => p + ':x'))).toEqual(D.MOVED_LINE_LABELS.map(([, l]) => l))
+        // FDAW-154 T-12a: the documents line, after merge, and the narrative line's new name
+        expect(D.movedLineLabels(['documents:FDA_PREMARKET=2', 'narrative:' + U1])).toEqual(['cover summary changed',
+            'ReARM changed the documents of this package kind'])
+        expect(D.MOVED_LINE_LABELS.findIndex(([p]) => p === 'documents'))
+            .toBe(D.MOVED_LINE_LABELS.findIndex(([p]) => p === 'merge') + 1)
         expect(D.movedLineLabels([])).toEqual([])
         expect(D.movedLineLabels(null)).toEqual([])
         expectSwept(D.movedLineLabels(lines).join('\n'))
@@ -109,7 +114,7 @@ describe('row 2 others', () => {
         expect(D.draftStaleBanner(draft())).toEqual({ kind: 'unchanged', text: 'Inputs unchanged', labels: [] })
         expect(D.draftStaleBanner(draft({ changesSinceBuild: { count: 4, fingerprintEqual: true, movedLines: [] } }))).toEqual({ kind: 'unchanged', text: 'Inputs unchanged', labels: [] })
         expect(D.draftStaleBanner(draft({ changesSinceBuild: { count: 3, fingerprintEqual: false, movedLines: ['narrative:' + U1, 'displayed:' + U1] } })))
-            .toEqual({ kind: 'changed', text: '3 changes since this build', labels: ['assessment narrative changed', 'displayed version changed'] })
+            .toEqual({ kind: 'changed', text: '3 changes since this build', labels: ['cover summary changed', 'displayed version changed'] })
         expect(D.draftStaleBanner(draft({ changesSinceBuild: { count: 1, fingerprintEqual: false, movedLines: [] } })))
             .toEqual({ kind: 'changed', text: '1 changes since this build', labels: [] })
         // a changed banner with no usable count (0, or not an integer) falls back to 1, never 0 or -1

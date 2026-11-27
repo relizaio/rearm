@@ -61,7 +61,7 @@ describe('the release History columns in words (FDAW-78 row 13)', () => {
         const c = cells()
         expect(c.map(r => r[0])).toEqual(['Created', 'Cancelled', 'Draft started', 'Added', 'Changed', 'Added'])
         expect(c.map(r => r[1])).toEqual(['Regulatory submission', 'Regulatory submission', 'Regulatory submission',
-            'Generated artifact', 'FDA assessment narrative', 'Parent release'])
+            'Generated artifact', 'Cover summary', 'Parent release'])
         expect(c.slice(0, 5).map(r => r[2])).toEqual([
             'FDA premarket submission: version 1 created',
             'Regulatory submission: version 1 cancelled',
