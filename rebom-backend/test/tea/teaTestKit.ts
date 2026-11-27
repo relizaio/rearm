@@ -214,6 +214,7 @@ export async function gql(url: string, query: string, variables: Record<string, 
 const ERROR = 'error { reason cliExitCode message detail url httpStatus address addressClass phase hint ignoredProxyVariables }';
 const LIMITS = 'limits { deadlineSeconds connectTimeoutSeconds maxDocumentBytes maxOutputBytes maxPages pageSize maxArtifactBytes maxTotalBytes maxFiles holdSeconds }';
 const DOC = `teaApiVersion outcome ${ERROR} ${LIMITS} document`;
+const LIST = `teaApiVersion outcome ${ERROR} ${LIMITS} page { rows { uuid name identifiers { idType idValue } } next nextPageToken rowsReceived cut }`;
 
 export const Q = {
     status: `query { teaStatus { teaApiVersion outcome ${ERROR} localTesting ceilings { deadlineSeconds connectTimeoutSeconds maxDocumentBytes maxOutputBytes maxPages pageSize maxArtifactBytes maxTotalBytes maxFiles holdSeconds } } }`,
@@ -223,6 +224,8 @@ export const Q = {
     component: `mutation($input: TeaObjectInput!) { teaComponent(input: $input) { ${DOC} } }`,
     releases: `mutation($input: TeaReleasesInput!) { teaReleases(input: $input) { ${DOC} } }`,
     release: `mutation($input: TeaReleaseInput!) { teaRelease(input: $input) { ${DOC} } }`,
+    products: `mutation($input: TeaListInput!) { teaProducts(input: $input) { ${LIST} } }`,
+    components: `mutation($input: TeaListInput!) { teaComponents(input: $input) { ${LIST} } }`,
     fetch: `mutation($input: TeaFetchInput!) { teaFetchCollection(input: $input) { teaApiVersion outcome ${ERROR} ${LIMITS} manifest files { number status reason documentClass sizeBytes sha256 } fetchId expiresAt } }`,
     store: `mutation($input: TeaSbomStoreInput!) { teaStoreFetchedSbom(input: $input) { teaApiVersion outcome ${ERROR} stored format bom { uuid meta organization } conflict { serialNumber storedVersion documentVersion existingUuid } storeMessage } }`,
     releaseFetch: `mutation($fetchId: String!) { teaReleaseFetch(fetchId: $fetchId) { teaApiVersion outcome ${ERROR} } }`
@@ -234,8 +237,8 @@ export const UUID_A = '33333333-3333-4333-8333-333333333333';
 export const UUID_B = '55555555-5555-4555-8555-555555555551';
 export const FETCH_ID = '0123456789abcdef0123456789abcdef';
 
-/** One plausible call of each of the ten operations: [name, query, variables]. */
-export function tenOperations(): Array<[string, string, Record<string, unknown>]> {
+/** One plausible call of each of the twelve operations: [name, query, variables]. */
+export function twelveOperations(): Array<[string, string, Record<string, unknown>]> {
     return [
         ['teaStatus', Q.status, {}],
         ['teaFetchedFileChunk', Q.chunk, { fetchId: FETCH_ID, number: 1, offset: 0, length: 10 }],
@@ -244,6 +247,8 @@ export function tenOperations(): Array<[string, string, Record<string, unknown>]
         ['teaComponent', Q.component, { input: { apiRoot: API_ROOT, uuid: UUID_A, credential: NONE } }],
         ['teaReleases', Q.releases, { input: { apiRoot: API_ROOT, parentKind: 'PRODUCT', parentUuid: UUID_A, credential: NONE } }],
         ['teaRelease', Q.release, { input: { apiRoot: API_ROOT, releaseKind: 'PRODUCT_RELEASE', releaseUuid: UUID_A, credential: NONE } }],
+        ['teaProducts', Q.products, { input: { apiRoot: API_ROOT, credential: NONE } }],
+        ['teaComponents', Q.components, { input: { apiRoot: API_ROOT, credential: NONE } }],
         ['teaFetchCollection', Q.fetch, { input: { apiRoot: API_ROOT, releaseKind: 'COMPONENT_RELEASE', releaseUuid: UUID_B, collectionVersion: 1, documentClasses: ['SBOM'], credential: NONE } }],
         ['teaStoreFetchedSbom', Q.store, { input: { fetchId: FETCH_ID, number: 1, org: UUID_A, rebomOptions: {} } }],
         ['teaReleaseFetch', Q.releaseFetch, { fetchId: FETCH_ID }]
