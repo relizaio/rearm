@@ -52,6 +52,14 @@ spec:
           value: {{ .Values.rebom.backend.enrichmentPendingIfNotConfigured | default "false" | quote }}
         - name: LOG_TYPE
           value: {{ .Values.rebom.backend.logFormatType | default "plain" | quote }}
+        {{- $rebomLogLevel := .Values.rebom.backend.logLevel | default "" | toString }}
+        {{- if $rebomLogLevel }}
+        {{- if not (has $rebomLogLevel (list "trace" "debug" "info" "warn" "error" "fatal" "silent")) }}
+        {{- fail (printf "rebom.backend.logLevel: %q is not trace, debug, info, warn, error, fatal or silent." $rebomLogLevel) }}
+        {{- end }}
+        - name: LOG_LEVEL
+          value: {{ $rebomLogLevel | quote }}
+        {{- end }}
         {{- if .Values.rebom.backend.rebomPropsSecretName }}
         envFrom:
         - secretRef:

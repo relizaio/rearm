@@ -2,6 +2,25 @@
 
 Every option of this chart is documented in `values.yaml`, next to the value. This file holds what needs more room than a comment.
 
+## Log level of rebom
+
+The value `rebom.backend.logLevel` sets the log level of the rebom backend; the chart renders it as `LOG_LEVEL` of the `rebom-backend-container` container. The default is `info`.
+
+- **Levels: `trace`, `debug`, `info`, `warn`, `error`, `fatal` and `silent`**, in lower case. Any other value, another case included, stops `helm template`, `helm install` and `helm upgrade` with `rebom.backend.logLevel: "<value>" is not trace, debug, info, warn, error, fatal or silent.`, and the running pod is not touched.
+- **`warn` and above hide the info lines**: the server ready and shutdown lines, the enrichment scheduler lines, the integration configured and deleted lines. Refusals are logged at warn and failures at error, so both stay up to `error`. **`silent` turns off every line, errors included.**
+- **The chart value takes precedence over a `LOG_LEVEL` in the secret of `rebom.backend.rebomPropsSecretName`**: a variable in `env` wins over the same variable from `envFrom`. Before this value existed, any `LOG_LEVEL` that rebom was given, whatever it said, made it log at debug. An install that keeps `LOG_LEVEL` in that secret runs at `info` after the upgrade; set `rebom.backend.logLevel` to the level it wants, or to empty so that the secret decides.
+- **Empty** (`""` or `null`): `LOG_LEVEL` is not rendered. The secret decides, or the service default applies: `info`, or `debug` when `NODE_ENV` is `development`.
+- **Older rebom images.** A rebom image older than the one this chart pins logs at debug for any `LOG_LEVEL`, the rendered `info` included. With such an image (an override of `image.rebomBackend`), set the value to empty.
+- **Outside the chart** (compose, `docker run`): rebom reads `LOG_LEVEL` trimmed and in any letter case. A value that is not a level starts the service at `info` with one warn line that begins `LOG_LEVEL is set to a value that is not a log level; using info.` and does not repeat the value.
+
+Check the value of a running install:
+
+```bash
+kubectl -n <ns> exec deploy/<r>-rebom-backend -- printenv LOG_LEVEL
+```
+
+Render check: `helm template rearm . -n rearm | python3 tests/check_rebom_log_level.py info` (or `warn` with `--set rebom.backend.logLevel=warn`, or `absent` with `--set rebom.backend.logLevel=`).
+
 ## Network policies
 
 The chart renders Kubernetes NetworkPolicies from the `networkPolicy` block of `values.yaml` (template `templates/networkpolicy.yaml`).
