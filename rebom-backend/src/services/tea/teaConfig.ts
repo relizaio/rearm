@@ -154,12 +154,23 @@ export interface TeaEffectiveLimits {
 export const TeaRunKind = {
     READ: 'READ',
     RELEASE_LIST: 'RELEASE_LIST',
-    DOWNLOAD: 'DOWNLOAD'
+    DOWNLOAD: 'DOWNLOAD',
+    LIST_PAGE: 'LIST_PAGE'
 } as const;
 export type TeaRunKind = typeof TeaRunKind[keyof typeof TeaRunKind];
 
 /** The page size when the caller gives none (the CLI's default, and the TEA maximum). */
 export const TEA_DEFAULT_PAGE_SIZE = 100;
+
+/**
+ * The bound of the server's answer to a list call (TPF-241 design 3.4), below the ceiling of the
+ * other reads: the CLI's memory for a degenerate answer of many tiny rows is about 50 times the
+ * answer's bytes. A constant on purpose, not a setting.
+ */
+export const TEA_LIST_MAX_DOCUMENT_BYTES = 4194304;
+
+/** The rows a list page keeps at most (the CLI's default); a longer answer is cut and says so. */
+export const TEA_LIST_MAX_ROWS = 1000;
 
 function lower(caller: number | null | undefined, ceiling: number): number {
     return caller == null ? ceiling : Math.min(caller, ceiling);
@@ -192,6 +203,10 @@ export function effectiveLimits(
     if (kind === TeaRunKind.RELEASE_LIST) {
         out.pageSize = paging?.pageSize ?? TEA_DEFAULT_PAGE_SIZE;
         out.maxPages = lower(paging?.maxPages, ceilings.maxPages);
+    }
+    if (kind === TeaRunKind.LIST_PAGE) {
+        out.maxDocumentBytes = Math.min(out.maxDocumentBytes, TEA_LIST_MAX_DOCUMENT_BYTES);
+        out.pageSize = paging?.pageSize ?? TEA_DEFAULT_PAGE_SIZE;
     }
     if (kind === TeaRunKind.DOWNLOAD) {
         out.maxArtifactBytes = lower(fetchLimits?.maxArtifactBytes, ceilings.maxArtifactBytes);
