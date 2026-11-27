@@ -183,7 +183,10 @@ The image pins the CLI release in the Dockerfile and checks at build time that i
 mode. A rebom started with another `rearm` on its `PATH` checks the same on the first TEA call and
 answers `NOT_AVAILABLE` (`CLI_MISSING`, `CLI_TOO_OLD`, `CLI_FORMAT`) when it lacks it. A `rearm`
 without the list verbs answers `teaProducts` and `teaComponents` with `INVALID_REQUEST` and the
-CLI's reason `USAGE`; the other operations work as before.
+CLI's reason `USAGE`; the other operations work as before. The image build also checks the list
+verbs: `rearm tea machine products` and `rearm tea machine components` without a flag must exit 2
+with reason `USAGE` and `--api-root is required`, or the build fails. rebom itself does not probe
+for them at run time.
 
 ---
 
