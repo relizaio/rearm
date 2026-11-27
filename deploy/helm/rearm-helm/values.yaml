@@ -289,6 +289,18 @@ rebom:
     # by rebom.backend.logLevel, not by this value.
     nodeEnv: "production"
     rebomPropsSecretName: ""
+    # Extra environment variable names that rebom passes on to the tools it
+    # runs (the rearm CLI, cyclonedx-cli, ssh-keygen, gpg). Those tools get a
+    # short fixed list of variables and nothing else of the pod environment.
+    # List a name only when a tool needs one more variable and that variable
+    # holds no secret. Names only, never NAME=value; anything else stops the
+    # render. rebom refuses its own settings, names that look like a secret
+    # and the names it manages itself, and logs the names once at start. The
+    # enrichment run, which holds the BEAR key, never gets a name that starts
+    # with GO (a Go debug setting can print its request headers). Empty
+    # renders nothing. A rebom-backend image from before this setting ignores
+    # it. See the README, "Environment of the tools rebom runs".
+    childEnvPassthrough: []
 
 # Ingress NetworkPolicies (templates/networkpolicy.yaml): every chart pod is
 # reachable only from the pods that need it. Outbound traffic (DNS, GitHub,
