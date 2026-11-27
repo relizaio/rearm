@@ -10,7 +10,7 @@ COPY ./ .
 # Trust-store probe: the node that ran npm ci refuses the compromised chains.
 RUN node ci/trust-gate/trust-gate.mjs
 RUN echo "f1729926b31213911f73c2999f8a150a5fafa4890ba3ef3e107eb3cc8965a9e9  docs/workflows/readiness-rules.md" > /tmp/readiness-rules.sha256 && sha256sum -c /tmp/readiness-rules.sha256
-RUN echo "dc20300234fc0a42ef8cef03ac217b70acf0745d6d4f41df2c923d10e7e70a1d  docs/workflows/regulated-output-changes.md" > /tmp/regulated-output-changes.sha256 && sha256sum -c /tmp/regulated-output-changes.sha256
+RUN echo "618e905b307b9e30a0326345edda885976ce8ba7005bfced5f871941f88a97ab  docs/workflows/regulated-output-changes.md" > /tmp/regulated-output-changes.sha256 && sha256sum -c /tmp/regulated-output-changes.sha256
 RUN node --test ci/regulated-outputs/regulated-outputs.test.mjs
 RUN node ci/regulated-outputs/regulated-outputs.mjs pages
 RUN npm run docs:build

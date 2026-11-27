@@ -16,8 +16,9 @@ Regulatory packages and submissions are ReARM Pro only. A ReARM Community Editio
 | `VDR` | `REQUIRED` | `INCLUDE` | `vdr.cdx.json` | `application/vnd.cyclonedx+json` | The vulnerability disclosure report of the release |
 | `VEX` | `OPTIONAL` | `INCLUDE` | `vex.cdx.json` or `openvex.json` | `application/vnd.cyclonedx+json` or `application/json` | The VEX of the release, in the format `vexFormat` chooses |
 | `VULNERABILITY_ASSESSMENT` | `REQUIRED` | `INCLUDE` | `vulnerability-assessment.html` | `text/html; charset=utf-8` | The vulnerability assessment summary: each finding of the release with its assessment and, where one is recorded, its analyst and date |
-| `NARRATIVE` | `REQUIRED` | `INCLUDE` | `narrative.txt` | `text/plain; charset=utf-8` | The FDA assessment narrative: the release's own or the organization default (the file's header says which) |
+| `NARRATIVE` | `REQUIRED` | `INCLUDE` | `cover-summary.html` | `text/html; charset=utf-8` | The cover summary: the release's own, else the organization's template, as print-ready HTML. A version made before this release holds it as `narrative.txt`. |
 | `SUPPORT_ADDENDUM` | `REQUIRED` | `INCLUDE` | `support-addendum.csv` | `text/csv; charset=utf-8` | The software support addendum |
+| `MISSING_INFORMATION` | `REQUIRED` | `INCLUDE` | `missing-information.html` | `text/html; charset=utf-8` | The justification for missing SBOM information: each component of the package SBOM whose end-of-support date or hash is given as a justified unknown, and the reason, generated from that SBOM. |
 | `DEVICE_SUPPORT_STATEMENT` | `OPTIONAL` | `EXCLUDE` | `device-support-statement.html` | `text/html; charset=utf-8` | The device software support statement; product releases only |
 | `RAW_ARTIFACTS` | `OPTIONAL` | `EXCLUDE` | no file | - | References to the release's own artifacts of the chosen artifact types |
 
@@ -47,9 +48,13 @@ The server file lists what the package's aggregated SBOM lists: the components o
 
 The "Device software support statement" is generated for a product release only; on a component release the part is skipped with `NOT_APPLICABLE`. It needs the three prose slots of Organization Settings (the submission and labeling text) and is refused, naming the missing one, when one is not authored. It renders the device's support window and the coverage sentences, every URL as text and never as a link, under a Content Security Policy that forbids scripts, styles from outside the document, and images. On unchanged data it is byte-identical.
 
-### The narrative
+### The cover summary
 
-The narrative is plain text with a header block: the organization, the device, the release and the justification scope, "this release" or "organization default".
+The cover summary is the manufacturer's own text, under the device, version and organization, in print-ready HTML with the pinned footer. It is not a justification for missing information.
+
+### The missing-information justification
+
+The "Justification for missing SBOM information" lists each component of the package SBOM whose end-of-support date or hash is given as a justified unknown, grouped by reason, with counts read the way the readiness check counts them. It prints the reason code's text only: the free text of a justification is not printed.
 
 ### The vulnerability assessment summary
 
@@ -127,10 +132,10 @@ Once a version is sent, the state reads with its dates and number: "Sent to FDA 
 
 #### Drafting a package in the UI
 
-- **Start draft** asks for a reason: "First version" for a kind without a submission; otherwise a response to an FDA request, a correction or other, with a reason text. An earlier Final or Sent version of another release of the component can be named as the one this version replaces (optional). A kind whose package carries the assessment narrative asks for the release's own cover summary first: the organization default is shown read-only as a starting point, and the prompt does not continue while the text is the organization default unchanged. The first rebuild is requested at once.
+- **Start draft** asks for a reason: "First version" for a kind without a submission; otherwise a response to an FDA request, a correction or other, with a reason text. An earlier Final or Sent version of another release of the component can be named as the one this version replaces (optional). A kind whose package carries the cover summary asks for the release's own cover summary first: the organization default is shown read-only as a starting point, and the prompt does not continue while the text is the organization default unchanged. The first rebuild is requested at once.
 - **The draft card** shows the draft's state, who started it and why, the rebuild job (requested, running, built or failed, with the failure text), and, once built, the contents (each part with its size, SHA-256 and a download named by the server), the release SBOM version it pins, and what changed against the previous version (components added, removed or with a changed version, support changes, findings). Once the job stands at built, **Download draft zip** gives the draft's files as one zip with a draft mark (see [Downloading a draft as a zip](#downloading-a-draft-as-a-zip)); a file downloaded from the contents table is the stored file, without a draft mark. The page reads a rebuild in progress every 5 seconds for up to 15 minutes, then every 30 seconds.
 - **Readiness** is checked at each rebuild: the release SBOM the draft pins is checked against the FDA expectations once, and the result is kept with the build as the **Check report** part. The draft card lists one row per check: the ten SBOM checks (SBOM author, SBOM timestamp, supplier name, component name, component version, component hash, unique identifier, dependency relationships, level of support, end-of-support date), vendored code described, the cover summary, every finding assessed and the known exploited (KEV) findings assessed, which must be fixed, and the device support dates, the optional parts left out and known exploited findings that affect the device, which are for review. Confirm and Finalize are refused while a must-fix row is open ("must-fix items open", with each row's text) or while readiness could not be checked for the build (rebuild the draft; a build made before readiness was checked needs one rebuild). Fix the rows, then rebuild the draft: Confirm and Finalize are refused when, after the draft was built, a finding of the release was added or removed or its reported state changed, an assessment of one was saved, a finding became known exploited, or the KEV catalog in use changed or synchronized for the first time. A row with a button opens the screen that fixes it; a must-fix row without a button is corrected in the SBOM uploaded to the release or, for a product, to the component release that carries the entry, unless its text names another place. The rows and when each passes are listed in [Readiness rules](./readiness-rules); a Final version's check summary names the rule set that judged it. For the rows that page is the authority: where this paragraph and the list differ, the list is right.
-- **The banner** says "Not built yet", "Inputs unchanged", or how many changes there are since the build, with what moved in words (for example "assessment narrative changed" or "files of a release changed"), never the identifiers behind them.
+- **The banner** says "Not built yet", "Inputs unchanged", or how many changes there are since the build, with what moved in words (for example "cover summary changed" or "files of a release changed"), never the identifiers behind them.
 - **Greyed buttons** say why on hover: Confirm and Finalize while a rebuild is in progress or the inputs changed since the build ("Rebuild first"), Discard while a rebuild is requested, Finalize for the person who confirmed when a second confirmer is required, below Assembled, or when the package already has the version the draft planned.
 - **Confirm** and **Finalize** each ask to tick the statement "I reviewed the contents and the accepted items and confirm this package is ready for submission." Finalize writes the Final version from the build the card shows; nothing is generated again. **Discard**, **Return to draft** and **Cancel** ask for a reason, and **Add FDA number** for the number; **Record as sent**, **Add timeline entry** and **Withdraw** are forms. A refused act shows the server's sentence and the page reads again.
 - **The second confirmer** is a switch on the Regulatory tab of Organization Settings, "Require a second confirmer for regulatory packages", off by default; an organization administrator changes it. When it is on, one person confirms a built draft and a different person finalizes it. A change applies to drafts already open at their next act: a draft confirmed while it was on and finalized after it was switched off records the finalizer alone, and a draft being edited when it is switched on needs a Confirm by one person and a Finalize by another. An open release page reads the setting again within 30 seconds.
@@ -218,8 +223,8 @@ The manifest of version 1 of an `FDA_PREMARKET` submission of a component releas
       "outcome": "PRODUCED",
       "artifact": "55555555-5555-4555-8555-555555555555",
       "artifactVersion": "1",
-      "fileName": "Widget-Pro-1.2.0-rc1-fda-premarket-v1-narrative.txt",
-      "mediaType": "text/plain; charset=utf-8",
+      "fileName": "Widget-Pro-1.2.0-rc1-fda-premarket-v1-cover-summary.html",
+      "mediaType": "text/html; charset=utf-8",
       "size": 1480,
       "digests": [{"alg": "SHA-256", "value": "<64 hex characters>"}]
     },

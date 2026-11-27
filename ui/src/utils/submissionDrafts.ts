@@ -23,13 +23,14 @@ export const MOVED_LINE_LABELS: [string, string][] = [
     ['inbound', 'inbound deliverables changed'],
     ['outbound', 'outbound deliverables changed'],
     ['prose', 'organization FDA statements changed'],
-    ['narrative', 'assessment narrative changed'],
+    ['narrative', 'cover summary changed'],
     ['displayed', 'displayed version changed'],
     ['device', 'device support dates changed'],
     ['support', 'support data of a component changed'],
     ['overlay', 'manual or rule overlay changed'],
     ['justifications', 'justifications changed'],
     ['merge', 'SBOM merge version changed'],
+    ['documents', 'ReARM changed the documents of this package kind'],
     ['disclosure', 'support disclosure setting changed'],
 ]
 export const MOVED_LINE_OTHER = 'another input changed'

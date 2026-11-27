@@ -57,6 +57,11 @@ describe('parts and options (row 20)', () => {
         expect(SUPPRESSED_EXCLUDED_NOTE).toBe('Suppressed findings are left out of this part. ReARM\'s default is to include them, each marked as suppressed.')
     })
 
+    it('labels the cover summary and the missing-information justification (FDAW-154 T-12a)', () => {
+        expect(packagePartLabel('NARRATIVE')).toBe('Cover summary')
+        expect(packagePartLabel('MISSING_INFORMATION')).toBe('Missing information justification')
+    })
+
     it('labels the stored check part Check report (FDAW-16 row 16)', () => {
         expect(PACKAGE_PART_LABELS.CHECK_REPORT).toBe('Check report')
         expect(packagePartLabel('CHECK_REPORT')).toBe('Check report')

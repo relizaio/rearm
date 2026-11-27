@@ -44,7 +44,7 @@ describe('the tables, each compared whole', () => {
             OUTBOUND_DELIVERY: 'Outbound delivery', VARIANT: 'Variant', VERSION: 'Version', NOTES: 'Notes', TAGS: 'Tags',
             MARKETING_VERSION: 'Marketing version', TRIGGER: 'Trigger', INPUT_TRIGGER: 'Input trigger', GUARD: 'Guard',
             APPROVED_ENVIRONMENT: 'Approved environment', SUPPORT_WINDOW: 'Release support dates',
-            FDA_NARRATIVE: 'FDA assessment narrative', SYNTHETIC_ARTIFACT: 'Generated artifact', TEA_PUBLICATION: 'TEA publication',
+            FDA_NARRATIVE: 'Cover summary', SYNTHETIC_ARTIFACT: 'Generated artifact', TEA_PUBLICATION: 'TEA publication',
             SUBMISSION: 'Regulatory submission', DECLARED_LICENSE: 'Declared license',
             DISPLAYED_VERSION: 'Displayed version',
         })
