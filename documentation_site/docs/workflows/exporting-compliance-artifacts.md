@@ -360,8 +360,8 @@ removed: if an SBOM must not disclose them, remove them before you upload it (fo
 options for excluding evidence and formulation).
 
 **Always kept: `metadata.tools`.** ReARM's own entry (`io.reliza` / `rearm`) names the ReARM
-version that produced the export (the deployment's ReARM version; `26.08.95` when the deployment
-does not set one), and stays with both settings: ReARM generated the merged
+version that produced the export (the deployment's ReARM version (`REARM_PRODUCT_VERSION`, which
+the Pro chart sets from its appVersion); no version when the deployment does not set one), and stays with both settings: ReARM generated the merged
 document and wrote any support disclosure in it, so a reader needs to see it among the tools.
 The tools that produced the SBOMs you uploaded -- your SBOM generator, your build plugin, your
 scanner -- are carried into merged and aggregated exports beside it.

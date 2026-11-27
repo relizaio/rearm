@@ -68,4 +68,33 @@ describe('attachRebomToolToBom', () => {
       await expect(validateBom(bom)).resolves.toBe(true);
     }
   });
+
+  it('replaces a 26.08.95 entry in a 1.6 BOM with one versionless ReARM entry when the deployment names no version', async () => {
+    delete process.env.REARM_PRODUCT_VERSION;
+    const bom: any = { bomFormat: 'CycloneDX', specVersion: '1.6', version: 1,
+      serialNumber: 'urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79',
+      metadata: { tools: { components: [
+        cdxgen, { type: 'application', group: 'io.reliza', name: 'rearm', version: '26.08.95' },
+      ] } }, components: [] };
+    attachRebomToolToBom(bom);
+    expect(bom.metadata.tools.components[0]).toEqual(cdxgen);
+    const ours = bom.metadata.tools.components.filter((t: any) => t.group === 'io.reliza');
+    expect(ours).toHaveLength(1);
+    expect(Object.hasOwn(ours[0], 'version')).toBe(false);
+    await expect(validateBom(bom)).resolves.toBe(true);
+  });
+
+  it('replaces a 26.08.95 entry in a 1.4 tools array with one versionless ReARM entry when the deployment names no version', async () => {
+    delete process.env.REARM_PRODUCT_VERSION;
+    const trivy = { vendor: 'aquasecurity', name: 'trivy', version: '0.50.0' };
+    const bom: any = { bomFormat: 'CycloneDX', specVersion: '1.4', version: 1,
+      serialNumber: 'urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79',
+      metadata: { tools: [trivy, { vendor: 'io.reliza', name: 'rearm', version: '26.08.95' }] }, components: [] };
+    attachRebomToolToBom(bom);
+    expect(bom.metadata.tools[0]).toEqual(trivy);
+    const ours = bom.metadata.tools.filter((t: any) => t.vendor === 'io.reliza');
+    expect(ours).toHaveLength(1);
+    expect(Object.hasOwn(ours[0], 'version')).toBe(false);
+    await expect(validateBom(bom)).resolves.toBe(true);
+  });
 });
