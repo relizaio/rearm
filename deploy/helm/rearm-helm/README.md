@@ -179,3 +179,20 @@ The check probes a pod address. It says nothing about the other ranges you had t
 To turn it off: `networkPolicy.rebomBackend.egress.enabled: false`. No pod restarts when it is turned on or off.
 
 **Upgrading.** An upgrade to a chart version that has this policy changes nothing: it is off until you set `networkPolicy.rebomBackend.egress.enabled: true`. It needs `networkPolicy.enabled: true`; the chart refuses to render with the egress policy on and `networkPolicy.enabled` off, so to switch every policy off set both to `false`.
+
+## NODE_ENV of the rebom pod
+
+The rebom container runs with `NODE_ENV` from `rebom.backend.nodeEnv`, which is `production` by default.
+
+- **Allowed values: `production` and `development`.** Empty, `null` or a missing key give `production`. Any other value, a typo or another case included, stops the render with `rebom.backend.nodeEnv: "<value>" is not production or development.`, so the pod is never started in a mode nobody asked for.
+- **`production`** turns off GraphQL introspection on port 4000, serves the production landing page instead of the sandbox page, and answers a malformed, too large or wrongly encoded request body with the status text only, without a stack trace. Status codes do not change, and ReARM does not use introspection.
+- **`development` is for debugging only.** It turns introspection, the sandbox landing page and the stack traces in error responses back on. Set it for the time of the debugging and remove it afterwards.
+- **The log level is not set by this value**, but by `rebom.backend.logLevel`.
+- **The chart value takes precedence over a `NODE_ENV` in the secret of `rebom.backend.rebomPropsSecretName`.** An install that kept `NODE_ENV=development` there runs on `production` after the upgrade; set `rebom.backend.nodeEnv: development` instead.
+- **Upgrading.** An upgrade with an old values file, or with `--reuse-values`, gets `production` with no change to the values; the rebom pod restarts once because its template changed. The init container `rebom-backend-init` only copies the migrations and gets no `NODE_ENV`.
+
+Check the value of a running install:
+
+```bash
+kubectl -n <ns> exec deploy/<r>-rebom-backend -- printenv NODE_ENV
+```

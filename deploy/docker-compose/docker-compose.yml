@@ -201,6 +201,7 @@ services:
      - OCIARTIFACTS_REGISTRY_NAMESPACE=${OCI_REGISTRY_NAMESPACE:-rearm}
      - OCI_STORAGE_ENABLED=true
      - OCI_ARTIFACT_SERVICE_HOST=http://oci-artifact-service:8083
+     - NODE_ENV=${REBOM_NODE_ENV:-production}
     depends_on:
      - rebom-postgresql
     deploy:
