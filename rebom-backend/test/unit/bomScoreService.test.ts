@@ -29,6 +29,7 @@ import {
     SCORE_MAX_CONCURRENT
 } from '../../src/services/bom/bomScoreService';
 import { BomScoreError, BomScoreErrorReason, toGraphQLError, ERROR_CODES } from '../../src/types/errors';
+import { buildChildEnv, ChildTool } from '../../src/childEnv';
 import { shellExecDetailed, ShellResult, runQuery, pool } from '../../src/utils';
 import * as Oci from '../../src/services/oci';
 import { logger } from '../../src/logger';
@@ -130,7 +131,7 @@ describe('scoreBom: the CLI call (U-3, U-4, U-5)', () => {
         expect(cmd).toBe('rearm');
         const file = args[args.length - 1];
         expect(args).toEqual(['bomutils', 'score', '--format', 'json', '--profile', 'fda', '--profile', 'cisa-2026', '--infile', file]);
-        expect(opts).toEqual({ timeoutMs: SCORE_TIMEOUT_MS, maxStdoutBytes: SCORE_MAX_REPORT_BYTES });
+        expect(opts).toStrictEqual({ timeoutMs: SCORE_TIMEOUT_MS, maxStdoutBytes: SCORE_MAX_REPORT_BYTES, env: buildChildEnv(ChildTool.REARM_BOM) });
         expect(SCORE_TIMEOUT_MS).toBe(60000);
         expect(SCORE_MAX_REPORT_BYTES).toBe(16777216);
         expect(seen!.exists).toBe(true);

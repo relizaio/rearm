@@ -27,8 +27,10 @@ ARG REARM_CLI_VERSION=26.11.12
 RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk info -e -v ca-certificates-bundle
 ENV NODE_OPTIONS=--use-openssl-ca SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
-# Install PostgreSQL and unzip for running tests (same approach as the ReARM backend)
-RUN apk add postgresql postgresql-contrib unzip wget
+# Install PostgreSQL and unzip for running tests (same approach as the ReARM backend). The ICU and
+# C++ runtime packages of the shipped stage let cyclonedx-cli run here under its shipped settings
+# (TPF-256 design 3.9).
+RUN apk add postgresql postgresql-contrib unzip wget libstdc++ libatomic icu-data-full icu-libs
 
 # Initialize PostgreSQL database for tests
 RUN mkdir /run/postgresql && \
@@ -96,6 +98,9 @@ ENV POSTGRES_PORT=5438
 ENV POSTGRES_USER=postgres
 ENV POSTGRES_PASSWORD=password
 ENV POSTGRES_DATABASE=postgres
+# The settings the shipped stage gives the tools, so the tests run them with the short child
+# environment as an install does (TPF-256 design 3.9).
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 
 # Start PostgreSQL, create schema, run migrations, run tests, then stop PostgreSQL
 RUN su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && \
@@ -203,6 +208,11 @@ FROM deliverable AS trust-gate
 USER root
 # The shipped stage must carry the production default.
 RUN test "$NODE_ENV" = "production"
+# The tools as the run user with the short environment rebom gives them (TPF-256 design 3.9):
+# cyclonedx-cli with its row, the rearm CLI with a HOME that does not exist.
+COPY test/fixtures/merge/engine-check-a.cdx.json /gate/child-env.cdx.json
+RUN su apprunner -s /bin/sh -c 'env -i PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false HOME=/home/apprunner cyclonedx-cli validate --input-format json --input-file /gate/child-env.cdx.json' && \
+    su apprunner -s /bin/sh -c 'env -i PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 HOME=/nonexistent rearm bomutils score --format json --infile /gate/child-env.cdx.json > /dev/null'
 RUN apk add --no-cache curl openssl
 COPY ci/trust-gate/ /gate/
 RUN sh /gate/trust-gate.sh && node /gate/trust-gate.mjs && echo "trust-gate ok $(date -u +%FT%TZ)" > /gate/ok

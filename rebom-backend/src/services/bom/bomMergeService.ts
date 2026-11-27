@@ -7,6 +7,7 @@ import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileC
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
+import { buildChildEnv, ChildTool } from '../../childEnv';
 
 export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: string): Promise<any> {
   return (await mergeBomsWithInputRecord(ids, rebomOptions, org)).bom
@@ -178,7 +179,7 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
       command.push('--input-files', path)
     })
     command.push('--purl', purl)
-    const mergeResponse: string = await shellExec('rearm', command, undefined, 'info')
+    const mergeResponse: string = await shellExec('rearm', command, undefined, 'info', buildChildEnv(ChildTool.REARM_BOM))
     
     await deleteTmpFiles(bomPaths)
 
