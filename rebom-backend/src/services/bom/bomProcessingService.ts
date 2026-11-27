@@ -19,6 +19,7 @@ import { getBearCredentials, getBearIntegration } from '../integrationService';
 import { SpdxService } from '../spdx';
 import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
 import { effectiveSkipPatterns } from './enrichmentSkipPatterns';
+import { buildEnrichmentChildEnv } from './enrichmentChildEnv';
 import { RELEASE_NODE_PROPERTY, isReleaseNodeStamp, isRebomMergeOutput, stripReleaseNodeStamps } from './releaseNodeStamp';
 export { RELEASE_NODE_PROPERTY } from './releaseNodeStamp';
 import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
@@ -2920,7 +2921,7 @@ function computeSha256Hash(obj: string): string {
  * 
  * @param bom - CycloneDX BOM to enrich
  * @param bearUri - BEAR service URI
- * @param bearApiKey - BEAR API key
+ * @param bearApiKey - BEAR API key; handed to the CLI in its environment (REARM_BEARAPIKEY), never as an argument
  * @param skipPatterns - Optional skip patterns for enrichment
  * @param bomUuid - UUID of the BOM record (for logging)
  * @returns EnrichmentResult with success status and enriched BOM or error
@@ -2938,6 +2939,9 @@ export async function enrichCycloneDxBom(
   try {
     logger.info({ serialNumber: bom.serialNumber, bomUuid }, 'Starting CycloneDX BOM enrichment using rearm-cli');
 
+    // The key goes to the child in its environment only (REARM_BEARAPIKEY), never in its arguments.
+    const childEnv = buildEnrichmentChildEnv(bearApiKey);
+
     inputFile = await createTempFile(bom);
     outputFile = await createTempFile({});
     logger.debug({ inputFile, outputFile }, 'Created temporary files for enrichment');
@@ -2946,7 +2950,6 @@ export async function enrichCycloneDxBom(
       'bomutils',
       'enrich',
       '--bearUri', bearUri,
-      '--bearApiKey', bearApiKey,
       '-f', inputFile,
       '-o', outputFile
     ];
@@ -2960,7 +2963,7 @@ export async function enrichCycloneDxBom(
     logger.debug({ skipPatterns: patterns }, 'Added skip patterns to enrichment command');
 
     logger.info('Running enrichment: rearm-cli bomutils enrich');
-    const result = await shellExec('rearm', args, ENRICHMENT_TIMEOUT_MS);
+    const result = await shellExec('rearm', args, ENRICHMENT_TIMEOUT_MS, 'error', childEnv);
     logger.debug({ enrichmentOutput: result }, 'rearm-cli enrichment completed');
 
     const enrichedContent = await fs.promises.readFile(outputFile, 'utf8');
