@@ -10,7 +10,12 @@ const query = vi.fn()
 vi.mock('@/utils/graphql', () => ({ default: { query } }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: {} }), RouterLink: { props: ['to'], template: '<a :href="to"><slot/></a>' } }))
 vi.mock('sweetalert2', () => ({ default: { fire: vi.fn() } }))
+const { default: Swal } = await import('sweetalert2')
 const { default: ReleaseSafetyContext } = await import('./ReleaseSafetyContext.vue')
+
+function docName (doc: any): string {
+    return doc?.definitions?.[0]?.name?.value ?? ''
+}
 
 const tooltip = { template: '<span><slot name="trigger"/><slot/></span>' }
 
@@ -31,7 +36,10 @@ function releaseView (rows: any[], over: any = {}) {
 }
 
 async function mounted (rows: any[], over: any = {}) {
-    query.mockResolvedValue({ data: { getSafetyContextReleaseView: releaseView(rows, over) } })
+    // Routed by query document: the tab asks the release summary first, then the view.
+    query.mockImplementation(({ query: doc }: any) => Promise.resolve(docName(doc) === 'GetSafetyContextReleaseSummary'
+        ? { data: { getSafetyContextReleaseSummary: { canRead: true, pending: 0 } } }
+        : { data: { getSafetyContextReleaseView: releaseView(rows, over) } }))
     const w = mount(ReleaseSafetyContext, {
         props: { orgUuid: 'org-1', releaseUuid: 'rel-1' },
         global: { stubs: { NTooltip: tooltip, Tooltip: tooltip, SafetyContextProposals: true, SafetyContextSourceModal: true } }
@@ -115,7 +123,7 @@ describe('ReleaseSafetyContext', () => {
 
     it('asks for the release view with up to 500 rows', async () => {
         await mounted([row({})])
-        const call = query.mock.calls[0][0]
+        const call = query.mock.calls.map((c: any) => c[0]).find((c: any) => docName(c.query) === 'GetSafetyContextReleaseView')
         expect(call.query.loc.source.body).toContain('getSafetyContextReleaseView')
         expect(call.variables).toMatchObject({ org: 'org-1', release: 'rel-1', includeSuperseded: false, limit: 500 })
     })
@@ -228,5 +236,67 @@ describe('ReleaseSafetyContext device view (product release)', () => {
         expect(w.text()).toContain('<b>x</b>')
         expect(w.text()).toContain('<img src=x>')
         expect(w.find('[data-testid="safety-summary-line"]').text()).toBe('<b>s</b>: <img src=x> (1 release)')
+    })
+})
+
+// Readers without Finding Analysis read on the release: the summary answers canRead false and the
+// tab shows one note and runs no other query. Load errors of the tab are inline, never a popup.
+describe('ReleaseSafetyContext access and load errors', () => {
+    const stubs = { NTooltip: tooltip, Tooltip: tooltip, SafetyContextProposals: true, SafetyContextSourceModal: true }
+
+    beforeEach(() => { query.mockReset(); vi.mocked(Swal.fire).mockClear() })
+
+    async function mountWith (route: (name: string) => Promise<any>) {
+        query.mockImplementation(({ query: doc }: any) => route(docName(doc)))
+        const w = mount(ReleaseSafetyContext, { props: { orgUuid: 'org-1', releaseUuid: 'rel-1' }, global: { stubs } })
+        await flushPromises()
+        return w
+    }
+
+    it('canRead false: only the note, and no query but the summary (u12)', async () => {
+        const w = await mountWith(() => Promise.resolve({ data: { getSafetyContextReleaseSummary: {
+            canRead: false, pending: null, pendingDowngrade: null, pendingUncomparable: null, pendingAwaitingSbom: null } } }))
+        expect(w.find('[data-testid="safety-tab-no-read"]').text()).toBe('You need Finding Analysis read on this release to see '
+            + 'its safety levels and proposals. Ask an organization administrator to grant it.')
+        expect(w.find('[data-testid="safety-context-records"]').exists()).toBe(false)
+        expect(w.findComponent({ name: 'SafetyContextProposals' }).exists()).toBe(false)
+        expect(query.mock.calls.map((c: any) => docName(c[0].query))).toEqual(['GetSafetyContextReleaseSummary'])
+    })
+
+    it('canRead true: the summary first, then the view; the proposals are listed (u12)', async () => {
+        const w = await mountWith((name) => Promise.resolve(name === 'GetSafetyContextReleaseSummary'
+            ? { data: { getSafetyContextReleaseSummary: { canRead: true, pending: 1 } } }
+            : { data: { getSafetyContextReleaseView: releaseView([row({})]) } }))
+        expect(query.mock.calls.map((c: any) => docName(c[0].query)))
+            .toEqual(['GetSafetyContextReleaseSummary', 'GetSafetyContextReleaseView'])
+        expect(w.find('[data-testid="safety-tab-no-read"]').exists()).toBe(false)
+        expect(w.findComponent({ name: 'SafetyContextProposals' }).exists()).toBe(true)
+    })
+
+    it('a summary error is an inline alert, no popup, no other query (u12)', async () => {
+        const w = await mountWith(() => Promise.reject(new Error('Internal server error (ref ab12cd34)')))
+        expect(w.find('[data-testid="safety-tab-error"]').text())
+            .toBe('Could not load the safety levels of this release: Internal server error (ref ab12cd34)')
+        expect(Swal.fire).not.toHaveBeenCalled()
+        expect(query).toHaveBeenCalledTimes(1)
+    })
+
+    it('a records error is an inline alert, no popup (u12)', async () => {
+        const w = await mountWith((name) => name === 'GetSafetyContextReleaseSummary'
+            ? Promise.resolve({ data: { getSafetyContextReleaseSummary: { canRead: true, pending: 0 } } })
+            : Promise.reject(new Error('Database error (ref 0f0f0f0f)')))
+        expect(w.find('[data-testid="safety-records-error"]').text())
+            .toBe('Could not load the safety levels of this release: Database error (ref 0f0f0f0f)')
+        expect(Swal.fire).not.toHaveBeenCalled()
+    })
+
+    it('passes a proposal change on as changed, for the tab badge', async () => {
+        const w = await mountWith((name) => Promise.resolve(name === 'GetSafetyContextReleaseSummary'
+            ? { data: { getSafetyContextReleaseSummary: { canRead: true, pending: 1 } } }
+            : { data: { getSafetyContextReleaseView: releaseView([row({})]) } }))
+        w.findComponent({ name: 'SafetyContextProposals' }).vm.$emit('changed')
+        await flushPromises()
+        expect(w.emitted('changed')).toHaveLength(1)
+        expect(query.mock.calls.filter((c: any) => docName(c[0].query) === 'GetSafetyContextReleaseView')).toHaveLength(2)
     })
 })

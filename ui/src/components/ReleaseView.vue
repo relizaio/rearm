@@ -1785,7 +1785,13 @@
                     </n-space>
                 </n-tab-pane>
                 <n-tab-pane v-if="!isDocumentRound" name="safety" tab="Safety Context" data-testid="release-safety-context-tab">
-                    <release-safety-context v-if="release && release.org" :org-uuid="release.org" :release-uuid="releaseUuid" />
+                    <template #tab>
+                        Safety Context
+                        <safety-pending-badge v-if="release && release.org" :org-uuid="release.org" :release-uuid="releaseUuid"
+                            :refresh-key="safetyRefreshKey" />
+                    </template>
+                    <release-safety-context v-if="release && release.org" :org-uuid="release.org" :release-uuid="releaseUuid"
+                        @changed="safetyRefreshKey++" />
                 </n-tab-pane>
                 <!-- SUPPORT: everything this release ASSERTS about support, in one place.
                      Until now these controls were scattered down the Components tab, between
@@ -2354,6 +2360,7 @@ import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
 import ReleaseSafetyContext from '@/components/ReleaseSafetyContext.vue'
+import SafetyPendingBadge from '@/components/SafetyPendingBadge.vue'
 import SbomScorePanel from '@/components/SbomScorePanel.vue'
 import ArtifactScanStatusPanel from '@/components/ArtifactScanStatusPanel.vue'
 import ReleaseSubmissionsPanel from '@/components/ReleaseSubmissionsPanel.vue'
@@ -6674,6 +6681,8 @@ async function loadArtifactSbomScore (signal: AbortSignal): Promise<string> {
 const showScanStatusModal: Ref<boolean> = ref(false)
 const scanStatusArtifact: Ref<any> = ref(null)
 const scanStatusRun: Ref<number> = ref(0)
+// Bumped when the Safety Context tab changes a proposal, so the tab's pending badge reloads.
+const safetyRefreshKey: Ref<number> = ref(0)
 
 function openScanStatusModal (artifact: any) {
     scanStatusArtifact.value = artifact
