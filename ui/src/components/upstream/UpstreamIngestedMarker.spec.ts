@@ -358,7 +358,7 @@ describe('T-1075 to T-1079: the source name comes from the item and the release,
 
     for (const isOrgAdmin of [false, true]) {
         it(`T-1075 ITEM, ${isOrgAdmin ? 'administrator' : 'reader'}: the name from the item; the source row read for the administrator only`, async () => {
-            answer({ origin: item(), source: ROW, follows: [] })
+            answer({ origin: item(), source: ROW })
             const w = await mountMarker('ITEM', isOrgAdmin)
             expect(w.text()).toContain(headlineOf('ITEM', 'Acme TEA'))
             expect(w.text()).not.toContain('Row name')
@@ -368,7 +368,7 @@ describe('T-1075 to T-1079: the source name comes from the item and the release,
         })
 
         it(`T-1076 RELEASE, ${isOrgAdmin ? 'administrator' : 'reader'}: the name from the release, no source read, the refusal not shown`, async () => {
-            answer({ origin: release(), source: refusal(NOT_AUTHORIZED), follows: [] })
+            answer({ origin: release(), source: refusal(NOT_AUTHORIZED) })
             const w = await mountMarker('RELEASE', isOrgAdmin)
             expect(w.text()).toContain(headlineOf('RELEASE', 'Acme TEA'))
             expect(sent(GET_UPSTREAM_SOURCE)).toHaveLength(0)
@@ -376,13 +376,30 @@ describe('T-1075 to T-1079: the source name comes from the item and the release,
         })
     }
 
-    it('T-1077 ITEM, administrator, the source and the follows refused: the name stays, no button, no follow line, no error', async () => {
-        answer({ origin: item(), source: refusal(NOT_AUTHORIZED), follows: refusal(NOT_AUTHORIZED) })
+    // A follow named on the item hides the button by itself, so the source refusal is checked on an
+    // item that names none, and the follow refusal on one whose activeFollow is read.
+    it('T-1077 ITEM, administrator, the source refused and no follow named: the name stays, no button, no follow read, no error', async () => {
+        answer({ origin: item(), source: refusal(NOT_AUTHORIZED) })
         const w = await mountMarker('ITEM', true)
         expect(w.text()).toContain(headlineOf('ITEM', 'Acme TEA'))
         expect(sent(GET_UPSTREAM_SOURCE)).toHaveLength(1)
+        expect(sent(GET_MARKER_FOLLOW)).toHaveLength(0)
         expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
         expect(w.find('[data-testid="upstream-marker-follow"]').exists()).toBe(false)
+        expect(w.text()).not.toContain(NOT_AUTHORIZED)
+    })
+
+    it('T-1077 ITEM, administrator, the source and the follow read refused: the name stays, one follow read, no follow line or link, no error', async () => {
+        answer({ origin: item({ activeFollow: FOLLOW }), source: refusal(NOT_AUTHORIZED), follow: refusal(NOT_AUTHORIZED) })
+        const w = await mountMarker('ITEM', true)
+        expect(w.text()).toContain(headlineOf('ITEM', 'Acme TEA'))
+        expect(sent(GET_UPSTREAM_SOURCE)).toHaveLength(1)
+        expect(sent(GET_MARKER_FOLLOW).map(c => c[0].variables)).toEqual([{ uuid: FOLLOW }])
+        expect(w.find('[data-testid="upstream-marker-follow"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-marker-follow-link"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-marker-last-sync"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-marker-item-gone"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
         expect(w.text()).not.toContain(NOT_AUTHORIZED)
     })
 
@@ -392,7 +409,7 @@ describe('T-1075 to T-1079: the source name comes from the item and the release,
                 const o = origin(subject, { sourceName: shape === 'null' ? null : '' })
                 if (shape === 'absent') delete o.sourceName
                 expect('sourceName' in o).toBe(shape !== 'absent')
-                answer({ origin: o, source: ROW, follows: [] })
+                answer({ origin: o, source: ROW })
                 const w = await mountMarker(subject, true)
                 expect(w.text()).toContain(headlineOf(subject, 'an upstream source'))
                 expect(w.text()).not.toContain('Row name')
@@ -400,7 +417,7 @@ describe('T-1075 to T-1079: the source name comes from the item and the release,
         }
 
         it(`T-1079 ${subject}: a markup name is shown as text and creates no element`, async () => {
-            answer({ origin: origin(subject, { sourceName: HOSTILE }), source: ROW, follows: [] })
+            answer({ origin: origin(subject, { sourceName: HOSTILE }), source: ROW })
             const w = await mountMarker(subject, true)
             expect(w.text()).toContain(headlineOf(subject, HOSTILE))
             expect(w.find('img').exists()).toBe(false)
@@ -409,7 +426,7 @@ describe('T-1075 to T-1079: the source name comes from the item and the release,
     }
 
     it('T-1079 ITEM: the administrator flag set after the read brings one source read and the button', async () => {
-        answer({ origin: item(), source: ROW, follows: [] })
+        answer({ origin: item(), source: ROW })
         const w = await mountMarker('ITEM', false)
         expect(sent(GET_UPSTREAM_SOURCE)).toHaveLength(0)
         expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
