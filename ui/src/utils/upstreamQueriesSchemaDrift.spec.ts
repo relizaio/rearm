@@ -16,6 +16,7 @@ import {
     GET_ARTIFACT_VEX_IMPORT, GET_COMPONENT_INGESTED_FROM, GET_MARKER_FOLLOW, GET_RELEASE_INGESTED_FROM, GET_VEX_PROPOSAL_ORIGIN,
     GET_VEX_PROPOSAL_ORIGINS,
 } from './upstreamMarkerQueries'
+import { GET_UPSTREAM_OFFERED_ITEMS, offeredPageOf } from './upstreamOfferQueries'
 import { proSchema } from './schemaDriftSupport'
 
 // T-502 (TPF-185 design 3.4): every document of the upstream sources feature against the Pro
@@ -74,7 +75,12 @@ const MARKER_DOCUMENTS: Row[] = [
     ['GET_VEX_PROPOSAL_ORIGIN', GET_VEX_PROPOSAL_ORIGIN, 'getVexStatementProposal', 'query'],
 ]
 
-const ALL: Row[] = [...SOURCE_DOCUMENTS, ...FOLLOW_DOCUMENTS, ...OPERATE_DOCUMENTS, ...ONE_OFF_DOCUMENTS, ...MARKER_DOCUMENTS]
+// TPF-243 (design 3.1): the list of what a saved source offers, for the start of a follow.
+const OFFER_DOCUMENTS: Row[] = [
+    ['GET_UPSTREAM_OFFERED_ITEMS', GET_UPSTREAM_OFFERED_ITEMS, 'upstreamOfferedItems', 'query'],
+]
+
+const ALL: Row[] = [...SOURCE_DOCUMENTS, ...FOLLOW_DOCUMENTS, ...OPERATE_DOCUMENTS, ...ONE_OFF_DOCUMENTS, ...MARKER_DOCUMENTS, ...OFFER_DOCUMENTS]
 
 const operations = (doc: DocumentNode): OperationDefinitionNode[] =>
     doc.definitions.filter((d): d is OperationDefinitionNode => d.kind === Kind.OPERATION_DEFINITION)
@@ -306,5 +312,35 @@ describe('the marker documents (design 3.11 and 3.12)', () => {
         expect(selectedPaths(GET_VEX_PROPOSAL_ORIGINS)).toEqual(origin)
         expect(selectedPaths(GET_VEX_PROPOSAL_ORIGIN)).toEqual(origin)
         for (const name of ['org', 'status']) expect(argOf(GET_VEX_PROPOSAL_ORIGINS, name)?.value.kind, name).toBe(Kind.VARIABLE)
+    })
+})
+
+// T-1160 (TPF-243 design 3.1): the one document of the source's list, field for field, with each of
+// its five arguments a variable of the declared type.
+describe('the document of the source list (TPF-243, design 3.1)', () => {
+    it('selectsExactlyTheFieldsOfTheDesign', () => {
+        expect(selectedPaths(GET_UPSTREAM_OFFERED_ITEMS)).toEqual([
+            'source', 'kind', 'failure', 'sourceFailure', 'message', 'items',
+            ...['upstreamUuid', 'name', 'identifiers', 'identifiers.idType', 'identifiers.idValue', 'identifiersDropped', 'activeFollow'].map(f => 'items.' + f),
+            'next', 'nextPageToken', 'rowsReceived', 'rowsDropped', 'cut',
+        ].sort())
+    })
+
+    it('passesEachOfTheFiveArgumentsAsAVariableOfTheDeclaredType', () => {
+        const args = rootField(GET_UPSTREAM_OFFERED_ITEMS).arguments!
+        expect(args.map(a => a.name.value)).toEqual(['source', 'kind', 'identifier', 'pageSize', 'pageToken'])
+        for (const a of args) expect(a.value, a.name.value).toEqual(expect.objectContaining({ kind: Kind.VARIABLE, name: expect.objectContaining({ value: a.name.value }) }))
+        const declared = Object.fromEntries(operations(GET_UPSTREAM_OFFERED_ITEMS)[0].variableDefinitions!.map(v => [v.variable.name.value, print(v.type)]))
+        expect(declared).toEqual({
+            source: 'ID!', kind: 'UpstreamItemKind!', identifier: 'UpstreamIdentifierInput', pageSize: 'Int', pageToken: 'String',
+        })
+        expect(literalArguments(GET_UPSTREAM_OFFERED_ITEMS)).toEqual([])
+    })
+
+    it('readsThePageFromTheAnswer', () => {
+        const page = { source: 's', items: [] }
+        expect(offeredPageOf({ upstreamOfferedItems: page })).toBe(page)
+        expect(offeredPageOf({})).toBeNull()
+        expect(offeredPageOf(null)).toBeNull()
     })
 })

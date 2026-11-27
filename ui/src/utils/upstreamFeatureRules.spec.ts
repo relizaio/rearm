@@ -113,3 +113,27 @@ describe('the Pro-only selections of the markers', () => {
         ])
     })
 })
+
+// T-1161 (TPF-243 design 3.1 and 3.7, threat model rows v and vi): the list of a source is named by
+// its query module only, and that module is imported by the start of a follow only, which still
+// does not import the confirm document.
+describe('the single sender of the source list', () => {
+    const files = filesUnder(SRC)
+    const rel = (f: string) => f.slice(SRC.length).split('\\').join('/')
+
+    it('namesTheListFieldInTheQueryModuleOnly', () => {
+        const hits = files.filter(f => /upstreamOfferedItems/.test(readFileSync(f, 'utf8'))).map(rel)
+        expect(hits).toEqual(['utils/upstreamOfferQueries.ts'])
+    })
+
+    it('hasTheQueryModuleImportedByTheStartOfAFollowOnly', () => {
+        const hits = files.filter(f => /from ['"][^'"]*upstreamOfferQueries['"]/.test(readFileSync(f, 'utf8'))).map(rel)
+        expect(hits).toEqual(['components/upstream/UpstreamFollowStartModal.vue'])
+    })
+
+    it('keepsTheConfirmDocumentOutOfTheStartOfAFollow', () => {
+        const start = readFileSync(join(SRC, 'components', 'upstream', 'UpstreamFollowStartModal.vue'), 'utf8')
+        expect(start).not.toMatch(/\bCONFIRM_UPSTREAM_FOLLOW\b/)
+        expect(start).not.toMatch(/\bconfirmUpstreamFollow\b/)
+    })
+})

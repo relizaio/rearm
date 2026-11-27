@@ -59,7 +59,7 @@ import type { DataTableColumns } from 'naive-ui'
 import { NButton, NDataTable, NModal, NSpace, NSpin, NSwitch, NTag } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
-import { isForbidden, isUuid, refusalOf } from '@/utils/upstream'
+import { isForbidden, isUuid, PROBE_POLL_MS, refusalOf } from '@/utils/upstream'
 import {
     ARCHIVE_UPSTREAM_SOURCE, GET_UPSTREAM_SOURCE, GET_UPSTREAM_SOURCES, GET_UPSTREAM_SYNCS, PROBE_UPSTREAM_SOURCE, SYNC_UPSTREAM_SOURCE_NOW,
 } from '@/utils/upstreamSourceQueries'
@@ -81,7 +81,6 @@ const props = defineProps<{
 const EMPTY_ADMIN = 'No upstream source yet. Add the TEA server of a supplier to follow its products and components.'
 const EMPTY_MEMBER = 'No upstream source is configured. An administrator of the organization adds them.'
 const KEY_ID_NOT_SHOWN = 'key id not shown to you'
-const PROBE_POLL_MS = 2000
 const SYNC_POLL_MS = 5000
 
 type PanelState = 'LOADING' | 'LIST' | 'FORBIDDEN' | 'ERROR'

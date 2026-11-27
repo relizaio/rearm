@@ -25,7 +25,7 @@ export const probeTimeoutHint = 'If the server is on a private network, the netw
 
 export const probeApiKeyHint = 'Check the server root as well as the key: a wrong root gives the same answer.'
 
-export const followUuidHint = 'The uuid of the product or component on the supplier\'s TEA server. ReARM cannot search a supplier\'s catalogue by name: ask the supplier for it, or ingest one release by its TEI and use Follow this item on the product.'
+export const followUuidHint = 'The uuid of the product or component on the supplier\'s TEA server, for an item that is not in the list. Ask the supplier for it, or ingest one release by its TEI and use Follow this item on the product.'
 
 export const startingPointRequired = 'Choose a starting point.'
 
@@ -352,6 +352,126 @@ export const documentReServingLabel: Record<string, string> = {
     RE_SERVED: 'Passed on',
 }
 
+// ---- The list of a source in the start of a follow (the dialog Follow an item) ----
+
+export const offerModeListLabel = 'From the list'
+
+export const offerModeUuidLabel = 'By uuid'
+
+export const offerChooseSource = 'Choose a source to see its list.'
+
+export const offerSourceArchived = 'The source is archived. Its list is not read.'
+
+export const offerNeverProbed = 'The source was never probed. Probe it to read its list.'
+
+export const offerProbePending = 'The list is read when the probe has answered.'
+
+export const offerProbeFailed = 'The list is not read from a source whose last probe failed. Probe again, or enter the uuid of the item.'
+
+export const offerForbiddenSentence = 'You are not allowed to see the list of this source, or the source does not exist. The list needs an administrator of the organization.'
+
+export const offerLoading = 'Reading the list from the source. An answer can take up to about a minute.'
+
+export const offerWaiting = 'Waiting for the earlier request to the source to end.'
+
+export const offerEmptyHint = 'Switch the kind, or enter the uuid of the item.'
+
+export const offerNoName = '(no name)'
+
+export const offerEndSentence = 'The source has no more rows.'
+
+export const offerMoreSentence = 'The source has more rows.'
+
+export const offerTokenUnusableSentence = 'The source has more rows, but its page token is not usable, so they cannot be loaded.'
+
+export const offerCutSentence = 'The answer of the source was cut. Rows are missing.'
+
+export const offerMissingHint = 'Look the item up by an identifier, or enter its uuid.'
+
+export const offerFilterPlaceholder = 'Filter the loaded rows'
+
+export const offerLookupTypeProblem = 'Choose an identifier type.'
+
+/** The backend's own sentence for a lookup value it refuses (INVALID_FILTER), letter for letter. */
+export const identifierValueProblem = 'The identifier value must be 1 to 2048 printable ASCII characters.'
+
+export const offerLookupHead = 'Result of the lookup.'
+
+export const offerLookupExactHint = 'The lookup is exact: the type and the whole value must match.'
+
+export const offerFollowed = 'Followed'
+
+/** Shown instead of the served sentences of FETCHER_BUSY and FAILED, which speak of a probe. */
+export const offerFetcherBusy = 'The fetcher was busy. Try again later.'
+
+export const offerSourceFailed = 'The request to the source failed.'
+
+export function offerMoreIdentifiers (n: number): string {
+    return `and ${n} more`
+}
+
+export function offerIdentifiersDropped (n: number): string {
+    return n === 1
+        ? '1 identifier of the source was not usable and is not shown.'
+        : `${n} identifiers of the source were not usable and are not shown.`
+}
+
+export function offerLoadedCount (n: number): string {
+    return n === 1 ? '1 row loaded.' : `${n} rows loaded.`
+}
+
+export function offerMaxRowsSentence (received: number): string {
+    return `The source answered ${received} rows in one page, more than ReARM reads. Rows are missing.`
+}
+
+export function offerRowsDroppedSentence (n: number): string {
+    return n === 1
+        ? '1 row of the source was not usable and is not shown.'
+        : `${n} rows of the source were not usable and are not shown.`
+}
+
+export function offerFilterSentence (n: number): string {
+    return `Filters the rows loaded so far (${n}), by name, uuid and identifier. It does not search the source.`
+}
+
+export function offerFilterCount (m: number, n: number): string {
+    return `Matching: ${m} of ${n} loaded rows.`
+}
+
+/** UpstreamItemKind: a first page without a row. */
+export const offerEmptySentence: Record<string, string> = {
+    PRODUCT: 'The source lists no products.',
+    COMPONENT: 'The source lists no components.',
+}
+
+/** UpstreamItemKind: a lookup without a row. */
+export const offerLookupNoneSentence: Record<string, string> = {
+    PRODUCT: 'The source has no product with this identifier.',
+    COMPONENT: 'The source has no component with this identifier.',
+}
+
+/** UpstreamIdentifierType, in the order of the enum. */
+export const identifierTypeLabel: Record<string, string> = {
+    CPE: 'CPE',
+    TEI: 'TEI',
+    PURL: 'PURL',
+    COMPLIANCE_DOCUMENT: 'Compliance document',
+}
+
+/**
+ * UpstreamOfferFailure: copies of the backend's sentences, shown only for a failed page whose
+ * message is null or empty. A served message is shown as it is.
+ */
+export const offerFailureSentence: Record<string, string> = {
+    TOKEN_NOT_ACCEPTED: 'The server did not accept the page token. Start again from the first page.',
+    FILTER_REFUSED: 'The server refused the identifier lookup.',
+    LIST_NOT_SUPPORTED: 'The server does not offer this list.',
+    ANSWER_INVALID: 'The server\'s answer is not a TEA list.',
+    ANSWER_TOO_LARGE: 'The server\'s answer is larger than ReARM reads. Look the item up by an identifier.',
+    CREDENTIAL_UNREADABLE: 'The stored credential can no longer be read. Enter it again.',
+    SOURCE_FAILURE: 'The source or the fetcher failed.',
+}
+
 /**
  * Every label table above with the name of the schema enum it is keyed by. The spec checks each
  * pair against the Pro schema and that no exported table is missing from this list.
@@ -395,6 +515,10 @@ export const UPSTREAM_LABEL_TABLES: ReadonlyArray<readonly [string, Record<strin
     ['UpstreamProbeState', probeStateLabel],
     ['UpstreamProbeResult', probeResultLabel],
     ['UpstreamDocumentReServing', documentReServingLabel],
+    ['UpstreamItemKind', offerEmptySentence],
+    ['UpstreamItemKind', offerLookupNoneSentence],
+    ['UpstreamIdentifierType', identifierTypeLabel],
+    ['UpstreamOfferFailure', offerFailureSentence],
 ]
 
 /** The word for an enum value, or the empty string for a value the table does not know. Never the raw value. */
