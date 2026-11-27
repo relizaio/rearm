@@ -5,6 +5,8 @@
 // was not ingested; the source's name and the follow when they can be read, and their absence
 // without an error when they cannot; supplier text as text; the snapshot read-only, its VEX import
 // lines read only when it is opened.
+// T-1075 to T-1079: the source's name from the item and the release; the source row read only for
+// an administrator's "Follow this item".
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { print } from 'graphql'
@@ -53,7 +55,7 @@ function refusal (message: string): any {
 
 function item (over: any = {}): any {
     return {
-        uuid: ITEM, source: SOURCE, kind: 'PRODUCT', upstreamUuid: UPSTREAM_UUID, upstreamName: HOSTILE, depth: 2, depthOrigin: 'PROPOSED',
+        uuid: ITEM, source: SOURCE, sourceName: 'Acme TEA', kind: 'PRODUCT', upstreamUuid: UPSTREAM_UUID, upstreamName: HOSTILE, depth: 2, depthOrigin: 'PROPOSED',
         mapping: 'ADOPTED', updateState: 'UPDATED', ...over,
     }
 }
@@ -68,7 +70,8 @@ function file (over: any = {}): any {
 
 function release (over: any = {}): any {
     return {
-        uuid: 'cccccccc-0000-4000-8000-000000000002', item: ITEM, source: SOURCE, upstreamUuid: UPSTREAM_UUID, upstreamVersion: '1.4.0',
+        uuid: 'cccccccc-0000-4000-8000-000000000002', item: ITEM, source: SOURCE, sourceName: 'Acme TEA', upstreamUuid: UPSTREAM_UUID,
+        upstreamVersion: '1.4.0',
         upstreamDate: '2026-11-01T10:00:00Z', state: 'INGESTED', integrity: 'CONSISTENT', updateState: 'UPDATED', presence: 'GONE',
         goneSince: '2026-11-20T10:00:00Z', lineKey: '1.x', oneOff: ONE_OFF,
         collections: [
@@ -293,11 +296,11 @@ describe('T-1090 to T-1095: the follow from the item\'s own fields, read by its 
 })
 
 describe('T-581: the marker of a product or component', () => {
-    it('(a) the source and the follow refused: "an upstream source", the name as text, the adoption sentence, no follow line, no error', async () => {
+    it('(a) the source and the follows refused: the name from the item, the upstream name as text, the adoption sentence, no follow line, no error', async () => {
         answer({ origin: item({ activeFollow: FOLLOW }), source: refusal(NOT_AUTHORIZED), follow: refusal(NOT_AUTHORIZED) })
         const w = await mountMarker('ITEM', true)
         const text = w.text()
-        expect(text).toContain('Ingested from an upstream source: Product ' + HOSTILE)
+        expect(text).toContain('Ingested from Acme TEA: Product ' + HOSTILE)
         expect(w.find('img').exists()).toBe(false)
         expect(w.find('[onerror]').exists()).toBe(false)
         expect(text).toContain(itemMappingLabel.ADOPTED)
@@ -344,6 +347,97 @@ describe('T-581: the marker of a product or component', () => {
             expect(router.push).not.toHaveBeenCalled()
         })
     }
+})
+
+describe('T-1075 to T-1079: the source name comes from the item and the release, the source row only for the follow button', () => {
+    const ROW = { uuid: SOURCE, name: 'Row name', status: 'ACTIVE' }
+    const origin = (subject: 'ITEM' | 'RELEASE', over: any = {}) => (subject === 'ITEM' ? item(over) : release(over))
+    const headlineOf = (subject: 'ITEM' | 'RELEASE', name: string) => (subject === 'ITEM'
+        ? 'Ingested from ' + name + ': Product ' + HOSTILE
+        : 'Ingested from ' + name + ': upstream release 1.4.0')
+
+    for (const isOrgAdmin of [false, true]) {
+        it(`T-1075 ITEM, ${isOrgAdmin ? 'administrator' : 'reader'}: the name from the item; the source row read for the administrator only`, async () => {
+            answer({ origin: item(), source: ROW })
+            const w = await mountMarker('ITEM', isOrgAdmin)
+            expect(w.text()).toContain(headlineOf('ITEM', 'Acme TEA'))
+            expect(w.text()).not.toContain('Row name')
+            const reads = sent(GET_UPSTREAM_SOURCE)
+            expect(reads).toHaveLength(isOrgAdmin ? 1 : 0)
+            if (isOrgAdmin) expect(reads[0][0].variables).toEqual({ uuid: SOURCE })
+        })
+
+        it(`T-1076 RELEASE, ${isOrgAdmin ? 'administrator' : 'reader'}: the name from the release, no source read, the refusal not shown`, async () => {
+            answer({ origin: release(), source: refusal(NOT_AUTHORIZED) })
+            const w = await mountMarker('RELEASE', isOrgAdmin)
+            expect(w.text()).toContain(headlineOf('RELEASE', 'Acme TEA'))
+            expect(sent(GET_UPSTREAM_SOURCE)).toHaveLength(0)
+            expect(w.text()).not.toContain(NOT_AUTHORIZED)
+        })
+    }
+
+    // A follow named on the item hides the button by itself, so the source refusal is checked on an
+    // item that names none, and the follow refusal on one whose activeFollow is read.
+    it('T-1077 ITEM, administrator, the source refused and no follow named: the name stays, no button, no follow read, no error', async () => {
+        answer({ origin: item(), source: refusal(NOT_AUTHORIZED) })
+        const w = await mountMarker('ITEM', true)
+        expect(w.text()).toContain(headlineOf('ITEM', 'Acme TEA'))
+        expect(sent(GET_UPSTREAM_SOURCE)).toHaveLength(1)
+        expect(sent(GET_MARKER_FOLLOW)).toHaveLength(0)
+        expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-marker-follow"]').exists()).toBe(false)
+        expect(w.text()).not.toContain(NOT_AUTHORIZED)
+    })
+
+    it('T-1077 ITEM, administrator, the source and the follow read refused: the name stays, one follow read, no follow line or link, no error', async () => {
+        answer({ origin: item({ activeFollow: FOLLOW }), source: refusal(NOT_AUTHORIZED), follow: refusal(NOT_AUTHORIZED) })
+        const w = await mountMarker('ITEM', true)
+        expect(w.text()).toContain(headlineOf('ITEM', 'Acme TEA'))
+        expect(sent(GET_UPSTREAM_SOURCE)).toHaveLength(1)
+        expect(sent(GET_MARKER_FOLLOW).map(c => c[0].variables)).toEqual([{ uuid: FOLLOW }])
+        expect(w.find('[data-testid="upstream-marker-follow"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-marker-follow-link"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-marker-last-sync"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-marker-item-gone"]').exists()).toBe(false)
+        expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
+        expect(w.text()).not.toContain(NOT_AUTHORIZED)
+    })
+
+    for (const subject of ['ITEM', 'RELEASE'] as const) {
+        for (const shape of ['null', 'absent', 'empty'] as const) {
+            it(`T-1078 ${subject}, sourceName ${shape}: "an upstream source", never the name of the source row`, async () => {
+                const o = origin(subject, { sourceName: shape === 'null' ? null : '' })
+                if (shape === 'absent') delete o.sourceName
+                expect('sourceName' in o).toBe(shape !== 'absent')
+                answer({ origin: o, source: ROW })
+                const w = await mountMarker(subject, true)
+                expect(w.text()).toContain(headlineOf(subject, 'an upstream source'))
+                expect(w.text()).not.toContain('Row name')
+            })
+        }
+
+        it(`T-1079 ${subject}: a markup name is shown as text and creates no element`, async () => {
+            answer({ origin: origin(subject, { sourceName: HOSTILE }), source: ROW })
+            const w = await mountMarker(subject, true)
+            expect(w.text()).toContain(headlineOf(subject, HOSTILE))
+            expect(w.find('img').exists()).toBe(false)
+            expect(w.find('[onerror]').exists()).toBe(false)
+        })
+    }
+
+    it('T-1079 ITEM: the administrator flag set after the read brings one source read and the button', async () => {
+        answer({ origin: item(), source: ROW })
+        const w = await mountMarker('ITEM', false)
+        expect(sent(GET_UPSTREAM_SOURCE)).toHaveLength(0)
+        expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
+        const reads = query.mock.calls.length
+        await w.setProps({ isOrgAdmin: true })
+        await flushPromises()
+        expect(sent(GET_UPSTREAM_SOURCE)).toHaveLength(1)
+        expect(query.mock.calls.length).toBe(reads + 1)
+        expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(true)
+        expect(w.text()).toContain(headlineOf('ITEM', 'Acme TEA'))
+    })
 })
 
 describe('T-582: the marker of a release and its snapshot', () => {
