@@ -31,8 +31,10 @@ const SOURCES = [
 ]
 const global = { stubs: { Modal: { props: ['show'], template: '<div v-if="show" class="modal"><slot/></div>' } } }
 
+// T-1157: the dialog now opens on the source's list unless it is given a uuid; these cases are about
+// the pane By uuid and open it with mode UUID. Their assertions are unchanged.
 function mountModal (props: Record<string, any> = {}) {
-    return mount(StartModal, { props: { show: true, orgUuid: ORG, sources: SOURCES, ...props }, global, attachTo: document.body })
+    return mount(StartModal, { props: { show: true, orgUuid: ORG, sources: SOURCES, mode: 'UUID', ...props }, global, attachTo: document.body })
 }
 
 const uuidInput = (w: any) => w.find('[data-testid="upstream-start-uuid"] input')
@@ -144,7 +146,7 @@ describe('UpstreamFollowStartModal', () => {
 
     it('readsTheActiveSourcesItselfWithoutTheSourcesProp', async () => {
         query.mockResolvedValueOnce({ data: { upstreamSources: SOURCES } })
-        const w = mount(StartModal, { props: { show: true, orgUuid: ORG }, global, attachTo: document.body })
+        const w = mount(StartModal, { props: { show: true, orgUuid: ORG, mode: 'UUID' }, global, attachTo: document.body })
         await flushPromises()
         expect(query).toHaveBeenCalledTimes(1)
         expect(query.mock.calls[0][0].variables).toEqual({ org: ORG, statuses: ['ACTIVE'] })
