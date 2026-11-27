@@ -50,4 +50,17 @@ describe('the helpers without an environment still run their child', () => {
             expect(seen.PATH).toBe(process.env.PATH);
         }
     });
+
+    // round 2 of the mutation hop: an environment the caller gives is the one the child gets, also
+    // together with a time out and together with killProcessGroup (the TEA runner's way to start)
+    it.each([{}, { killProcessGroup: true }])('shellExecDetailed gives the child the environment of the caller (%j)', async (extra) => {
+        const names = ['PATH', 'ONLY_THIS_NAME', 'AND_THIS_ONE'];
+        const given = { PATH: process.env.PATH ?? '/usr/bin:/bin', ONLY_THIS_NAME: 'x', AND_THIS_ONE: '' };
+        const settled = shellExecDetailed(NODE, PRINT, { timeoutMs: 20000, maxStdoutBytes: 100000, env: given, ...extra });
+        await expect(settled).resolves.toMatchObject({ code: 0, timedOut: false });
+        const seen = JSON.parse((await settled).stdout);
+        expect(Object.keys(seen).sort()).toStrictEqual([...names].sort());
+        expect(seen.ONLY_THIS_NAME).toBe('x');
+        expect(seen.AND_THIS_ONE).toBe('');
+    });
 });
