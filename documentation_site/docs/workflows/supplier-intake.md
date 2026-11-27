@@ -28,9 +28,9 @@ Ask the supplier for:
 
 - the root of its TEA server;
 - a credential, when the server is protected;
-- either the uuid of the product or component on the supplier's server, or the TEI of one release.
+- to follow a product or a component: nothing more when it is in the source's list, else its uuid on the supplier's server; to ingest one release: the TEI of that release.
 
-ReARM cannot search a supplier's catalogue by name, so the uuid or the TEI has to come from the supplier.
+ReARM lists what a source offers, sorted by name by the source, and looks an item up by an exact identifier. It cannot search a supplier's catalogue by name, since TEA has no such search.
 
 When the supplier runs ReARM, the root is the supplier organization's TEA API base, `<the supplier's ReARM URL>/tea/<organization TEA id>`, and the credential is an [external key](/configure/programmatic-access#external-keys-tea) of the supplier's organization, entered as an **API key** with its key id and secret.
 
@@ -122,13 +122,35 @@ The probe asks the server for a product that does not exist. So **Reachable** sa
 
 ### The list of sources
 
-The list has the columns Name, Server, Credential, Documents, Last probe, Sync and Actions. The arrow of a row opens **Recent syncs**. The actions are **Follows** for everyone, and **Edit**, **Probe**, **Sync now** and **Archive** for administrators.
+The list has the columns Name, Server, Credential, Documents, Last probe, Sync and Actions. The arrow of a row opens **Recent syncs**. The actions are **Follows** for everyone, and **Follow an item**, **Edit**, **Probe**, **Sync now** and **Archive** for administrators. After **Add source** is saved, the dialog **Follow an item** opens for the new source and shows its list as soon as the first probe has answered.
 
 ## Following a product or a component
 
-On **Upstream**, **Follow an item** opens a dialog with **Source**, **Kind** (Product or Component) and **Upstream uuid**. **Prepare** reads the item and its release history from the source; it creates nothing.
+The dialog **Follow an item** opens in three places: with the button **Follow an item** on **Upstream**; on the tab **Upstream Sources**, with the row action **Follow an item** of a source, and by itself after a new source is saved; and with **Follow this item** on a product or component that was ingested by its TEI, where it opens **By uuid** with the item's source and uuid filled in.
+
+The dialog has **Source**, **Kind** (Product or Component), and two ways to choose the item: **From the list** and **By uuid**.
 
 ![Follow an Item Dialog](./images/supplier-intake-follow-start.png)
+
+**From the list** shows what the chosen source offers of the chosen kind:
+
+- The list is read from the source only when the last probe of the source succeeded. After a failed probe the dialog shows the probe's result, "The list is not read from a source whose last probe failed. Probe again, or enter the uuid of the item.", and the button **Probe again**. While the probe of a new source runs, the dialog says "The list is read when the probe has answered." and shows the list when the probe has answered.
+- An answer can take up to about a minute: "Reading the list from the source. An answer can take up to about a minute."
+- The rows, with the columns Name, Uuid and Identifiers, come in the order of the source, page by page. **Load more** reads the next page. Nothing is read without a click: the dialog reads the first page when the source and the kind are chosen, and never walks through the pages by itself.
+- Under the table, one line counts the rows loaded ("N rows loaded.") and one line says whether the source has more: "The source has no more rows.", "The source has more rows." with **Load more**, or "The source has more rows, but its page token is not usable, so they cannot be loaded."
+- When rows are missing, a warning says why: "The answer of the source was cut. Rows are missing.", "The source answered N rows in one page, more than ReARM reads. Rows are missing.", or "N rows of the source were not usable and are not shown." Then, and when the page token is not usable, the dialog adds "Look the item up by an identifier, or enter its uuid."
+
+The box "Filter the loaded rows" filters only the rows already loaded, as its sentence says: "Filters the rows loaded so far (N), by name, uuid and identifier. It does not search the source." It sends nothing to the source. An item that is not among the loaded rows is found with **Load more**, with the lookup, or by its uuid.
+
+**Look up by identifier** asks the source for the item with one identifier, of the type CPE, TEI, PURL or Compliance document. The lookup is exact: "The lookup is exact: the type and the whole value must match." **Back to the list** returns to the rows loaded before.
+
+A row that the organization already follows has no **Prepare**: it shows **Followed** and **Open the follow**, which opens the follow page.
+
+**By uuid** takes the **Upstream uuid** of the item on the supplier's server, for an item that is not in the list.
+
+**Prepare**, on a row or by uuid, reads the item and its release history from the source; it creates nothing.
+
+The list requests of an organization are limited, for all its administrators and keys together. When the limit is reached, the dialog says "The limit of list requests of the organization is reached. Try again in a minute."
 
 Reading can take a few minutes for a long history. A prepared confirmation stays usable for 30 minutes; after that, **Prepare again**.
 
@@ -342,7 +364,7 @@ Every action on this page is also an operation of the GraphQL API for a signed-i
 ## Limits of this version
 
 - A source is a TEA server; no other kind of source can be added.
-- There is no way to follow everything a supplier publishes. Each product or component is followed on its own, by its uuid on the supplier's server, and ReARM cannot list or search a supplier's catalogue. Following a product brings the component releases its releases reference, and no others.
+- There is no way to follow everything a supplier publishes. Each product or component is followed on its own, and ReARM cannot search a supplier's catalogue by name: it lists the catalogue page by page and looks an item up by an exact identifier. A ReARM server as a source answers its whole list in one page, at most 1000 rows; beyond that, the lookup or the uuid is the way. Following a product brings the component releases its releases reference, and no others.
 - Pre-releases are skipped, and this cannot be switched.
 - One depth applies to all version lines of an item; different lines of one item cannot have different depths.
 - A source can be archived but not deleted, and an archived source cannot be brought back.
