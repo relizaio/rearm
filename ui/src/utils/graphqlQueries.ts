@@ -904,6 +904,47 @@ mutation RepublishReleaseOnTea($release: ID!, $comment: String) {
     }
 }`
 
+// A publish of releases without an SBOM (task TPF-257): the list of releases the act would publish
+// without an SBOM, read on the click, and the publish documents that carry the noSbom policy and
+// select withoutAggregate on the result and on each child row. The CE schema has none of these
+// fields until its next sync, so they live in documents of their own that ReleaseView sends only
+// where teaNoSbomConfirmAvailable holds; the four documents above stay as they are for CE.
+// teaProfileSchemaDrift.spec.ts pins both schemas.
+const TEA_PUBLISH_NO_SBOM_RESULT_FIELDS_GQL = `
+    ${TEA_PUBLISH_RESULT_FIELDS_GQL}
+    withoutAggregate
+    children {
+        withoutAggregate
+    }
+`
+
+const RELEASE_TEA_PUBLICATION_NO_SBOM = gql`
+query ReleaseTeaPublicationNoSbom($release: ID!) {
+    releaseTeaPublicationView(release: $release) {
+        release
+        withoutSbom {
+            release
+            componentName
+            version
+            profiles
+        }
+    }
+}`
+
+const PUBLISH_RELEASE_ON_TEA_NO_SBOM = gql`
+mutation PublishReleaseOnTeaNoSbom($release: ID!, $comment: String, $noSbom: TeaNoSbomPolicy) {
+    publishReleaseOnTea(release: $release, comment: $comment, noSbom: $noSbom) {
+        ${TEA_PUBLISH_NO_SBOM_RESULT_FIELDS_GQL}
+    }
+}`
+
+const REPUBLISH_RELEASE_ON_TEA_NO_SBOM = gql`
+mutation RepublishReleaseOnTeaNoSbom($release: ID!, $comment: String, $noSbom: TeaNoSbomPolicy) {
+    republishReleaseOnTea(release: $release, comment: $comment, noSbom: $noSbom) {
+        ${TEA_PUBLISH_NO_SBOM_RESULT_FIELDS_GQL}
+    }
+}`
+
 const HIDE_RELEASE_ON_TEA = gql`
 mutation HideReleaseOnTea($release: ID!, $comment: String) {
     hideReleaseOnTea(release: $release, comment: $comment) {
@@ -2447,6 +2488,9 @@ export default {
     ReleaseTeaPublicationViewGql: RELEASE_TEA_PUBLICATION_VIEW,
     PublishReleaseOnTeaGql: PUBLISH_RELEASE_ON_TEA,
     RepublishReleaseOnTeaGql: REPUBLISH_RELEASE_ON_TEA,
+    ReleaseTeaPublicationNoSbomGql: RELEASE_TEA_PUBLICATION_NO_SBOM,
+    PublishReleaseOnTeaNoSbomGql: PUBLISH_RELEASE_ON_TEA_NO_SBOM,
+    RepublishReleaseOnTeaNoSbomGql: REPUBLISH_RELEASE_ON_TEA_NO_SBOM,
     HideReleaseOnTeaGql: HIDE_RELEASE_ON_TEA,
     ExternalApiKeysGql: EXTERNAL_API_KEYS,
     CreateExternalApiKeyGql: CREATE_EXTERNAL_API_KEY,

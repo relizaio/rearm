@@ -1895,6 +1895,7 @@
                             <div><strong>State: </strong>{{ teaView.publication.state }} ({{ teaView.publication.exposure }})</div>
                             <div v-if="teaView.publication.state === 'HIDDEN'" data-testid="tea-hidden"><strong>Hidden from TEA:</strong> TEA readers no longer see this release.</div>
                             <div v-if="teaConcealedLine" data-testid="tea-concealed">{{ teaConcealedLine }}</div>
+                            <div v-if="teaNoAggregateLine" data-testid="tea-no-aggregate">{{ teaNoAggregateLine }}</div>
                             <div><strong>TEA release id: </strong>{{ teaView.publication.uuid }}
                                 <Icon class="clickable" style="margin-left: 5px;" size="14" title="Copy" @click="copyToClipboard(teaView.publication.uuid)"><Copy20Regular/></Icon>
                             </div>
@@ -2383,7 +2384,8 @@ import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText, generatedArtifactDownloadRef, generatedArtifactOrigin } from '@/utils/generatedArtifacts'
 import { teaProfilesAvailable, teaSourceLabel } from '@/utils/teaProfile'
 import { teaActLabel, teaActProgress, type TeaAct, teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
-    teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText, teaActErrorText } from '@/utils/teaPublication'
+    teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText, teaActErrorText,
+    teaNoSbomConfirmAvailable, teaPublishVariables, teaNoAggregateText, type TeaReleaseWithoutSbom } from '@/utils/teaPublication'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
@@ -4397,6 +4399,8 @@ async function loadRegulatoryPackageKinds () {
 const teaBanner: ComputedRef<string | null> = computed(() => teaPublicationBanner(teaView.value))
 const teaConcealedLine: ComputedRef<string | null> = computed(() => teaConcealedText(teaView.value?.publication,
     updatedRelease.value?.lifecycle))
+// A served publication whose latest collection lists no aggregated SBOM (TPF-257).
+const teaNoAggregateLine: ComputedRef<string | null> = computed(() => teaNoAggregateText(teaView.value))
 const teaCollections: ComputedRef<any[]> = computed(() => teaCollectionRows(teaView.value?.collections))
 
 function teaPerspectiveNames (): Record<string, string> {
@@ -4453,21 +4457,50 @@ async function onSubmissionNarrativeSaved () {
     }
 }
 
-async function runTeaPublish (mutation: any, field: string) {
+/**
+ * The releases a publish of this release would publish without an SBOM (TPF-257), read on the click
+ * and never on page load: the server walks the product's component releases for it. Null when the
+ * read failed; the error dialog has then been shown and nothing is to be sent.
+ */
+async function loadTeaReleasesWithoutSbom (release: string): Promise<TeaReleaseWithoutSbom[] | null> {
+    try {
+        const resp: any = await graphqlClient.query({
+            query: graphqlQueries.ReleaseTeaPublicationNoSbomGql,
+            variables: { release },
+            fetchPolicy: 'no-cache'
+        })
+        return resp.data?.releaseTeaPublicationView?.withoutSbom ?? []
+    } catch (err: any) {
+        await Swal.fire({ titleText: 'Error!', text: teaActErrorText(err), icon: 'error' })
+        return null
+    }
+}
+
+// Where teaNoSbomConfirmAvailable holds (TPF-257), the click first reads the releases without an SBOM,
+// the confirmation names them, and the publish carries the variables of teaPublishVariables for that
+// list: the no-SBOM policy only when the confirmed dialog named a release. On CE the earlier flow.
+async function runTeaPublish (mutation: any, noSbomMutation: any, field: string) {
     const view = teaView.value
     if (!view) return
+    const askNoSbom = teaNoSbomConfirmAvailable(myUser?.installationType)
+    let withoutSbom: TeaReleaseWithoutSbom[] = []
+    if (askNoSbom) {
+        const listed = await loadTeaReleasesWithoutSbom(view.release)
+        if (listed === null) return
+        withoutSbom = listed
+    }
     const confirm = teaPublishConfirm(view, {
         component: updatedRelease.value?.componentDetails?.name ?? '',
         version: updatedRelease.value?.version ?? '',
         perspectives: teaPerspectiveNames()
-    })
+    }, withoutSbom)
     const answer = await Swal.fire(confirm)
     if (!answer.isConfirmed) return
     const act: TeaAct = field === 'republishReleaseOnTea' ? 'republish' : 'publish'
     await withTeaProgress(act, view, async () => {
         const resp: any = await graphqlClient.mutate({
-            mutation,
-            variables: { release: view.release },
+            mutation: askNoSbom ? noSbomMutation : mutation,
+            variables: askNoSbom ? teaPublishVariables(view.release, withoutSbom) : { release: view.release },
             fetchPolicy: 'no-cache'
         })
         await Swal.fire({ title: 'TEA', text: teaPublishSummary(resp.data[field]), icon: 'success' })
@@ -4505,8 +4538,10 @@ async function refreshAfterTeaAct () {
     }
 }
 
-const publishOnTea = () => runTeaPublish(graphqlQueries.PublishReleaseOnTeaGql, 'publishReleaseOnTea')
-const republishOnTea = () => runTeaPublish(graphqlQueries.RepublishReleaseOnTeaGql, 'republishReleaseOnTea')
+const publishOnTea = () => runTeaPublish(graphqlQueries.PublishReleaseOnTeaGql,
+    graphqlQueries.PublishReleaseOnTeaNoSbomGql, 'publishReleaseOnTea')
+const republishOnTea = () => runTeaPublish(graphqlQueries.RepublishReleaseOnTeaGql,
+    graphqlQueries.RepublishReleaseOnTeaNoSbomGql, 'republishReleaseOnTea')
 
 async function hideOnTea () {
     const view = teaView.value
