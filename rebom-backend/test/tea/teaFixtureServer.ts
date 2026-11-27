@@ -197,6 +197,36 @@ export class TeaFixtureServer {
         });
     }
 
+    /** The three rows of the product list and of the component list (TPF-241 T-1052). */
+    listRows(key: 'products' | 'components'): Array<Record<string, unknown>> {
+        const prefix = key === 'products' ? '66666666-6666-4666-8666-66666666666' : '77777777-7777-4777-8777-77777777777';
+        const word = key === 'products' ? 'Product' : 'Component';
+        return [
+            { uuid: `${prefix}1`, name: `Alpha ${word}`, identifiers: [{ idType: 'PURL', idValue: `pkg:generic/alpha-${key}` }] },
+            { uuid: `${prefix}2`, name: `Beta ${word}`, identifiers: [{ idType: 'CPE', idValue: 'cpe:2.3:a:example:beta:1.0:*:*:*:*:*:*:*' }] },
+            { uuid: `${prefix}3`, name: `Gamma ${word}`, identifiers: [] }
+        ];
+    }
+
+    /**
+     * GET /products and GET /components: the three rows over two pages keyed by the token
+     * (two rows, then one). Any other token answers 400.
+     */
+    serveListPages(): void {
+        for (const key of ['products', 'components'] as const) {
+            const rows = this.listRows(key);
+            this.route(this.api(`/${key}`), (_req, res, query) => {
+                switch (query.get('pageToken') ?? '') {
+                    case '':
+                        return sendJson(res, 200, { hasNext: true, nextPageToken: `${key}-page-2`, results: rows.slice(0, 2) });
+                    case `${key}-page-2`:
+                        return sendJson(res, 200, { hasNext: false, results: rows.slice(2) });
+                }
+                sendJson(res, 400, { error: 'INVALID_PAGE_TOKEN' });
+            });
+        }
+    }
+
     collectionJson(id: string, belongsTo: string, artifacts: TeaFixtureArtifact[], version = 1): Record<string, unknown> {
         return {
             uuid: id, version, createdDate: '2026-01-15T00:00:00Z', belongsTo, updateReason: { type: 'INITIAL_RELEASE' },

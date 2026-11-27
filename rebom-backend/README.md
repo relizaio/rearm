@@ -88,9 +88,9 @@ Default: `false` (BOMs are marked `SKIPPED` if no BEAR integration is configured
 ## TEA operations
 
 rebom fetches documents from Transparency Exchange API (TEA) servers for the ReARM backend. The
-GraphQL operations `teaStatus`, `teaResolve`, `teaProduct`, `teaComponent`, `teaReleases`,
-`teaRelease`, `teaFetchCollection`, `teaFetchedFileChunk`, `teaStoreFetchedSbom` and
-`teaReleaseFetch` run the machine mode of the bundled rearm CLI (`rearm tea machine <verb>`) as a
+GraphQL operations `teaStatus`, `teaResolve`, `teaProduct`, `teaComponent`, `teaProducts`,
+`teaComponents`, `teaReleases`, `teaRelease`, `teaFetchCollection`, `teaFetchedFileChunk`,
+`teaStoreFetchedSbom` and `teaReleaseFetch` run the machine mode of the bundled rearm CLI (`rearm tea machine <verb>`) as a
 child process under the ceilings below. Outcomes are data in every result (`outcome`, `error`),
 never GraphQL errors; `teaApiVersion` is 1.
 
@@ -151,6 +151,26 @@ loopback and to this host's own addresses and accepts plain `http` roots (and
 and never together with a token on a network others share. `teaStatus` reports it and rebom logs
 a warning at start.
 
+### The lists
+
+`teaProducts` and `teaComponents` answer one page of the products or the components of an API
+root, sorted by name, with an optional exact lookup by identifier (`idType` and `idValue`). One
+call runs the CLI once and makes one list request; rebom never follows `nextPageToken` itself and
+stores nothing. The caller passes `nextPageToken` back as `pageToken`, with the same root, filter
+and sort order. Without `pageSize` rebom asks for 100 rows.
+
+- A page keeps at most 1000 rows. A longer answer is cut: `cut` is `MAX_ROWS` (or `OTHER` for a
+  cut this rebom does not know) and `rowsReceived` says how many rows the server sent.
+- The server's answer to a list call is bounded at 4 MiB (lower when `REBOM_TEA_MAX_DOCUMENT_BYTES`
+  or the caller's `maxDocumentBytes` is lower). A source whose whole list is larger answers `LIMIT`
+  on the unfiltered list and is still reached by the identifier lookup.
+- `next` is `NONE` on the last page, `TOKEN` when `nextPageToken` holds the next page's token, and
+  `TOKEN_UNUSABLE` when the server sent a token rebom would not accept back (over 4096 bytes or not
+  printable ASCII); no token is returned then.
+- `FAILED` with `httpStatus` 400 on a call that carried a token means the token is no longer valid:
+  start again from the first page. Without a token it means the server refuses the filter.
+- Names and identifiers are the server's text, unchanged; render them as text.
+
 ### The caller's timeout
 
 A call is synchronous. The caller's HTTP timeout for a TEA call must be at least the effective
@@ -161,7 +181,12 @@ answers HTTP 400 with `GRAPHQL_VALIDATION_FAILED`.
 
 The image pins the CLI release in the Dockerfile and checks at build time that it has the machine
 mode. A rebom started with another `rearm` on its `PATH` checks the same on the first TEA call and
-answers `NOT_AVAILABLE` (`CLI_MISSING`, `CLI_TOO_OLD`, `CLI_FORMAT`) when it lacks it.
+answers `NOT_AVAILABLE` (`CLI_MISSING`, `CLI_TOO_OLD`, `CLI_FORMAT`) when it lacks it. A `rearm`
+without the list verbs answers `teaProducts` and `teaComponents` with `INVALID_REQUEST` and the
+CLI's reason `USAGE`; the other operations work as before. The image build also checks the list
+verbs: `rearm tea machine products` and `rearm tea machine components` without a flag must exit 2
+with reason `USAGE` and `--api-root is required`, or the build fails. rebom itself does not probe
+for them at run time.
 
 ---
 

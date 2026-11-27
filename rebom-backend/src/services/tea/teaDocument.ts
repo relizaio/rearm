@@ -3,11 +3,15 @@ import * as path from 'path';
 
 /**
  * The documents of the CLI's machine mode, as rebom checks them (TPF-180 design 3.3, 3.6.1).
- * rebom types only what it decides on: the format version, the kind, and the rows of a download
- * manifest. Everything else of a document is returned as the CLI wrote it.
+ * rebom types only what it decides on: the format version, the kind, the rows of a download
+ * manifest and the page of a list (TPF-241). Everything else of a document is returned as the CLI
+ * wrote it.
  */
 
 export const TEA_FORMAT_VERSION = 1;
+
+/** A uuid, 8-4-4-4-12 hexadecimal in either case: the one uuid pattern of the TEA module. */
+export const TEA_UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 export const TeaDocumentKind = {
     RESOLUTION: 'TEA_RESOLUTION',
@@ -16,6 +20,8 @@ export const TeaDocumentKind = {
     RELEASE_LIST: 'TEA_RELEASE_LIST',
     RELEASE: 'TEA_RELEASE',
     DOWNLOAD_MANIFEST: 'TEA_DOWNLOAD_MANIFEST',
+    PRODUCT_LIST: 'TEA_PRODUCT_LIST',
+    COMPONENT_LIST: 'TEA_COMPONENT_LIST',
     ERROR: 'TEA_ERROR'
 } as const;
 export type TeaDocumentKind = typeof TeaDocumentKind[keyof typeof TeaDocumentKind];
@@ -169,4 +175,106 @@ export async function checkTeaManifest(doc: Record<string, unknown>, dlDir: stri
         if (!expected.has(entry)) return null;
     }
     return rows;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The list pages (TPF-241 design 3.5)
+
+/** The key of the row array of each list document. */
+const LIST_ROW_KEY: Partial<Record<TeaDocumentKind, string>> = {
+    [TeaDocumentKind.PRODUCT_LIST]: 'products',
+    [TeaDocumentKind.COMPONENT_LIST]: 'components'
+};
+
+/** Whether rows of the server's answer are missing from a page; the CLI's set is open. */
+export const TeaListCut = {
+    NONE: 'NONE',
+    MAX_ROWS: 'MAX_ROWS',
+    OTHER: 'OTHER'
+} as const;
+export type TeaListCut = typeof TeaListCut[keyof typeof TeaListCut];
+
+/** Whether a page follows, and whether its token can be carried to the next call. */
+export const TeaListNext = {
+    NONE: 'NONE',
+    TOKEN: 'TOKEN',
+    TOKEN_UNUSABLE: 'TOKEN_UNUSABLE'
+} as const;
+export type TeaListNext = typeof TeaListNext[keyof typeof TeaListNext];
+
+export interface TeaListIdentifier {
+    idType: string;
+    idValue: string;
+}
+
+/** One product or component of a list; every string is the server's text, unchanged. */
+export interface TeaListRow {
+    uuid: string;
+    name: string;
+    identifiers: TeaListIdentifier[];
+}
+
+/** A list document as checked: the rows and the CLI's page object, nothing else of it. */
+export interface TeaListDocument {
+    rows: TeaListRow[];
+    nextPageToken: string | null;
+    rowsReceived: number;
+    cutBy: string;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function listIdentifierOf(raw: unknown): TeaListIdentifier | null {
+    if (!isObject(raw) || typeof raw.idType !== 'string' || typeof raw.idValue !== 'string') return null;
+    return { idType: raw.idType, idValue: raw.idValue };
+}
+
+function listRowOf(raw: unknown): TeaListRow | null {
+    if (!isObject(raw)) return null;
+    if (typeof raw.uuid !== 'string' || !TEA_UUID_PATTERN.test(raw.uuid)) return null;
+    // the empty name is allowed: the CLI prints it for a row without a name
+    if (typeof raw.name !== 'string') return null;
+    if (!Array.isArray(raw.identifiers)) return null;
+    const identifiers: TeaListIdentifier[] = [];
+    for (const entry of raw.identifiers) {
+        const identifier = listIdentifierOf(entry);
+        if (!identifier) return null;
+        identifiers.push(identifier);
+    }
+    return { uuid: raw.uuid, name: raw.name, identifiers };
+}
+
+/**
+ * The strict typed read of a TEA_PRODUCT_LIST or TEA_COMPONENT_LIST document. Null when any part
+ * has another shape: the caller then answers LIST_INVALID and returns nothing of the document.
+ * Keys this function does not name are dropped.
+ */
+export function teaListPageOf(doc: Record<string, unknown>, kind: TeaDocumentKind, maxRows: number): TeaListDocument | null {
+    const key = LIST_ROW_KEY[kind];
+    if (key === undefined) return null;
+    const rawRows = doc[key];
+    if (!Array.isArray(rawRows) || rawRows.length > maxRows) return null;
+    const rows: TeaListRow[] = [];
+    for (const raw of rawRows) {
+        const row = listRowOf(raw);
+        if (!row) return null;
+        rows.push(row);
+    }
+    const page = doc.page;
+    if (!isObject(page)) return null;
+    const token = page.nextPageToken;
+    if (token !== null && (typeof token !== 'string' || token.length === 0)) return null;
+    const received = page.rowsReceived;
+    if (typeof received !== 'number' || !Number.isSafeInteger(received) || received < rows.length) return null;
+    if (typeof page.cutBy !== 'string' || page.cutBy.length === 0) return null;
+    return { rows, nextPageToken: token, rowsReceived: received, cutBy: page.cutBy };
+}
+
+/** NONE and MAX_ROWS as named; any other cut is OTHER (rows are missing all the same). */
+export function teaListCutOf(cutBy: string): TeaListCut {
+    if (cutBy === TeaListCut.NONE) return TeaListCut.NONE;
+    if (cutBy === TeaListCut.MAX_ROWS) return TeaListCut.MAX_ROWS;
+    return TeaListCut.OTHER;
 }

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { teaCounters } from '../../src/services/tea/teaService';
 import {
-    cleanupDirs, configure, field, gql, Http, MARK_CALLER, Q, spyLogs, startHttp, Stub, tenOperations, TOKEN,
+    cleanupDirs, configure, field, gql, Http, MARK_CALLER, Q, spyLogs, startHttp, Stub, twelveOperations, TOKEN,
     API_ROOT, UUID_A, NONE, tempDir, callsWith
 } from './teaTestKit';
 
@@ -32,7 +32,7 @@ describe('TEA caller gate', () => {
     it('T-1 without REBOM_TEA_CALLER_TOKEN every operation is NOT_CONFIGURED and nothing starts', async () => {
         stub = new Stub();
         configure({ REBOM_TEA_CALLER_TOKEN: undefined });
-        for (const [name, query, variables] of tenOperations()) {
+        for (const [name, query, variables] of twelveOperations()) {
             const result = field(await gql(http.url, query, variables, 'plausible-header-value-0123456789abcdef'));
             expect(result.outcome, name).toBe('NOT_CONFIGURED');
             expect(result.error.reason, name).toBe('CALLER_TOKEN');
@@ -45,7 +45,7 @@ describe('TEA caller gate', () => {
         stub = new Stub();
         for (const token of ['', 'a'.repeat(31), `${'a'.repeat(20)} ${'b'.repeat(20)}`]) {
             configure({ REBOM_TEA_CALLER_TOKEN: token });
-            for (const [name, query, variables] of tenOperations()) {
+            for (const [name, query, variables] of twelveOperations()) {
                 const result = field(await gql(http.url, query, variables, token));
                 expect(result.outcome, `${name} with ${token.length}`).toBe('NOT_CONFIGURED');
             }
@@ -56,7 +56,7 @@ describe('TEA caller gate', () => {
     it('T-3 with a token set and no header every operation is CALLER_REFUSED, nothing starts, no pool is used', async () => {
         stub = new Stub();
         configure();
-        for (const [name, query, variables] of tenOperations()) {
+        for (const [name, query, variables] of twelveOperations()) {
             const result = field(await gql(http.url, query, variables, null));
             expect(result.outcome, name).toBe('CALLER_REFUSED');
             expect(result.error.reason, name).toBe('CALLER');
