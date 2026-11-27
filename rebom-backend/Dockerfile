@@ -182,6 +182,11 @@ LABEL git_branch=$GIT_BRANCH
 LABEL ci_environment=$CI_ENV
 LABEL version=$VERSION
 
+# Run time default. The Helm chart sets the same variable from
+# rebom.backend.nodeEnv. Not set in the builder: npm ci there needs the
+# dev dependencies for the tests and the build.
+ENV NODE_ENV=production
+
 EXPOSE 4000
 
 CMD ["node", "src/index.js"]
@@ -190,6 +195,8 @@ CMD ["node", "src/index.js"]
 # compromised chains. release copies the marker, so this stage always builds.
 FROM deliverable AS trust-gate
 USER root
+# The shipped stage must carry the production default.
+RUN test "$NODE_ENV" = "production"
 RUN apk add --no-cache curl openssl
 COPY ci/trust-gate/ /gate/
 RUN sh /gate/trust-gate.sh && node /gate/trust-gate.mjs && echo "trust-gate ok $(date -u +%FT%TZ)" > /gate/ok
