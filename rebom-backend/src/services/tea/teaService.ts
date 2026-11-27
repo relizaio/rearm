@@ -9,17 +9,20 @@ import { ensureTeaCli, resetTeaProbe, TEA_PROBE_RETRY_MS } from './teaCliProbe';
 import { killAllTeaRuns, makeCallDir, removeCallDir, runTeaCli, setTeaWorkDir, withCallDir } from './teaCliRunner';
 import {
     ceilingsAsLimits, effectiveLimits, localTestingOf, readTeaConfig, TEA_LOCAL_TESTING_VARIABLE, TEA_TMP_ROOT_VARIABLE,
-    TeaConfig, TeaEffectiveLimits, TeaLocalTesting, TeaRunKind, validCallerToken, TEA_CALLER_TOKEN_VARIABLE
+    TeaConfig, TeaEffectiveLimits, TeaLocalTesting, TeaRunKind, validCallerToken, TEA_CALLER_TOKEN_VARIABLE, TEA_LIST_MAX_ROWS
 } from './teaConfig';
-import { checkTeaManifest, TeaDocumentClass, TeaDocumentKind, teaFilePath, TeaFileStatus } from './teaDocument';
+import {
+    checkTeaManifest, TeaDocumentClass, TeaDocumentKind, teaFilePath, TeaFileStatus, teaListCutOf, TeaListCut, TeaListNext,
+    teaListPageOf, TeaListRow
+} from './teaDocument';
 import { TEA_FETCH_NOT_HELD, TeaFetchStore, TeaHeldFile } from './teaFetchStore';
 import { hostOf, logTeaEvent } from './teaLog';
-import { mapTeaRun, TEA_API_VERSION, TeaOutcome, TeaReason, teaResult, TeaResultBase } from './teaOutcome';
+import { mapTeaRun, TEA_API_VERSION, TeaOutcome, TeaReason, teaResult, TeaResultBase, TeaRunMapping } from './teaOutcome';
 import { storeHeldSbom, TEA_SBOM_MAX_BYTES, TeaSbomStoreResult } from './teaSbomStore';
 import { heldBytesOf, TEA_FILE_FLOOR_BYTES, TeaDiskBudget, TeaSlotPool, TeaSlotRefusal } from './teaSlots';
 import {
-    describeRefusal, TeaRequest, TeaValidation, TeaVerb, validateChunk, validateFetch, validateFetchId, validateObject,
-    validateRelease, validateReleases, validateResolve, validateStore
+    describeRefusal, isValidPageToken, TeaRequest, TeaValidation, TeaVerb, validateChunk, validateFetch, validateFetchId,
+    validateList, validateObject, validateRelease, validateReleases, validateResolve, validateStore
 } from './teaRequest';
 
 /**
@@ -229,8 +232,73 @@ export interface TeaStatusResult extends TeaResultBase {
     ceilings: TeaEffectiveLimits | null;
 }
 
+/** One page of a list (TPF-241 design 3.1, 3.5): the typed rows and what follows them. */
+export interface TeaListPage {
+    rows: TeaListRow[];
+    next: TeaListNext;
+    /** Not null exactly when next is TOKEN. */
+    nextPageToken: string | null;
+    rowsReceived: number;
+    cut: TeaListCut;
+}
+
+export interface TeaListResult extends TeaResultBase {
+    limits: TeaEffectiveLimits | null;
+    /** Not null exactly when outcome is OK. */
+    page: TeaListPage | null;
+}
+
 function documentResult(base: TeaResultBase, limits: TeaEffectiveLimits | null = null, document: string | null = null): TeaDocumentResult {
     return { ...base, limits, document };
+}
+
+/** What a run came to, for the builder of a read's result. */
+interface TeaReadRun {
+    mapping: TeaRunMapping;
+    exitCode: number | null;
+}
+
+/**
+ * Builds a read's result from its base, the limits that ran and, once a process ran, the run. Every
+ * early answer (not configured, refused input, the probe, busy) is built with run absent.
+ */
+type TeaReadResultBuilder<R extends TeaResultBase> = (base: TeaResultBase, limits: TeaEffectiveLimits | null, run?: TeaReadRun) => R;
+
+/** The builder of the five single-document reads: the CLI's line, as it wrote it, when OK. */
+const documentReadResult: TeaReadResultBuilder<TeaDocumentResult> = (base, limits, run) =>
+    documentResult(base, limits, run && run.mapping.outcome === TeaOutcome.OK ? run.mapping.line ?? null : null);
+
+/** The page of a checked list document: the cut mapped, and a next token only when it can be carried. */
+function listPageOf(rows: TeaListRow[], nextPageToken: string | null, rowsReceived: number, cutBy: string): TeaListPage {
+    let next: TeaListNext = TeaListNext.NONE;
+    let token: string | null = null;
+    if (nextPageToken !== null) {
+        // what rebom returns, rebom accepts: one predicate for the input rule and this mapping
+        if (isValidPageToken(nextPageToken)) {
+            next = TeaListNext.TOKEN;
+            token = nextPageToken;
+        } else {
+            next = TeaListNext.TOKEN_UNUSABLE;
+        }
+    }
+    return { rows, next, nextPageToken: token, rowsReceived, cut: teaListCutOf(cutBy) };
+}
+
+/**
+ * The builder of the two lists: on OK the strict typed read of the document; a document of the
+ * right kind but another shape is CONTRACT_MISMATCH with LIST_INVALID and returns nothing of it.
+ */
+function listReadResult(kind: TeaDocumentKind): TeaReadResultBuilder<TeaListResult> {
+    return (base, limits, run) => {
+        if (!run || run.mapping.outcome !== TeaOutcome.OK || !run.mapping.doc) return { ...base, limits, page: null };
+        const parsed = teaListPageOf(run.mapping.doc, kind, TEA_LIST_MAX_ROWS);
+        if (!parsed) {
+            const mismatch = teaResult(TeaOutcome.CONTRACT_MISMATCH, TeaReason.LIST_INVALID);
+            mismatch.error!.cliExitCode = run.exitCode;
+            return { ...mismatch, limits, page: null };
+        }
+        return { ...base, limits, page: listPageOf(parsed.rows, parsed.nextPageToken, parsed.rowsReceived, parsed.cutBy) };
+    };
 }
 
 function fetchResult(base: TeaResultBase, extra: Partial<TeaFetchResult> = {}): TeaFetchResult {
@@ -267,18 +335,21 @@ const READS = {
     [TeaVerb.PRODUCT]: { kind: TeaDocumentKind.PRODUCT, runKind: TeaRunKind.READ },
     [TeaVerb.COMPONENT]: { kind: TeaDocumentKind.COMPONENT, runKind: TeaRunKind.READ },
     [TeaVerb.RELEASES]: { kind: TeaDocumentKind.RELEASE_LIST, runKind: TeaRunKind.RELEASE_LIST },
-    [TeaVerb.RELEASE]: { kind: TeaDocumentKind.RELEASE, runKind: TeaRunKind.READ }
+    [TeaVerb.RELEASE]: { kind: TeaDocumentKind.RELEASE, runKind: TeaRunKind.READ },
+    [TeaVerb.PRODUCTS]: { kind: TeaDocumentKind.PRODUCT_LIST, runKind: TeaRunKind.LIST_PAGE },
+    [TeaVerb.COMPONENTS]: { kind: TeaDocumentKind.COMPONENT_LIST, runKind: TeaRunKind.LIST_PAGE }
 } as const;
 
 type ReadVerb = keyof typeof READS;
 
-async function runRead(operation: string, verb: ReadVerb, validate: (localTesting: TeaLocalTesting) => TeaValidation<TeaRequest>): Promise<TeaDocumentResult> {
+async function runRead<R extends TeaResultBase>(operation: string, verb: ReadVerb, validate: (localTesting: TeaLocalTesting) => TeaValidation<TeaRequest>,
+    build: TeaReadResultBuilder<R>): Promise<R> {
     const started = Date.now();
-    if (!state.ready) return documentResult(state.result);
+    if (!state.ready) return build(state.result, null);
     const ready = state.value;
     const validation = validate(ready.config.localTesting);
     if (!validation.ok) {
-        const result = documentResult(invalid(validation.field, validation.rule));
+        const result = build(invalid(validation.field, validation.rule), null);
         logTeaEvent({ operation, outcome: result.outcome, reason: result.error?.reason, durationMs: Date.now() - started });
         return result;
     }
@@ -287,7 +358,7 @@ async function runRead(operation: string, verb: ReadVerb, validate: (localTestin
     const probe = await ensureTeaCli();
     if (probe) {
         logTeaEvent({ ...log, outcome: probe.outcome, reason: probe.error?.reason, durationMs: Date.now() - started });
-        return documentResult(probe);
+        return build(probe, null);
     }
     const { kind, runKind } = READS[verb];
     const limits = effectiveLimits(runKind, ready.config.ceilings, request.limits, null,
@@ -295,7 +366,7 @@ async function runRead(operation: string, verb: ReadVerb, validate: (localTestin
     const slot = await ready.reads.acquire();
     const queueWaitMs = Date.now() - started;
     if (!slot.granted) {
-        const result = documentResult(busy(slot.refusal), limits);
+        const result = build(busy(slot.refusal), limits);
         logTeaEvent({ ...log, outcome: result.outcome, reason: result.error?.reason, queueWaitMs });
         return result;
     }
@@ -309,8 +380,8 @@ async function runRead(operation: string, verb: ReadVerb, validate: (localTestin
             });
             const mapping = mapTeaRun(run, kind, process.env);
             const value = {
-                result: documentResult({ teaApiVersion: TEA_API_VERSION, outcome: mapping.outcome, error: mapping.error },
-                    limits, mapping.outcome === TeaOutcome.OK ? mapping.line ?? null : null),
+                result: build({ teaApiVersion: TEA_API_VERSION, outcome: mapping.outcome, error: mapping.error },
+                    limits, { mapping, exitCode: run.code }),
                 exitCode: run.code,
                 stdoutBytes: Buffer.byteLength(run.stdout)
             };
@@ -324,23 +395,35 @@ async function runRead(operation: string, verb: ReadVerb, validate: (localTestin
 }
 
 export function teaResolve(input: unknown): Promise<TeaDocumentResult> {
-    return runRead('teaResolve', TeaVerb.RESOLVE, (lt) => validateResolve(input, lt));
+    return runRead('teaResolve', TeaVerb.RESOLVE, (lt) => validateResolve(input, lt), documentReadResult);
 }
 
 export function teaProduct(input: unknown): Promise<TeaDocumentResult> {
-    return runRead('teaProduct', TeaVerb.PRODUCT, (lt) => validateObject(input, TeaVerb.PRODUCT, lt));
+    return runRead('teaProduct', TeaVerb.PRODUCT, (lt) => validateObject(input, TeaVerb.PRODUCT, lt), documentReadResult);
 }
 
 export function teaComponent(input: unknown): Promise<TeaDocumentResult> {
-    return runRead('teaComponent', TeaVerb.COMPONENT, (lt) => validateObject(input, TeaVerb.COMPONENT, lt));
+    return runRead('teaComponent', TeaVerb.COMPONENT, (lt) => validateObject(input, TeaVerb.COMPONENT, lt), documentReadResult);
 }
 
 export function teaReleases(input: unknown): Promise<TeaDocumentResult> {
-    return runRead('teaReleases', TeaVerb.RELEASES, (lt) => validateReleases(input, lt));
+    return runRead('teaReleases', TeaVerb.RELEASES, (lt) => validateReleases(input, lt), documentReadResult);
 }
 
 export function teaRelease(input: unknown): Promise<TeaDocumentResult> {
-    return runRead('teaRelease', TeaVerb.RELEASE, (lt) => validateRelease(input, lt));
+    return runRead('teaRelease', TeaVerb.RELEASE, (lt) => validateRelease(input, lt), documentReadResult);
+}
+
+/** One page of the products of an API root: TEA_PRODUCT_LIST, typed. One CLI run per call. */
+export function teaProducts(input: unknown): Promise<TeaListResult> {
+    return runRead('teaProducts', TeaVerb.PRODUCTS, (lt) => validateList(input, TeaVerb.PRODUCTS, lt),
+        listReadResult(TeaDocumentKind.PRODUCT_LIST));
+}
+
+/** One page of the components of an API root: TEA_COMPONENT_LIST, typed. One CLI run per call. */
+export function teaComponents(input: unknown): Promise<TeaListResult> {
+    return runRead('teaComponents', TeaVerb.COMPONENTS, (lt) => validateList(input, TeaVerb.COMPONENTS, lt),
+        listReadResult(TeaDocumentKind.COMPONENT_LIST));
 }
 
 // ---------------------------------------------------------------------------------------------

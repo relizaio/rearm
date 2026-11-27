@@ -1,5 +1,5 @@
 import { TeaFetchLimitsInput, TeaLimitsInput, TeaLocalTesting } from './teaConfig';
-import { TeaDocumentClass } from './teaDocument';
+import { TEA_UUID_PATTERN, TeaDocumentClass } from './teaDocument';
 
 /**
  * Validation of every input of the TEA operations before anything starts (TPF-180 design 3.5).
@@ -12,9 +12,14 @@ export const TeaVerb = {
     COMPONENT: 'component',
     RELEASES: 'releases',
     RELEASE: 'release',
-    DOWNLOAD: 'download'
+    DOWNLOAD: 'download',
+    PRODUCTS: 'products',
+    COMPONENTS: 'components'
 } as const;
 export type TeaVerb = typeof TeaVerb[keyof typeof TeaVerb];
+
+/** The two list verbs: one page of the products or the components of an API root. */
+export type TeaListVerb = typeof TeaVerb.PRODUCTS | typeof TeaVerb.COMPONENTS;
 
 export const TeaCredentialKind = {
     NONE: 'NONE',
@@ -34,6 +39,22 @@ export const TeaReleaseKind = {
     COMPONENT_RELEASE: 'COMPONENT_RELEASE'
 } as const;
 export type TeaReleaseKind = typeof TeaReleaseKind[keyof typeof TeaReleaseKind];
+
+/** The identifier types of TEA 1.0.0, the exact lookup of a list. */
+export const TeaIdentifierType = {
+    CPE: 'CPE',
+    TEI: 'TEI',
+    PURL: 'PURL',
+    COMPLIANCE_DOCUMENT: 'COMPLIANCE_DOCUMENT'
+} as const;
+export type TeaIdentifierType = typeof TeaIdentifierType[keyof typeof TeaIdentifierType];
+
+/** The order of a list by name (the server breaks ties by uuid). */
+export const TeaSortOrder = {
+    ASC: 'ASC',
+    DESC: 'DESC'
+} as const;
+export type TeaSortOrder = typeof TeaSortOrder[keyof typeof TeaSortOrder];
 
 export interface TeaCredential {
     kind: TeaCredentialKind;
@@ -57,6 +78,9 @@ export interface TeaRequest {
     parentUuid?: string;
     pageToken?: string | null;
     pageSize?: number | null;
+    idType?: TeaIdentifierType | null;
+    idValue?: string | null;
+    sortOrder?: TeaSortOrder | null;
     maxPages?: number | null;
     releaseKind?: TeaReleaseKind;
     releaseUuid?: string;
@@ -96,7 +120,6 @@ export function describeRefusal(field: string, rule: string): string {
 
 const PRINTABLE_NO_SPACE = /^[\x21-\x7e]+$/;
 const PRINTABLE = /^[\x20-\x7e]+$/;
-const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const CORRELATION_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const FETCH_ID = /^[0-9a-f]{32}$/;
 const TOKEN_CHARS = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
@@ -104,6 +127,9 @@ const MEDIA_TYPE = new RegExp(`^${TOKEN_CHARS}/${TOKEN_CHARS}$`);
 const TEI_PREFIX = 'tei://';
 const URL_MAX = 2048;
 const PAGE_TOKEN_MAX = 4096;
+const PAGE_TOKEN_RULE = `1 to ${PAGE_TOKEN_MAX} bytes of printable ASCII`;
+/** An identifier value of a list lookup: the size URL_MAX gives a TEI. */
+const ID_VALUE_MAX = 2048;
 const SECRET_MAX = 8192;
 const MEDIA_TYPE_MAX = 255;
 const MEDIA_TYPES_MAX = 16;
@@ -135,6 +161,21 @@ function text(field: string, value: unknown, pattern: RegExp, max: number, rule:
     return value;
 }
 
+/**
+ * Whether a value is a page token rebom accepts: 1 to 4096 bytes of printable ASCII. The one rule
+ * of both page tokens of the module (teaReleases and the lists), and the rule a list result applies
+ * to the next page token it returns, so a returned token is always accepted back.
+ */
+export function isValidPageToken(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= PAGE_TOKEN_MAX && PRINTABLE.test(value);
+}
+
+function pageTokenOf(field: string, value: unknown): string | null {
+    if (!present(value)) return null;
+    if (!isValidPageToken(value)) refuse(field, PAGE_TOKEN_RULE);
+    return value;
+}
+
 function url(field: string, value: unknown, localTesting: TeaLocalTesting): string {
     const rule = `1 to ${URL_MAX} bytes of printable ASCII, an https URL (http only under local testing) without user name or password`;
     const value_ = text(field, value, PRINTABLE_NO_SPACE, URL_MAX, rule);
@@ -155,7 +196,7 @@ export function isPlainHttp(value: string): boolean {
 }
 
 function uuid(field: string, value: unknown): string {
-    if (typeof value !== 'string' || !UUID.test(value)) refuse(field, 'a uuid (8-4-4-4-12 hexadecimal)');
+    if (typeof value !== 'string' || !TEA_UUID_PATTERN.test(value)) refuse(field, 'a uuid (8-4-4-4-12 hexadecimal)');
     return value.toLowerCase();
 }
 
@@ -264,11 +305,30 @@ export function validateReleases(input: any, localTesting: TeaLocalTesting): Tea
         request.apiRoot = url('input.apiRoot', input.apiRoot, localTesting);
         request.parentKind = oneOf('input.parentKind', input.parentKind, TeaParentKind);
         request.parentUuid = uuid('input.parentUuid', input.parentUuid);
-        request.pageToken = present(input.pageToken)
-            ? text('input.pageToken', input.pageToken, PRINTABLE, PAGE_TOKEN_MAX, `1 to ${PAGE_TOKEN_MAX} bytes of printable ASCII`)
-            : null;
+        request.pageToken = pageTokenOf('input.pageToken', input.pageToken);
         request.pageSize = optionalInteger('input.pageSize', input.pageSize, 1, 100);
         request.maxPages = optionalInteger('input.maxPages', input.maxPages, 1, 1000);
+        return request;
+    });
+}
+
+/**
+ * One page of the products or the components of an API root (TPF-241 design 3.2): the identifier
+ * lookup (type and value together or not at all), the sort order, the page token and the page size.
+ */
+export function validateList(input: any, verb: TeaListVerb, localTesting: TeaLocalTesting): TeaValidation<TeaRequest> {
+    return validating(() => {
+        const request = common(input, verb, localTesting);
+        request.apiRoot = url('input.apiRoot', input.apiRoot, localTesting);
+        request.idType = present(input.idType) ? oneOf('input.idType', input.idType, TeaIdentifierType) : null;
+        request.idValue = present(input.idValue)
+            ? text('input.idValue', input.idValue, PRINTABLE, ID_VALUE_MAX, `1 to ${ID_VALUE_MAX} bytes of printable ASCII`)
+            : null;
+        if (request.idType !== null && request.idValue === null) refuse('input.idValue', 'given together with input.idType or not at all');
+        if (request.idValue !== null && request.idType === null) refuse('input.idType', 'given together with input.idValue or not at all');
+        request.sortOrder = present(input.sortOrder) ? oneOf('input.sortOrder', input.sortOrder, TeaSortOrder) : null;
+        request.pageToken = pageTokenOf('input.pageToken', input.pageToken);
+        request.pageSize = optionalInteger('input.pageSize', input.pageSize, 1, 100);
         return request;
     });
 }

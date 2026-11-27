@@ -56,6 +56,7 @@ export const TeaReason = {
     KIND: 'KIND',
     UNEXPECTED_PARTIAL: 'UNEXPECTED_PARTIAL',
     MANIFEST_INVALID: 'MANIFEST_INVALID',
+    LIST_INVALID: 'LIST_INVALID',
     PARTIAL: 'PARTIAL'
 } as const;
 export type TeaReason = typeof TeaReason[keyof typeof TeaReason];
