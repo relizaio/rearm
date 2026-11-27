@@ -1723,7 +1723,9 @@ async function confirmToggleCisaKev() {
     const confirm = await Swal.fire({
         titleText: enabled ? 'Disable CISA KEV for this organization?' : 'Enable CISA KEV for this organization?',
         text: enabled
-            ? 'KEV assertions sourced from CISA will stop syncing. Existing data is removed.'
+            ? 'KEV assertions sourced from CISA will stop syncing. Those already synchronized are kept, and the findings they '
+                + 'list stay known exploited. While CISA KEV is off, a regulatory package\'s readiness check needs the VulnCheck KEV '
+                + 'catalog enabled and synchronized instead.'
             : 'CISA KEV will start syncing for this organization. The first sync runs in the background.',
         icon: 'question', showCancelButton: true,
         confirmButtonText: enabled ? 'Disable' : 'Enable'

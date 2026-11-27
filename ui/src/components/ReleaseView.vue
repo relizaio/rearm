@@ -2347,6 +2347,7 @@
                             :kinds="regulatoryPackageKinds"
                             :is-writable="isWritable"
                             :can-write-org="canWriteOrg"
+                            :can-write-finding-analysis="canWriteFindingAnalysisHere"
                             :installation-type="myUser?.installationType"
                             :current-user="myUser?.uuid"
                             :names="teaPerspectiveNames()"
@@ -2656,6 +2657,7 @@
             :initial-severity-filter="currentSeverityFilter"
             :initial-type-filter="currentTypeFilter"
             :initial-kev-only="currentKevOnly"
+            :initial-show-suppressed="currentShowSuppressed"
             :initial-sort-key="currentSortKey"
             @refresh-data="handleRefreshVulnerabilityData"
         />
@@ -2850,6 +2852,7 @@ import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
 import { useBulkAttest, validateBulkInput, emptyBulkForm, groupNotWritten } from '@/utils/useBulkAttest'
 import { hasOrgWrite, orgWriteSentence } from '@/utils/orgWrite'
+import { canWriteFindingAnalysis } from '@/utils/assessmentFields'
 import { componentPageWritable } from '@/utils/componentWrite'
 import { SELECTOR_FORM_OPTIONS, SELECTOR_SCOPE_OPTIONS, SELECTOR_OVER_CAP_TEXT, emptySelectorChoice, fetchSelectorCount,
     isSelectorForm, selectorCountText, selectorLabel, submitBySelector, validateSelector,
@@ -5289,6 +5292,9 @@ const isWritable : ComputedRef<boolean> = computed((): boolean => componentPageW
 // the server's refusal stays the authority.
 const canWriteOrg: ComputedRef<boolean> = computed((): boolean =>
     hasOrgWrite(Object.values(myUser?.permissions?.permissions || {}), release.value?.orgDetails?.uuid))
+// FDAW-17 3.10: the Assess findings verb's fact, the server's FINDING_ANALYSIS_WRITE gate (an ADMIN row passes too).
+const canWriteFindingAnalysisHere: ComputedRef<boolean> = computed((): boolean =>
+    canWriteFindingAnalysis(Object.values(myUser?.permissions?.permissions || {}), release.value?.orgDetails?.uuid))
 const ATTEST_ALL_ORG_WRITE_SENTENCE = orgWriteSentence('Attest all shown')
 const BULK_ASSESSMENT_ORG_WRITE_SENTENCE = orgWriteSentence('A bulk support assessment')
 const BULK_SUPPLIER_ORG_WRITE_SENTENCE = orgWriteSentence('A bulk supplier assignment')
@@ -5645,6 +5651,10 @@ async function onReadinessFix (verb: string) {
     else if (verb === 'DESCRIBE_VENDORED') {
         vendoredExpanded.value = ['unidentified']
         await goToSbomComponents()
+    }
+    // FDAW-17 3.3: every finding of the release, the suppressed ones shown, KEV-only off
+    else if (verb === 'ASSESS_FINDINGS' && updatedRelease.value?.uuid) {
+        await viewDetailedVulnerabilitiesForRelease(updatedRelease.value.uuid, '', '', { kevOnly: false, showSuppressed: true })
     }
 }
 
@@ -6785,6 +6795,7 @@ const currentArtifactDisplayId: Ref<string> = ref('')
 const currentSeverityFilter: Ref<string> = ref('')
 const currentTypeFilter: Ref<string | string[]> = ref('')
 const currentKevOnly: Ref<boolean> = ref(false)
+const currentShowSuppressed: Ref<boolean> = ref(false)
 const currentSortKey: Ref<FindingSortKey> = ref('severity')
 
 // Release header pills from the read-time risk summary; absent (no pill) when
@@ -6799,13 +6810,14 @@ const cvssPillColor = computed(() => {
 })
 
 async function viewDetailedVulnerabilitiesForRelease(releaseUuid: string, severityFilter: string = '', typeFilter: string | string[] = '',
-    opening: { sortKey?: FindingSortKey, kevOnly?: boolean } = {}) {
+    opening: { sortKey?: FindingSortKey, kevOnly?: boolean, showSuppressed?: boolean } = {}) {
     loadingVulnerabilities.value = true
     showDetailedVulnerabilitiesModal.value = true
     currentArtifactDisplayId.value = '' // Clear artifact display ID for release view
     currentSeverityFilter.value = severityFilter
     currentTypeFilter.value = typeFilter
     currentKevOnly.value = !!opening.kevOnly
+    currentShowSuppressed.value = !!opening.showSuppressed
     currentSortKey.value = opening.sortKey || 'severity'
     
     try {
@@ -6836,6 +6848,7 @@ async function viewDetailedVulnerabilities(artifactUuid: string, dependencyTrack
     currentSeverityFilter.value = severityFilter
     currentTypeFilter.value = typeFilter
     currentKevOnly.value = false
+    currentShowSuppressed.value = false
     currentSortKey.value = 'severity'
     loadingVulnerabilities.value = true
 

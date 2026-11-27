@@ -130,8 +130,8 @@ export const READINESS_FIX_TITLE = 'Fix the must-fix items, then rebuild the dra
 export const READINESS_FIX_AWAITING_TITLE = 'Return the draft to editing, fix the must-fix items and rebuild'
 export const READINESS_UNCHECKED = 'Readiness was not checked for this build; rebuild the draft'
 export const READINESS_UNCHECKED_AWAITING = 'Readiness was not checked for this build; return the draft to editing and rebuild it'
-export const READINESS_FIX_TEXT = 'These items are read from this build. Fix them, then rebuild the draft. An item without a button, '
-    + 'or an entry a button does not list, is corrected in the SBOM uploaded to the release, or to the component release that carries the entry.'
+export const READINESS_FIX_TEXT = 'Fix these items, then rebuild the draft. A must-fix item without a button, or an entry a button does not '
+    + 'list, is corrected in the SBOM uploaded to the release, or to the component release that carries the entry, unless its text names another place.'
 
 /** The button label of each verb a readiness row may carry (FDAW-16 3.8); a verb not listed here gets no button. */
 export const READINESS_VERB_LABELS: Record<string, string> = {
@@ -140,12 +140,17 @@ export const READINESS_VERB_LABELS: Record<string, string> = {
     DESCRIBE_VENDORED: 'Describe vendored code',
     JUSTIFY_HASHES: 'Justify missing hashes',
     EDIT_COVER_SUMMARY: 'Edit cover summary',
+    ASSESS_FINDINGS: 'Assess findings',
 }
 /** The verbs that write organization-wide data: their button needs organization write (F-30). */
 export const ORG_WIDE_VERBS = ['ADD_SUPPLIERS', 'ASSESS_SUPPORT', 'DESCRIBE_VENDORED']
+/** FDAW-17 3.10: the verb that opens the findings needs the Finding Analysis Write permission, not organization write. */
+export const FINDING_ANALYSIS_VERBS = ['ASSESS_FINDINGS']
+export const FINDING_ANALYSIS_WRITE_SENTENCE = 'Assessing findings needs the Finding Analysis Write permission on the organization; '
+    + 'an organization administrator grants it.'
 export const READINESS_TAGS: Record<string, string> = { MUST_FIX: 'Must fix', REVIEW: 'Review' }
 
-export interface ReadinessFacts { writable?: boolean, canWriteOrg?: boolean }
+export interface ReadinessFacts { writable?: boolean, canWriteOrg?: boolean, canWriteFindingAnalysis?: boolean }
 export interface ReadinessRowView {
     rule: string, text: string, tag: string | null, count: number,
     verb: string | null, verbLabel: string | null, verbDisabled: boolean, sentence: string | null,
@@ -167,14 +172,16 @@ export function mustFixOpen (draft: any): number {
 
 /**
  * The card's rows: the text, a tag when the outcome is not PASS, and the verb's button for a writer. An
- * organization-wide verb is disabled with the sentence for a writer without organization write.
+ * organization-wide verb is disabled with the sentence for a writer without organization write; the findings verb
+ * for a writer without the Finding Analysis Write permission (FDAW-17 3.10).
  */
 export function readinessRows (draft: any, facts: ReadinessFacts): ReadinessRowView[] {
     return readinessRowList(draft).map(r => {
         const open = r?.outcome !== 'PASS'
         const label = open && facts?.writable && typeof r?.verb === 'string' ? (READINESS_VERB_LABELS[r.verb] ?? null) : null
         const orgWide = label !== null && ORG_WIDE_VERBS.includes(r.verb)
-        const disabled = orgWide && !facts?.canWriteOrg
+        const findings = label !== null && FINDING_ANALYSIS_VERBS.includes(r.verb)
+        const disabled = (orgWide && !facts?.canWriteOrg) || (findings && !facts?.canWriteFindingAnalysis)
         return {
             rule: String(r?.rule ?? ''),
             text: String(r?.text ?? ''),
@@ -183,7 +190,7 @@ export function readinessRows (draft: any, facts: ReadinessFacts): ReadinessRowV
             verb: label !== null ? r.verb : null,
             verbLabel: label,
             verbDisabled: disabled,
-            sentence: disabled ? orgWriteSentence(label as string) : null,
+            sentence: !disabled ? null : findings ? FINDING_ANALYSIS_WRITE_SENTENCE : orgWriteSentence(label as string),
         }
     })
 }
