@@ -1,0 +1,2 @@
+TPF-268 signature verifier fixture payload.
+Public material only; the private keys were thrown away.
