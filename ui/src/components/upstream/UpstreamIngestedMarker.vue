@@ -45,7 +45,7 @@
                     Last sync of its follow: {{ labelOf(runStateLabel, follow.lastRun.state) }}<template v-if="follow.lastRun.finishedDate">, {{ dateOf(follow.lastRun.finishedDate) }}</template>
                 </span>
             </div>
-            <div v-if="follow?.lastRun?.stopReason === 'ITEM_GONE'" class="upstream-marker-line" data-testid="upstream-marker-item-gone">
+            <div v-if="ownFollowItemGone" class="upstream-marker-line" data-testid="upstream-marker-item-gone">
                 <n-tag size="small" type="warning">{{ presenceLabel.GONE }}</n-tag>
                 <span class="upstream-marker-text">{{ runStopSentence.ITEM_GONE }}</span>
             </div>
@@ -117,7 +117,7 @@ import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { isUuid, upstreamSourcesAvailable } from '@/utils/upstream'
 import {
-    GET_ARTIFACT_VEX_IMPORT, GET_COMPONENT_INGESTED_FROM, GET_MARKER_FOLLOWS, GET_RELEASE_INGESTED_FROM, ingestedOriginOf,
+    GET_ARTIFACT_VEX_IMPORT, GET_COMPONENT_INGESTED_FROM, GET_MARKER_FOLLOW, GET_RELEASE_INGESTED_FROM, ingestedItemOf, ingestedOriginOf,
 } from '@/utils/upstreamMarkerQueries'
 import { GET_UPSTREAM_SOURCE } from '@/utils/upstreamSourceQueries'
 import {
@@ -151,7 +151,8 @@ const available = computed((): boolean => upstreamSourcesAvailable(store.getters
 
 const origin = ref<any>(null)
 const source = ref<any>(null)
-const follows = ref<any[] | null>(null)
+/** The row GET_MARKER_FOLLOW answered for followUuid; null before, and when refused or failed. */
+const follow = ref<any>(null)
 const vexImports = ref<Record<string, any>>({})
 const vexImportsRead = ref(false)
 const showStart = ref(false)
@@ -160,25 +161,32 @@ let readNumber = 0
 const sourceName = computed((): string => source.value?.name || UNKNOWN_SOURCE)
 
 /** The upstream item the marker's follow is looked up by: the item itself, or the item of the release. */
-const itemUuid = computed((): string | null => (props.subject === MarkerSubject.ITEM ? origin.value?.uuid : origin.value?.item) ?? null)
+const item = ref<any>(null)
 
-const follow = computed((): any => {
-    const item = itemUuid.value
-    if (!item || !follows.value) return null
-    return follows.value.find(f => f?.item?.uuid === item || (f?.components ?? []).some((c: any) => c?.uuid === item)) ?? null
+// The follow comes from the item's own fields, not from a list of the source's follows: its own
+// follow, else the oldest product follow that covers it. The link shows only when the read of that
+// follow by its uuid was answered, the read the follow page itself makes first.
+const followUuid = computed((): string | null => {
+    if (isUuid(item.value?.activeFollow)) return item.value.activeFollow
+    const covering = item.value?.coveringFollows?.[0]
+    return isUuid(covering) ? covering : null
 })
 
-const followLink = computed(() => (follow.value && isUuid(props.orgUuid) && isUuid(follow.value.uuid)
-    ? { name: 'UpstreamFollow', params: { orguuid: props.orgUuid, uuid: follow.value.uuid } }
+const followLink = computed(() => (followUuid.value && follow.value?.uuid === followUuid.value && isUuid(props.orgUuid)
+    ? { name: 'UpstreamFollow', params: { orguuid: props.orgUuid, uuid: followUuid.value } }
     : null))
+
+/** The item-gone sentence speaks of the item: only for its own follow, not for a product's follow that covers it. */
+const ownFollowItemGone = computed((): boolean => follow.value?.lastRun?.stopReason === 'ITEM_GONE'
+    && !!follow.value?.uuid && follow.value.uuid === item.value?.activeFollow)
 
 const oneOffLink = computed(() => (isUuid(props.orgUuid) && isUuid(origin.value?.oneOff)
     ? { name: 'UpstreamOfOrg', params: { orguuid: props.orgUuid }, query: { tab: 'tei', oneOff: origin.value.oneOff } }
     : null))
 
-/** Follow this item: an administrator, an active source that was read, and the follows read with none covering the item. */
+/** Follow this item: an administrator, an active source that was read, and no follow named on the item. */
 const canFollow = computed((): boolean => props.subject === MarkerSubject.ITEM && props.isOrgAdmin && source.value?.status === 'ACTIVE'
-    && follows.value !== null && !follow.value)
+    && !followUuid.value)
 
 /** The collection versions, newest first. */
 const collections = computed((): any[] => [...(origin.value?.collections ?? [])].sort((a, b) => b.version - a.version))
@@ -236,20 +244,24 @@ async function read () {
     const mine = ++readNumber
     origin.value = null
     source.value = null
-    follows.value = null
+    item.value = null
+    follow.value = null
     vexImports.value = {}
     vexImportsRead.value = false
     if (!available.value || !props.uuid) return
     let found: any = null
+    let foundItem: any = null
     try {
         if (props.subject === MarkerSubject.ITEM) {
             const resp: any = await graphqlClient.query({ query: GET_COMPONENT_INGESTED_FROM, variables: { uuid: props.uuid }, fetchPolicy: 'no-cache' })
             found = ingestedOriginOf(resp?.data)
+            foundItem = ingestedItemOf(resp?.data)
         } else {
             const resp: any = await graphqlClient.query({
                 query: GET_RELEASE_INGESTED_FROM, variables: { uuid: props.uuid, org: props.orgUuid || null }, fetchPolicy: 'no-cache',
             })
             found = ingestedOriginOf(resp?.data)
+            foundItem = ingestedItemOf(resp?.data)
         }
     } catch (err) {
         // The host shows its own errors; a marker that cannot be read is not shown.
@@ -264,7 +276,8 @@ async function read () {
     }
     if (!found) return
     origin.value = found
-    await Promise.all([readSource(found.source, mine), readFollows(found.source, mine)])
+    item.value = foundItem
+    await Promise.all([readSource(found.source, mine), readFollow(mine)])
 }
 
 async function readSource (uuid: string, mine: number) {
@@ -276,13 +289,14 @@ async function readSource (uuid: string, mine: number) {
     }
 }
 
-async function readFollows (sourceUuid: string, mine: number) {
-    if (!props.orgUuid) return
+/** The one follow the item's fields name, by its uuid; nothing is sent when they name none. No retry. */
+async function readFollow (mine: number) {
+    const uuid = followUuid.value
+    if (!uuid) return
     try {
-        const resp: any = await graphqlClient.query({
-            query: GET_MARKER_FOLLOWS, variables: { org: props.orgUuid, source: sourceUuid }, fetchPolicy: 'no-cache',
-        })
-        if (mine === readNumber) follows.value = resp?.data?.upstreamFollows ?? []
+        const resp: any = await graphqlClient.query({ query: GET_MARKER_FOLLOW, variables: { uuid }, fetchPolicy: 'no-cache' })
+        const row = resp?.data?.upstreamFollow ?? null
+        if (mine === readNumber && row?.uuid === uuid) follow.value = row
     } catch (err) {
         // As for the source: no follow line.
     }
