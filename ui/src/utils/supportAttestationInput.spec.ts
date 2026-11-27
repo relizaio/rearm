@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
     attestationVariables,
+    LEVEL_OF_SUPPORT_OPTIONS,
+    levelOfSupportLabel,
     validateAttestation,
-    type AttestationForm
+    type AttestationForm,
+    type LevelOfSupport
 } from './supportAttestationInput'
 
 /** A form where nothing has been touched. */
@@ -168,5 +171,32 @@ describe('attestationVariables: PATCH semantics', () => {
         const v = attestationVariables('c-1', f)
         expect('supportParty' in v).toBe(true)
         expect('party' in v).toBe(false)
+    })
+})
+
+// FDAW-150 L-3: the bulk dialog's Review step prints the level as the single-component editor's select does.
+describe('levelOfSupportLabel: the editor\'s words', () => {
+    it.each([
+        ['ACTIVELY_MAINTAINED', 'Actively maintained'],
+        ['NO_LONGER_MAINTAINED', 'No longer maintained'],
+        ['ABANDONED', 'Abandoned']
+    ] as Array<[LevelOfSupport, string]>)('%s reads %s', (value, word) => {
+        expect(levelOfSupportLabel(value)).toBe(word)
+    })
+
+    it('reads not stated for no level', () => {
+        expect(levelOfSupportLabel(null)).toBe('not stated')
+    })
+
+    it('humanizes an unknown level', () => {
+        expect(levelOfSupportLabel('SOME_NEW_LEVEL' as LevelOfSupport)).toBe('Some new level')
+    })
+
+    it('the options the editor binds carry the same words', () => {
+        expect(LEVEL_OF_SUPPORT_OPTIONS.map(o => o.value))
+            .toEqual(['ACTIVELY_MAINTAINED', 'NO_LONGER_MAINTAINED', 'ABANDONED'])
+        for (const option of LEVEL_OF_SUPPORT_OPTIONS) {
+            expect(option.label).toBe(levelOfSupportLabel(option.value))
+        }
     })
 })

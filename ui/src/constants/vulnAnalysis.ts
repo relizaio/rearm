@@ -86,3 +86,16 @@ export const MAX_CONTROLS = 10
 
 /** The longest control description the backend accepts (AssessmentFields.MAX_CONTROL_DESCRIPTION_LENGTH). */
 export const MAX_CONTROL_DESCRIPTION_LENGTH = 2048
+
+/** The server's FindingType (FDAW-150 3.1): one source for the Finding Analysis filter and the printed label. */
+export const FINDING_TYPE_OPTIONS = [
+    { label: 'Vulnerability', value: 'VULNERABILITY' },
+    { label: 'Violation', value: 'VIOLATION' },
+    { label: 'Weakness', value: 'WEAKNESS' }
+]
+
+/** The server's LocationType (FDAW-150 3.1). */
+export const LOCATION_TYPE_OPTIONS = [
+    { label: 'Package URL', value: 'PURL' },
+    { label: 'Code location', value: 'CODE_POINT' }
+]
