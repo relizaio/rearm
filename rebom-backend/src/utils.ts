@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { logger } from './logger';
+import { childFailure } from './childFailure';
 import { pool, runQuery, withTransaction } from './db';
 
 export function getPool() {
@@ -42,8 +43,7 @@ export async function shellExec(cmd: string, args: any[], timeout?: number, stde
               }
               resolve(resData)
           } else {
-              logger.error(resData)
-              reject(resData)
+              reject(childFailure(cmd, { killedByTimeout: child.killed === true, exitCode: code ?? null, signal: child.signalCode ?? null, timeoutMs: timeout }, resData))
           }
       })
   })

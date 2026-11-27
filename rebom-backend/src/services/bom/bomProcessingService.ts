@@ -20,6 +20,7 @@ import { SpdxService } from '../spdx';
 import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
 import { effectiveSkipPatterns } from './enrichmentSkipPatterns';
 import { buildEnrichmentChildEnv } from './enrichmentChildEnv';
+import { boundFailureText, ChildFailureKind, ChildProcessError } from '../../childFailure';
 import { RELEASE_NODE_PROPERTY, isReleaseNodeStamp, isRebomMergeOutput, stripReleaseNodeStamps } from './releaseNodeStamp';
 export { RELEASE_NODE_PROPERTY } from './releaseNodeStamp';
 import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
@@ -2964,7 +2965,7 @@ export async function enrichCycloneDxBom(
 
     logger.info('Running enrichment: rearm-cli bomutils enrich');
     const result = await shellExec('rearm', args, ENRICHMENT_TIMEOUT_MS, 'error', childEnv);
-    logger.debug({ enrichmentOutput: result }, 'rearm-cli enrichment completed');
+    logger.debug({ enrichmentOutputChars: result.length }, 'rearm-cli enrichment completed');
 
     const enrichedContent = await fs.promises.readFile(outputFile, 'utf8');
     const enrichedBom = JSON.parse(enrichedContent);
@@ -2985,8 +2986,8 @@ export async function enrichCycloneDxBom(
     if (inputFile) await deleteTempFile(inputFile);
     if (outputFile) await deleteTempFile(outputFile);
 
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('TIMEOUT');
+    const errorMessage = boundFailureText(error instanceof Error ? error.message : String(error));
+    const isTimeout = error instanceof ChildProcessError && error.kind === ChildFailureKind.TIMEOUT;
     
     logger.error({ 
       error: errorMessage, 
@@ -3387,7 +3388,7 @@ async function updateEnrichmentStatus(
       bomUuid,
       JSON.stringify(status),
       JSON.stringify(new Date().toISOString()),
-      JSON.stringify(errorMessage || null)
+      JSON.stringify(errorMessage ? (boundFailureText(errorMessage) || null) : null)
     ]);
   } catch (error) {
     logger.error({ bomUuid, status, error }, 'Failed to update enrichment status');
