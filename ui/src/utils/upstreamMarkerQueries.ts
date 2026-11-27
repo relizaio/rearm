@@ -21,7 +21,7 @@ export const GET_COMPONENT_INGESTED_FROM = gql`
     query componentIngestedFrom($uuid: ID!) {
         component(componentUuid: $uuid) {
             uuid
-            ingestedFrom { uuid source kind upstreamUuid upstreamName depth depthOrigin mapping updateState }
+            ingestedFrom { uuid source sourceName kind upstreamUuid upstreamName depth depthOrigin mapping updateState }
         }
     }`
 
@@ -30,7 +30,7 @@ export const GET_RELEASE_INGESTED_FROM = gql`
         release(releaseUuid: $uuid, orgUuid: $org) {
             uuid
             ingestedFrom {
-                uuid item source upstreamUuid upstreamVersion upstreamDate state integrity updateState presence goneSince lineKey oneOff
+                uuid item source sourceName upstreamUuid upstreamVersion upstreamDate state integrity updateState presence goneSince lineKey oneOff
                 collections { ${UPSTREAM_COLLECTION_FIELDS} }
             }
         }

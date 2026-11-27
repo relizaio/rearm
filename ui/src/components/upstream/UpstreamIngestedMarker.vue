@@ -107,8 +107,9 @@ export enum MarkerSubject {
 // The marker of something an upstream source ingested (ReARM Pro): on a product or component the
 // item it came from, on a release the upstream release with its read-only snapshot. It reads its
 // own data through the feature's documents, only behind the edition gate; the host's documents do
-// not change. The source's name and the follow need read access to the whole organization: a
-// refusal of either leaves them out and is not an error. Every supplier text is shown as text.
+// not change. The source's name comes with the item or the release. The follow needs read access
+// to the whole organization, and the source row is read for an administrator's "Follow this item"
+// only: a refusal of either leaves it out and is not an error. Every supplier text is shown as text.
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useStore } from 'vuex'
@@ -157,7 +158,7 @@ const vexImportsRead = ref(false)
 const showStart = ref(false)
 let readNumber = 0
 
-const sourceName = computed((): string => source.value?.name || UNKNOWN_SOURCE)
+const sourceName = computed((): string => origin.value?.sourceName || UNKNOWN_SOURCE)
 
 /** The upstream item the marker's follow is looked up by: the item itself, or the item of the release. */
 const itemUuid = computed((): string | null => (props.subject === MarkerSubject.ITEM ? origin.value?.uuid : origin.value?.item) ?? null)
@@ -267,12 +268,14 @@ async function read () {
     await Promise.all([readSource(found.source, mine), readFollows(found.source, mine)])
 }
 
+/** The source row, for "Follow this item" only: an administrator on a product or component. The headline never reads it. */
 async function readSource (uuid: string, mine: number) {
+    if (props.subject !== MarkerSubject.ITEM || !props.isOrgAdmin) return
     try {
         const resp: any = await graphqlClient.query({ query: GET_UPSTREAM_SOURCE, variables: { uuid }, fetchPolicy: 'no-cache' })
         if (mine === readNumber) source.value = resp?.data?.upstreamSource ?? null
     } catch (err) {
-        // Read access to the whole organization is needed: the marker names "an upstream source" instead.
+        // Refused or failed: no "Follow this item". Not an error, and the headline does not change.
     }
 }
 
@@ -288,6 +291,8 @@ async function readFollows (sourceUuid: string, mine: number) {
     }
 }
 
+// A flag that turns true after the marker has read still brings the button: the source row only.
+watch(() => props.isOrgAdmin, () => { if (origin.value) readSource(origin.value.source, readNumber) })
 watch(() => [available.value, props.uuid, props.orgUuid, props.subject], () => { read() }, { immediate: true })
 </script>
 
