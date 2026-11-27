@@ -33,7 +33,7 @@
 
             <n-form-item label="Finding Type" path="findingType">
                 <n-tag type="warning" size="medium">
-                    {{ formData.findingType }}
+                    {{ findingTypeLabel(formData.findingType) }}
                 </n-tag>
             </n-form-item>
 
@@ -45,7 +45,7 @@
 
             <n-form-item label="Location Type" path="locationType">
                 <n-tag type="success" size="medium">
-                    {{ formData.locationType }}
+                    {{ locationTypeLabel(formData.locationType) }}
                 </n-tag>
             </n-form-item>
 
@@ -262,6 +262,7 @@ import {
 } from '@/utils/assessmentFields'
 import { FIELD_HELP, STATE_GUIDANCE } from '@/constants/vulnAnalysisFieldHelp'
 import FieldLabel from './FieldLabel.vue'
+import { findingTypeLabel, locationTypeLabel } from '@/utils/findingAnalysisLabels'
 
 const store = useStore()
 

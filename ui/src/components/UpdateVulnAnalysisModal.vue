@@ -228,6 +228,7 @@ import {
 } from '@/utils/assessmentFields'
 import { FIELD_HELP, STATE_GUIDANCE } from '@/constants/vulnAnalysisFieldHelp'
 import FieldLabel from './FieldLabel.vue'
+import { analysisScopeLabel } from '@/utils/findingAnalysisLabels'
 
 interface Props {
     show: boolean
@@ -242,6 +243,7 @@ const emit = defineEmits<{
 }>()
 
 const store = useStore()
+const featureSetLabel = computed(() => store.getters.myorg?.terminology?.featureSetLabel || 'Feature Set')
 const notification = useNotification()
 const formRef = ref<FormInst | null>(null)
 const submitting = ref(false)
@@ -327,7 +329,8 @@ const modalTitle = computed(() => {
         const findingId = props.analysisRecord.findingId || 'Unknown'
         const location = props.analysisRecord.location || 'Unknown'
         const scope = props.analysisRecord.scope || 'ORG'
-        return `Update Finding Analysis [${scope}]: ${findingId} @ ${location}`
+        const scopeText = analysisScopeLabel(scope, props.analysisRecord.componentDetails?.type, featureSetLabel.value)
+        return `Update Finding Analysis (${scopeText}): ${findingId} @ ${location}`
     }
     return 'Update Finding Analysis'
 })

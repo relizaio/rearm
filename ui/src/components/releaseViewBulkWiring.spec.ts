@@ -204,6 +204,35 @@ describe('the bulk sweep is wired into ReleaseView', () => {
 })
 
 /**
+ * FDAW-150 W-1: the bulk dialog prints words, not the stored level or the bulk-act uuid. The
+ * label rule is tested in supportAttestationInput.spec.ts (levelOfSupportLabel); this pins the seam.
+ */
+describe('the bulk dialog prints labels, not raw values', () => {
+    it('both Review blocks print the level through levelOfSupportLabel', () => {
+        expect(code.split('levelOfSupportLabel(bulkForm.levelOfSupport)').length - 1).toBe(2)
+        expect(code).not.toContain("bulkForm.levelOfSupport || 'not stated'")
+    })
+
+    it('the done stage keeps the bulk-act uuids out of the text, in data-bulk-acts', () => {
+        const element = code.match(/<div[^>]*data-testid="bulk-result-act"[\s\S]*?<\/div>/)?.[0]
+        if (!element) throw new Error('no bulk-result-act element in ReleaseView.vue')
+        const openTag = element.slice(0, element.indexOf('>') + 1)
+        const text = element.slice(openTag.length)
+        expect(openTag).toContain(':data-bulk-acts=')
+        expect(text).not.toContain('bulkActs.join')
+        expect(text).not.toContain('Bulk act')
+        expect(text).toContain('Recorded as one bulk change.')
+    })
+
+    it('the editor and the bulk dialog bind the level table from supportAttestationInput', () => {
+        expect(code).toMatch(/import\s*\{[^}]*\bLEVEL_OF_SUPPORT_OPTIONS\b[^}]*\}\s*from\s*'@\/utils\/supportAttestationInput'/)
+        expect(code).toMatch(/import\s*\{[^}]*\blevelOfSupportLabel\b[^}]*\}\s*from\s*'@\/utils\/supportAttestationInput'/)
+        expect(code.split(':options="LEVEL_OF_SUPPORT_OPTIONS"').length - 1).toBe(2)
+        expect(code).not.toMatch(/const LEVEL_OPTIONS\s*[:=]/)
+    })
+})
+
+/**
  * The done stage names every entry not written (SCORE-61). The rules are tested in
  * useBulkAttest.spec.ts (groupNotWritten); this pins the seam: the labels travel from the
  * walk onto the selection, the computed feeds the template, and the template only renders.

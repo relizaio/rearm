@@ -2,6 +2,7 @@
 
 import type { SupportAttestationFilter } from './sbomComponentsQuery'
 import { validateJustifiedUnknown } from './justifiedUnknownLabels'
+import { humanizeEnum } from './fdaLabels'
 
 export type LevelOfSupport = 'ACTIVELY_MAINTAINED' | 'NO_LONGER_MAINTAINED' | 'ABANDONED'
 /**
@@ -14,6 +15,20 @@ export type LevelOfSupport = 'ACTIVELY_MAINTAINED' | 'NO_LONGER_MAINTAINED' | 'A
  * server cannot store a full support attestation. Upgrade the backend before attesting."
  * The same disguise the detail query wore, on the write path where it is harder to notice.
  */
+/** The level select's options, shared by the single-component editor and the bulk dialog (FDAW-150 3.3). */
+export const LEVEL_OF_SUPPORT_OPTIONS: Array<{ label: string, value: LevelOfSupport }> = [
+    { label: 'Actively maintained', value: 'ACTIVELY_MAINTAINED' },
+    { label: 'No longer maintained', value: 'NO_LONGER_MAINTAINED' },
+    { label: 'Abandoned', value: 'ABANDONED' }
+]
+
+/** The editor's label of a level; an unknown value humanized; null or empty reads 'not stated'. */
+export function levelOfSupportLabel (value: LevelOfSupport | null | undefined): string {
+    if (!value) return 'not stated'
+    const option = LEVEL_OF_SUPPORT_OPTIONS.find(o => o.value === value)
+    return option ? option.label : humanizeEnum(value)
+}
+
 export type SupportParty = 'FIRST_PARTY' | 'THIRD_PARTY'
 export type SupportMilestoneType =
     'END_OF_GUARANTEED_SUPPORT' | 'END_OF_SUPPORT' | 'END_OF_LIFE'

@@ -769,7 +769,7 @@
                         </n-form-item>
                         <n-form-item label="Level of support">
                             <n-select v-model:value="bulkForm.levelOfSupport"
-                                :options="LEVEL_OPTIONS" placeholder="Not stated" />
+                                :options="LEVEL_OF_SUPPORT_OPTIONS" placeholder="Not stated" />
                         </n-form-item>
                         <n-form-item label="Who the claim is about">
                             <n-select v-model:value="bulkForm.party"
@@ -860,7 +860,7 @@
                     </n-alert>
                     <n-alert type="default" :show-icon="false" style="font-size: 12px;">
                         Writing: level
-                        <strong>{{ bulkForm.levelOfSupport || 'not stated' }}</strong>;
+                        <strong>{{ levelOfSupportLabel(bulkForm.levelOfSupport) }}</strong>;
                         justification <strong>"{{ bulkForm.justification || '(none)' }}"</strong>;
                         claim is about
                         <strong>{{ partyLabel(bulkForm.party) }}</strong>
@@ -898,7 +898,7 @@
                     </ul>
                     <n-alert type="default" :show-icon="false" style="font-size: 12px;">
                         Writing: level
-                        <strong>{{ bulkForm.levelOfSupport || 'not stated' }}</strong>;
+                        <strong>{{ levelOfSupportLabel(bulkForm.levelOfSupport) }}</strong>;
                         justification <strong>"{{ bulkForm.justification || '(none)' }}"</strong>;
                         claim is about
                         <strong>{{ partyLabel(bulkForm.party) }}</strong>
@@ -935,8 +935,8 @@
                         <span v-if="bulkResult.skippedHasSupplier"> {{ bulkResult.skippedHasSupplier }} skipped: already hold a supplier.</span>
                         <span v-if="bulkResult.failed"> {{ bulkResult.failed }} failed.</span>
                         <div v-if="bulkResult.bulkActs.length" style="font-size: 12px; margin-top: 4px;"
-                            data-testid="bulk-result-act">
-                            Bulk act {{ bulkResult.bulkActs.join(', ') }}
+                            data-testid="bulk-result-act" :data-bulk-acts="bulkResult.bulkActs.join(',')">
+                            {{ bulkResult.bulkActs.length > 1 ? `Recorded as ${bulkResult.bulkActs.length} bulk changes.` : 'Recorded as one bulk change.' }}
                         </div>
                     </n-alert>
                     <!-- Not hidden: on a fresh UNATTESTED walk this should be zero, so a
@@ -1106,7 +1106,7 @@
                              perform -- it emptied the box, sent nothing, and reported
                              success. -->
                         <n-select v-model:value="attestForm.form.levelOfSupport"
-                            :options="LEVEL_OPTIONS" placeholder="Not stated" />
+                            :options="LEVEL_OF_SUPPORT_OPTIONS" placeholder="Not stated" />
                     </n-form-item>
                     <n-form-item label="Who the claim is about">
                         <n-select v-model:value="attestForm.form.party"
@@ -2877,6 +2877,7 @@ import type { BulkAttestInput, BulkCollectResult, BulkOutcome, NotWrittenGroup }
 import { useAttestationForm } from '@/utils/useAttestationForm'
 import type { AttestTarget } from '@/utils/useAttestationForm'
 import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils/supportAttestationInput'
+import { LEVEL_OF_SUPPORT_OPTIONS, levelOfSupportLabel } from '@/utils/supportAttestationInput'
 import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
 import { setSbomComponentSupportVars, setVendoredComponentSupportVars } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
@@ -5798,11 +5799,6 @@ const attestLoading: Ref<boolean> = ref(false)
 const attestSaving: Ref<boolean> = ref(false)
 const attestNothingPublishedText: Ref<string> = ref('')
 
-const LEVEL_OPTIONS: Array<{ label: string, value: LevelOfSupport }> = [
-    { label: 'Actively maintained', value: 'ACTIVELY_MAINTAINED' },
-    { label: 'No longer maintained', value: 'NO_LONGER_MAINTAINED' },
-    { label: 'Abandoned', value: 'ABANDONED' }
-]
 // The party is an attribute OF the attestation -- who the claim is about, first party or
 // third -- so it belongs inside the form rather than beside it as its own control.
 // Typed against the union so a value the backend does not declare is a COMPILE error. The
