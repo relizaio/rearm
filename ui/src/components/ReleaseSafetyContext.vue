@@ -1,5 +1,15 @@
 <template>
-    <n-space vertical>
+    <div v-if="summaryLoading" key="summary-loading" style="text-align: center; padding: 16px;" data-testid="safety-tab-loading">
+        <n-spin size="small" />
+    </div>
+    <n-alert v-else-if="summaryError" key="summary-error" type="error" :show-icon="false" data-testid="safety-tab-error"
+        style="word-break: break-word;">
+        Could not load the safety levels of this release: {{ summaryError }}
+    </n-alert>
+    <n-alert v-else-if="!canRead" key="no-read" type="info" data-testid="safety-tab-no-read">
+        You need Finding Analysis read on this release to see its safety levels and proposals. Ask an organization administrator to grant it.
+    </n-alert>
+    <n-space v-else key="tab" vertical>
         <h3>Safety integrity levels</h3>
         <n-alert type="info" :show-icon="false" data-testid="safety-context-not-verified">
             {{ headerText(productView) }}
@@ -13,6 +23,10 @@
                 {{ b.text }}
             </n-alert>
         </n-space>
+        <n-alert v-if="recordsError" key="records-error" type="error" :show-icon="false" data-testid="safety-records-error"
+            style="word-break: break-word;">
+            Could not load the safety levels of this release: {{ recordsError }}
+        </n-alert>
         <n-checkbox v-model:checked="includeSuperseded">Show superseded levels</n-checkbox>
         <n-data-table
             :columns="recordColumns"
@@ -24,7 +38,7 @@
         />
         <div v-if="showing" key="showing" data-testid="safety-context-showing">{{ showing }}</div>
         <h3>Proposals for this release</h3>
-        <safety-context-proposals :org-uuid="orgUuid" :release-uuid="releaseUuid" @changed="fetchRecords" />
+        <safety-context-proposals :org-uuid="orgUuid" :release-uuid="releaseUuid" @changed="onProposalsChanged" />
         <safety-context-source-modal v-model:show="sourceOpen" :uuid="sourceUuid" />
     </n-space>
 </template>
@@ -37,12 +51,11 @@ export default {
 <script lang="ts" setup>
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { NAlert, NButton, NCard, NCheckbox, NDataTable, NIcon, NSpace, NTag, NTooltip } from 'naive-ui'
+import { NAlert, NButton, NCard, NCheckbox, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip } from 'naive-ui'
 import { Code } from '@vicons/tabler'
-import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
-import commonFunctions from '@/utils/commonFunctions'
-import { GET_SAFETY_RELEASE_VIEW } from '@/graphql/safetyContext'
+import { graphqlRefusalText } from '@/utils/graphqlErrorText'
+import { GET_SAFETY_RELEASE_SUMMARY, GET_SAFETY_RELEASE_VIEW, scopeLabel } from '@/graphql/safetyContext'
 import {
     REDACTED_SOURCE_TEXT, SUMMARY_TITLE, acceptedDetail, acceptedWho, banners, distinctActiveLevels, emptySummaryText,
     headerText, issuerOverrideTooltip, releaseCellText, rowKey, showingText, summaryLine
@@ -51,6 +64,7 @@ import SafetyContextProposals from './SafetyContextProposals.vue'
 import SafetyContextSourceModal from './SafetyContextSourceModal.vue'
 
 const props = defineProps<{ orgUuid: string, releaseUuid: string }>()
+const emit = defineEmits(['changed'])
 
 const view = ref<any>(null)
 const records = computed<any[]>(() => view.value?.rows ?? [])
@@ -64,11 +78,43 @@ const includeSuperseded = ref(false)
 const sourceOpen = ref(false)
 const sourceUuid = ref<string | null>(null)
 
+const recordsError = ref<string | null>(null)
+
+// The summary says first whether the caller may read the release's safety data; without Finding
+// Analysis read on the release the tab shows a note and runs none of its other queries.
+const summaryLoading = ref(true)
+const summaryError = ref<string | null>(null)
+const canRead = ref(false)
+let summarySeq = 0
+
+async function fetchSummary () {
+    if (!props.orgUuid || !props.releaseUuid) return
+    const seq = ++summarySeq
+    summaryLoading.value = true
+    summaryError.value = null
+    try {
+        const r = await graphqlClient.query({
+            query: GET_SAFETY_RELEASE_SUMMARY,
+            variables: { org: props.orgUuid, release: props.releaseUuid },
+            fetchPolicy: 'network-only'
+        })
+        if (seq !== summarySeq) return
+        canRead.value = (r.data as any)?.getSafetyContextReleaseSummary?.canRead === true
+    } catch (err: any) {
+        if (seq !== summarySeq) return
+        canRead.value = false
+        summaryError.value = graphqlRefusalText(err)
+    } finally {
+        if (seq === summarySeq) summaryLoading.value = false
+    }
+    if (canRead.value) await fetchRecords()
+}
+
 // Only the latest request may write the list (the superseded toggle can race).
 let requestSeq = 0
 
 async function fetchRecords () {
-    if (!props.orgUuid || !props.releaseUuid) return
+    if (!props.orgUuid || !props.releaseUuid || !canRead.value) return
     const seq = ++requestSeq
     loading.value = true
     try {
@@ -77,23 +123,25 @@ async function fetchRecords () {
             variables: { org: props.orgUuid, release: props.releaseUuid, includeSuperseded: includeSuperseded.value, limit: 500 },
             fetchPolicy: 'network-only'
         })
-        if (seq === requestSeq) view.value = (r.data as any)?.getSafetyContextReleaseView ?? null
+        if (seq === requestSeq) {
+            view.value = (r.data as any)?.getSafetyContextReleaseView ?? null
+            recordsError.value = null
+        }
     } catch (err: any) {
-        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        if (seq === requestSeq) recordsError.value = graphqlRefusalText(err)
     } finally {
         if (seq === requestSeq) loading.value = false
     }
 }
 
-onMounted(fetchRecords)
-watch([includeSuperseded, () => props.releaseUuid], fetchRecords)
+function onProposalsChanged () {
+    fetchRecords()
+    emit('changed')
+}
 
-const SCOPE_LABELS: Record<string, string> = {
-    RELEASE: 'This release', BRANCH: 'Branch', COMPONENT: 'Component', ORG: 'Organization'
-}
-function scopeLabel (scope: string): string {
-    return SCOPE_LABELS[scope] || scope
-}
+onMounted(fetchSummary)
+watch(includeSuperseded, fetchRecords)
+watch([() => props.orgUuid, () => props.releaseUuid], fetchSummary)
 
 function purlVersion (purl: string): string {
     const at = (purl || '').indexOf('@')
