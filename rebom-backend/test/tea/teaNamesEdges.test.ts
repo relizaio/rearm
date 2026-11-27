@@ -4,7 +4,7 @@ vi.mock('../../src/services/tea/teaService', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../src/services/tea/teaService')>();
     const wrapped: Record<string, unknown> = { ...actual };
     for (const name of ['teaStatus', 'teaFetchedFileChunk', 'teaResolve', 'teaProduct', 'teaComponent', 'teaReleases', 'teaRelease',
-        'teaFetchCollection', 'teaStoreFetchedSbom', 'teaReleaseFetch']) {
+        'teaFetchCollection', 'teaStoreFetchedSbom', 'teaReleaseFetch', 'teaProducts', 'teaComponents']) {
         wrapped[name] = vi.fn((actual as any)[name]);
     }
     return wrapped;
@@ -16,7 +16,7 @@ import { buildTeaArgv } from '../../src/services/tea/teaArgv';
 import { effectiveLimits, readTeaConfig, TeaLocalTesting, TeaRunKind } from '../../src/services/tea/teaConfig';
 import { validateFetch, validateRelease, validateReleases } from '../../src/services/tea/teaRequest';
 import * as TeaService from '../../src/services/tea/teaService';
-import { cleanupDirs, configure, field, gql, Http, NONE, startHttp, Stub, tenOperations, UUID_A, UUID_B } from './teaTestKit';
+import { cleanupDirs, configure, field, gql, Http, NONE, startHttp, Stub, twelveOperations, UUID_A, UUID_B } from './teaTestKit';
 
 /**
  * The names the operations carry: the operation named in the log line of an unexpected failure, in
@@ -50,7 +50,7 @@ describe('an operation that fails unexpectedly', () => {
         cleanupDirs();
     });
 
-    it.each(tenOperations().map((operation) => [operation[0], operation] as const))('%s is named in the one log line and answers FAILED with INTERNAL', async (name, operation) => {
+    it.each(twelveOperations().map((operation) => [operation[0], operation] as const))('%s is named in the one log line and answers FAILED with INTERNAL', async (name, operation) => {
         const errors = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
         const boom = new Error('boom');
         vi.mocked((TeaService as any)[name]).mockRejectedValueOnce(boom);

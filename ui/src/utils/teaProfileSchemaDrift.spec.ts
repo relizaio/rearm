@@ -6,7 +6,7 @@ vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAu
 import { validate } from 'graphql'
 import graphqlQueries from './graphqlQueries'
 import { editionPermissionFunctions, TEA_PERMISSION_FUNCTIONS, teaProfilesAvailable } from './teaProfile'
-import { TEA_RIDE_ALONG_SKIP_LABELS, TEA_RIDE_ALONG_STATUSES } from './teaPublication'
+import { TEA_RIDE_ALONG_SKIP_LABELS, TEA_RIDE_ALONG_STATUSES, teaNoSbomConfirmAvailable } from './teaPublication'
 import constants from './constants'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 import { outputEventTypeOptionsForEdition, TEA_OUTPUT_EVENT_TYPE_OPTIONS } from './teaOutputEvents'
@@ -167,6 +167,55 @@ describe('TEA publication documents (TEA-5) and the edition gate', () => {
         const pro = enumValuesOf(proSchema!, 'TeaRideAlongStatus')
         expect([...TEA_RIDE_ALONG_STATUSES].sort()).toEqual([...pro].sort())
         expect(Object.keys(TEA_RIDE_ALONG_SKIP_LABELS).sort()).toEqual(pro.filter(v => v !== 'PUBLISHED').sort())
+    })
+})
+
+/**
+ * A publish of releases without an SBOM (task TPF-257, row T-893): the list read on the click and the
+ * two publish documents with the noSbom policy exist in the Pro schema only until the next CE sync, so
+ * they are documents of their own that ReleaseView sends behind teaNoSbomConfirmAvailable, and the
+ * four publication documents above stay unchanged and valid on CE. The canary fails once the CE schema
+ * gains TeaPublishPreview.withoutSbom: then the gate is removed and the new documents sent everywhere.
+ */
+const NO_SBOM_DOCS = {
+    ReleaseTeaPublicationNoSbomGql: graphqlQueries.ReleaseTeaPublicationNoSbomGql,
+    PublishReleaseOnTeaNoSbomGql: graphqlQueries.PublishReleaseOnTeaNoSbomGql,
+    RepublishReleaseOnTeaNoSbomGql: graphqlQueries.RepublishReleaseOnTeaNoSbomGql,
+}
+
+describe('TEA publish without an SBOM (TPF-257, T-893) and the edition gate', () => {
+    it.runIf(proSchema)('the three new documents validate against the Pro schema', () => {
+        for (const [name, doc] of Object.entries(NO_SBOM_DOCS)) {
+            expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
+        }
+    })
+
+    it('the new documents read withoutSbom, pass noSbom, and select withoutAggregate on the result and on each child', () => {
+        expect(NO_SBOM_DOCS.ReleaseTeaPublicationNoSbomGql.loc!.source.body)
+            .toMatch(/withoutSbom \{\s*release\s+componentName\s+version\s+profiles\s*\}/)
+        for (const name of ['PublishReleaseOnTeaNoSbomGql', 'RepublishReleaseOnTeaNoSbomGql'] as const) {
+            const body = NO_SBOM_DOCS[name].loc!.source.body
+            expect(body, name).toMatch(/\$noSbom: TeaNoSbomPolicy\)/)
+            expect(body, name).toMatch(/\(release: \$release, comment: \$comment, noSbom: \$noSbom\)/)
+            expect(body, name).toMatch(/\n\s*withoutAggregate\s*\n\s*children \{\s*withoutAggregate\s*\}/)
+        }
+    })
+
+    it('the four publication documents of TEA-5 are unchanged: no noSbom, no withoutSbom, no withoutAggregate, valid on CE', () => {
+        for (const [name, doc] of Object.entries(PUBLICATION_DOCS)) {
+            const body = doc.loc!.source.body
+            for (const field of ['noSbom', 'withoutSbom', 'withoutAggregate']) expect(body, name + ' ' + field).not.toContain(field)
+            if (ceServesTea()) expect(validate(ceSchema, doc).map(e => e.message), name).toEqual([])
+        }
+    })
+
+    it('canary: the CE schema has no TeaPublishPreview.withoutSbom, so the gate keeps the new documents from CE', () => {
+        const preview: any = ceSchema.getType('TeaPublishPreview')
+        expect(Boolean(preview?.getFields?.().withoutSbom),
+            'the CE schema now serves TeaPublishPreview.withoutSbom: remove the teaNoSbomConfirmAvailable gate (TPF-257) '
+            + 'and send the no-SBOM documents on every edition').toBe(false)
+        expect(teaNoSbomConfirmAvailable('OSS')).toBe(false)
+        for (const [name, doc] of Object.entries(NO_SBOM_DOCS)) expect(validate(ceSchema, doc).length, name).toBeGreaterThan(0)
     })
 })
 

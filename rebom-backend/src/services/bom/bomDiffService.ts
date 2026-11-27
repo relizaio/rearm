@@ -2,6 +2,7 @@ import { mergeBomObjects, findBomObjectById, augmentBomWithComponentContext } fr
 import { logger } from '../../logger';
 import { RebomOptions, BomDiffResult, ComponentDiff } from '../../types';
 import { createTempFile, deleteTempFile, shellExec } from '../../utils';
+import { buildChildEnv, ChildTool } from '../../childEnv';
 async function mergeBomsForDiff(ids:[string], org: string){
 
     const rebomOptions: RebomOptions = {
@@ -150,7 +151,7 @@ async function mergeBomsForDiff(ids:[string], org: string){
         toBomPath
       )
 
-      const diffResultString: string = await shellExec('cyclonedx-cli',command)
+      const diffResultString: string = await shellExec('cyclonedx-cli', command, undefined, 'error', buildChildEnv(ChildTool.CYCLONEDX_CLI))
       const diffResult: BomDiffResult = JSON.parse(diffResultString)
       
       // Clean up temporary files after successful diff

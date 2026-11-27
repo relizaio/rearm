@@ -58,6 +58,11 @@ function teaResolver<R extends TeaResultBase>(
 
 // A map of functions which return data for the schema.
 const resolvers = {
+	// Every answer of type Bom serves its meta through here, whichever function produced the row, so a
+	// stored enrichmentError (old rows hold a child's whole stdout) is served bounded (TPF-261 design 3.9).
+	Bom: {
+		meta: (row: { meta?: unknown }) => BomService.BomMapper.servedMeta(row.meta),
+	},
 	Query: {
 		hello: () => 'world',
 		allBoms: async (): Promise<BomDto[]> => BomService.findAllBoms(),
@@ -156,6 +161,8 @@ const resolvers = {
 		teaResolve: teaResolver('teaResolve', (args) => TeaService.teaResolve(args.input)),
 		teaProduct: teaResolver('teaProduct', (args) => TeaService.teaProduct(args.input)),
 		teaComponent: teaResolver('teaComponent', (args) => TeaService.teaComponent(args.input)),
+		teaProducts: teaResolver('teaProducts', (args) => TeaService.teaProducts(args.input)),
+		teaComponents: teaResolver('teaComponents', (args) => TeaService.teaComponents(args.input)),
 		teaReleases: teaResolver('teaReleases', (args) => TeaService.teaReleases(args.input)),
 		teaRelease: teaResolver('teaRelease', (args) => TeaService.teaRelease(args.input)),
 		teaFetchCollection: teaResolver('teaFetchCollection', (args) => TeaService.teaFetchCollection(args.input)),

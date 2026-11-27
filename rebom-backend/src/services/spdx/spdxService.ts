@@ -4,6 +4,8 @@ import { SpdxMetadata, ConversionResult, RebomOptions } from '../../types';
 import { BomConversionError } from '../../types/errors';
 import { v4 as uuidv4 } from 'uuid';
 import { shellExec, createTempFile, deleteTempFile } from '../../utils';
+import { buildChildEnv, ChildTool } from '../../childEnv';
+import { boundFailureText } from '../../childFailure';
 
 // Known SPDX conversion fixes
 const SPDX_FIXES = {
@@ -158,8 +160,8 @@ export class SpdxService {
             ];
             
             logger.info(`Running conversion: rearm-cli ${args.join(' ')}`);
-            const result = await shellExec('rearm', args, 60000); // 60 second timeout for rearm-cli
-            logger.debug({ conversionOutput: result }, "rearm-cli conversion completed");
+            const result = await shellExec('rearm', args, 60000, 'error', buildChildEnv(ChildTool.REARM_BOM)); // 60 second timeout for rearm-cli
+            logger.debug({ conversionOutputChars: result.length }, "rearm-cli conversion completed");
 
             // Validate the converted CycloneDX file
             const validateCommand = [
@@ -171,12 +173,12 @@ export class SpdxService {
             ];
             try {
                 logger.debug("Starting CycloneDX validation");
-                await shellExec('cyclonedx-cli', validateCommand);
+                await shellExec('cyclonedx-cli', validateCommand, undefined, 'error', buildChildEnv(ChildTool.CYCLONEDX_CLI));
                 logger.debug("CycloneDX validation passed");
             } catch (validationError) {
-                logger.error({ validationError, outputFile }, "CycloneDX validation failed");
+                logger.error({ err: validationError, outputFile }, "CycloneDX validation failed");
                 throw new BomConversionError(
-                    `CycloneDX validation failed: ${validationError}`,
+                    `CycloneDX validation failed: ${boundFailureText(validationError instanceof Error ? validationError.message : String(validationError))}`,
                     'SPDX',
                     'CYCLONEDX',
                     validationError instanceof Error ? validationError : new Error(String(validationError))
@@ -214,7 +216,7 @@ export class SpdxService {
             
             return {
                 success: false,
-                error: `Conversion failed: ${error}`
+                error: 'Conversion failed: ' + boundFailureText(error instanceof Error ? error.message : String(error))
             };
         }
     }

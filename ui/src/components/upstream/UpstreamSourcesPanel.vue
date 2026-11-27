@@ -43,6 +43,13 @@
             :org-uuid="orgUuid"
             :source="formSource"
             @saved="onSaved" />
+
+        <upstream-follow-start-modal
+            v-if="isOrgAdmin"
+            v-model:show="startOpen"
+            :org-uuid="orgUuid"
+            :sources="activeSources"
+            :source="startSource" />
     </div>
 </template>
 
@@ -51,15 +58,18 @@
 // upstream sources with their last probe and their schedule, and for an administrator create,
 // edit, probe, sync now and archive. Every member with READ on the organization sees the list; the
 // form is not mounted for anyone else, so their page holds no credential field. Every member has
-// the row action Follows, a router link to the follows of the source. The backend
-// decides who may do what; this component only decides which controls to draw.
+// the row action Follows, a router link to the follows of the source. An administrator also has
+// the row action Follow an item on an ACTIVE row, and a newly created source that the reload holds
+// as ACTIVE opens the dialog Follow an item on it (the landing): the dialog waits for the probe
+// before it reads the list. The backend decides who may do what; this component only decides
+// which controls to draw.
 import { computed, h, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { DataTableColumns } from 'naive-ui'
 import { NButton, NDataTable, NModal, NSpace, NSpin, NSwitch, NTag } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
-import { isForbidden, isUuid, refusalOf } from '@/utils/upstream'
+import { isForbidden, isUuid, PROBE_POLL_MS, refusalOf } from '@/utils/upstream'
 import {
     ARCHIVE_UPSTREAM_SOURCE, GET_UPSTREAM_SOURCE, GET_UPSTREAM_SOURCES, GET_UPSTREAM_SYNCS, PROBE_UPSTREAM_SOURCE, SYNC_UPSTREAM_SOURCE_NOW,
 } from '@/utils/upstreamSourceQueries'
@@ -69,6 +79,7 @@ import {
     archiveSourceStatement, autoIntegrateSentence, credentialKindLabel, documentClassLabel, forbiddenSentence, labelOf, probeResultSentence,
     probeTimeoutHint, runStopSentence, syncOriginLabel, syncStateLabel, vexModeLabel,
 } from '@/utils/upstreamLabels'
+import UpstreamFollowStartModal from './UpstreamFollowStartModal.vue'
 import UpstreamProbeResult from './UpstreamProbeResult.vue'
 import UpstreamSourceFormModal from './UpstreamSourceFormModal.vue'
 
@@ -81,10 +92,11 @@ const props = defineProps<{
 const EMPTY_ADMIN = 'No upstream source yet. Add the TEA server of a supplier to follow its products and components.'
 const EMPTY_MEMBER = 'No upstream source is configured. An administrator of the organization adds them.'
 const KEY_ID_NOT_SHOWN = 'key id not shown to you'
-const PROBE_POLL_MS = 2000
 const SYNC_POLL_MS = 5000
 
 type PanelState = 'LOADING' | 'LIST' | 'FORBIDDEN' | 'ERROR'
+/** What the source form was opened for: only a save of a create lands on the list of the new source. */
+type FormPurpose = 'NONE' | 'CREATE' | 'EDIT'
 
 const sources = ref<any[]>([])
 const state = ref<PanelState>('LOADING')
@@ -95,6 +107,9 @@ const expandedKeys = ref<string[]>([])
 const syncsBySource = ref<Record<string, { loading: boolean, error: string, rows: any[] }>>({})
 const formOpen = ref(false)
 const formSource = ref<LoadedUpstreamSource | null>(null)
+const formPurpose = ref<FormPurpose>('NONE')
+const startOpen = ref(false)
+const startSource = ref<string | null>(null)
 const archiveTarget = ref<any | null>(null)
 const archiving = ref(false)
 const busy = ref<Record<string, boolean>>({})
@@ -103,8 +118,9 @@ const rowKey = (row: any): string => row.uuid
 
 // ---- Reading ----
 
-async function loadSources () {
-    if (!props.orgUuid) return
+/** Reads the sources; true when the list now holds the answer of this read. */
+async function loadSources (): Promise<boolean> {
+    if (!props.orgUuid) return false
     loading.value = true
     const firstRead = state.value !== 'LIST'
     try {
@@ -116,6 +132,7 @@ async function loadSources () {
         state.value = 'LIST'
         loadError.value = ''
         startPolls()
+        return true
     } catch (err) {
         const refusal = refusalOf(err)
         if (firstRead) {
@@ -124,6 +141,7 @@ async function loadSources () {
         } else {
             props.notify('error', 'Upstream sources', refusal.text)
         }
+        return false
     } finally {
         loading.value = false
     }
@@ -205,18 +223,35 @@ function onExpand (keys: Array<string | number>) {
 
 // ---- Actions of an administrator ----
 
+const activeSources = computed((): any[] => sources.value.filter(s => s.status === 'ACTIVE'))
+
 function openCreate () {
     formSource.value = null
+    formPurpose.value = 'CREATE'
     formOpen.value = true
 }
 
 function openEdit (row: any) {
     formSource.value = row
+    formPurpose.value = 'EDIT'
     formOpen.value = true
 }
 
-async function onSaved () {
-    await loadSources()
+/** The dialog Follow an item in mode From the list, for one source. */
+function openStart (uuid: string) {
+    startSource.value = uuid
+    startOpen.value = true
+}
+
+// The landing (TPF-243 design 3.10): after a create, and only when the reload holds the new
+// source as ACTIVE, the dialog opens on it. An edit, a failed reload or a source the reload does
+// not hold opens nothing.
+async function onSaved (uuid: string) {
+    const created = formPurpose.value === 'CREATE'
+    formPurpose.value = 'NONE'
+    const reloaded = await loadSources()
+    if (!created || !reloaded || !uuid) return
+    if (activeSources.value.some(s => s.uuid === uuid)) openStart(uuid)
 }
 
 async function rowAction (row: any, mutation: any, variables: Record<string, any>, field: string, done: string) {
@@ -343,6 +378,7 @@ function actionsCell (row: any) {
     return h(NSpace, { size: 'small' }, {
         default: () => [
             follows,
+            button('Follow an item', 'upstream-action-follow-item', () => openStart(row.uuid)),
             button('Edit', 'upstream-action-edit', () => openEdit(row)),
             button('Probe', 'upstream-action-probe', () => probe(row)),
             button('Sync now', 'upstream-action-sync', () => syncNow(row)),

@@ -2,6 +2,35 @@
 
 Every option of this chart is documented in `values.yaml`, next to the value. This file holds what needs more room than a comment.
 
+## Run mode of the artifact service
+
+The value `ociArtifactService.ginMode` sets the gin mode of the oci-artifact service; the chart renders it as `GIN_MODE` of the `rearm-oci-artifact` container.
+
+- `release`, the default. Empty, `null` or a values file without the key also give `release`, so an upgrade with an old values file needs no edit.
+- `debug`, for debugging only. The service then prints the gin warning, its route list and gin debug lines at start, and the log line of a recovered panic also holds the request line and headers.
+- Any other value stops `helm template`, `helm install` and `helm upgrade` with `ociArtifactService.ginMode: "<value>" is not release or debug.`, and the running pod is not touched.
+
+Request logging (`logFormatType`, `logLevel`) is the service's own and does not depend on the mode. The line to wait for at start is `Server starting on port 8083`. Render check: `helm template rearm . -n rearm | python3 tests/check_oci_gin_mode.py release` (or `debug` with `--set ociArtifactService.ginMode=debug`).
+
+## Log level of rebom
+
+The value `rebom.backend.logLevel` sets the log level of the rebom backend; the chart renders it as `LOG_LEVEL` of the `rebom-backend-container` container. The default is `info`.
+
+- **Levels: `trace`, `debug`, `info`, `warn`, `error`, `fatal` and `silent`**, in lower case. Any other value, another case included, stops `helm template`, `helm install` and `helm upgrade` with `rebom.backend.logLevel: "<value>" is not trace, debug, info, warn, error, fatal or silent.`, and the running pod is not touched.
+- **`warn` and above hide the info lines**: the server ready and shutdown lines, the enrichment scheduler lines, the integration configured and deleted lines. Refusals are logged at warn and failures at error, so both stay up to `error`. **`silent` turns off every line, errors included.**
+- **The chart value takes precedence over a `LOG_LEVEL` in the secret of `rebom.backend.rebomPropsSecretName`**: a variable in `env` wins over the same variable from `envFrom`. Before this value existed, any `LOG_LEVEL` that rebom was given, whatever it said, made it log at debug. An install that keeps `LOG_LEVEL` in that secret runs at `info` after the upgrade; set `rebom.backend.logLevel` to the level it wants, or to empty so that the secret decides.
+- **Empty** (`""` or `null`): `LOG_LEVEL` is not rendered. The secret decides, or the service default applies: `info`, or `debug` when `NODE_ENV` is `development`.
+- **Older rebom images.** A rebom image older than the one this chart pins logs at debug for any `LOG_LEVEL`, the rendered `info` included. With such an image (an override of `image.rebomBackend`), set the value to empty.
+- **Outside the chart** (compose, `docker run`): rebom reads `LOG_LEVEL` trimmed and in any letter case. A value that is not a level starts the service at `info` with one warn line that begins `LOG_LEVEL is set to a value that is not a log level; using info.` and does not repeat the value.
+
+Check the value of a running install:
+
+```bash
+kubectl -n <ns> exec deploy/<r>-rebom-backend -- printenv LOG_LEVEL
+```
+
+Render check: `helm template rearm . -n rearm | python3 tests/check_rebom_log_level.py info` (or `warn` with `--set rebom.backend.logLevel=warn`, or `absent` with `--set rebom.backend.logLevel=`).
+
 ## Network policies
 
 The chart renders Kubernetes NetworkPolicies from the `networkPolicy` block of `values.yaml` (template `templates/networkpolicy.yaml`).
@@ -179,3 +208,48 @@ The check probes a pod address. It says nothing about the other ranges you had t
 To turn it off: `networkPolicy.rebomBackend.egress.enabled: false`. No pod restarts when it is turned on or off.
 
 **Upgrading.** An upgrade to a chart version that has this policy changes nothing: it is off until you set `networkPolicy.rebomBackend.egress.enabled: true`. It needs `networkPolicy.enabled: true`; the chart refuses to render with the egress policy on and `networkPolicy.enabled` off, so to switch every policy off set both to `false`.
+
+## NODE_ENV of the rebom pod
+
+The rebom container runs with `NODE_ENV` from `rebom.backend.nodeEnv`, which is `production` by default.
+
+- **Allowed values: `production` and `development`.** Empty, `null` or a missing key give `production`. Any other value, a typo or another case included, stops the render with `rebom.backend.nodeEnv: "<value>" is not production or development.`, so the pod is never started in a mode nobody asked for.
+- **`production`** turns off GraphQL introspection on port 4000, serves the production landing page instead of the sandbox page, and answers a malformed, too large or wrongly encoded request body with the status text only, without a stack trace. Status codes do not change, and ReARM does not use introspection.
+- **`development` is for debugging only.** It turns introspection, the sandbox landing page and the stack traces in error responses back on. Set it for the time of the debugging and remove it afterwards.
+- **The log level is not set by this value**, but by `rebom.backend.logLevel`.
+- **The chart value takes precedence over a `NODE_ENV` in the secret of `rebom.backend.rebomPropsSecretName`.** An install that kept `NODE_ENV=development` there runs on `production` after the upgrade; set `rebom.backend.nodeEnv: development` instead.
+- **Upgrading.** An upgrade with an old values file, or with `--reuse-values`, gets `production` with no change to the values; the rebom pod restarts once because its template changed. The init container `rebom-backend-init` only copies the migrations and gets no `NODE_ENV`.
+
+Check the value of a running install:
+
+```bash
+kubectl -n <ns> exec deploy/<r>-rebom-backend -- printenv NODE_ENV
+```
+
+## Environment of the tools rebom runs
+
+rebom starts other programs for part of its work: the rearm CLI (merge, enrichment, SPDX conversion, score), cyclonedx-cli (diff, validation), ssh-keygen and gpg (signature checks). Each is started with a short fixed list of environment variables and nothing else of the pod environment, so a tool that reads a file from outside does not hold the database password, the encryption settings or anything else of the secret of `rebom.backend.rebomPropsSecretName`.
+
+- **What the tools get.** All of them: `PATH`, `LANG`, `LC_ALL`. The rearm CLI: a `HOME` that does not exist, so it reads no configuration file. The enrichment run only: `SSL_CERT_FILE`, `SSL_CERT_DIR`, the proxy variables, `REARM_RESILIENTDNS` and the BEAR key of the organisation. cyclonedx-cli: `HOME`, `TMPDIR`, `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT`, `DOTNET_BUNDLE_EXTRACT_BASE_DIR`. gpg: a `GNUPGHOME` made for the one call.
+- **`rebom.backend.childEnvPassthrough`** is a list of extra variable names, empty by default. A listed name is passed, with the value it has in the rebom container, to every tool above, except that the enrichment run never gets a name that starts with `GO` (Go run time settings such as `GODEBUG` and `GOTRACEBACK`), `DEBUG_HTTP2_GOROUTINES` or `SSLKEYLOGFILE`: it is the one tool that holds a credential, the BEAR key, and a Go debug setting can make it print its request headers, the key included, to the rebom log. Such a name still reaches the other tools. Use the list only when a tool needs one more variable and that variable holds no secret:
+
+  ```yaml
+  rebom:
+    backend:
+      childEnvPassthrough:
+        - TZ
+  ```
+
+- **Names only.** An entry is made of letters, digits and underscores, does not start with a digit and is at most 128 characters long. A value that is not a list, or an entry that is not such a name (`NAME=value` included), stops the render with a message that gives the position of the entry, not its text. The list is not a secret: it is part of the pod specification and rebom logs it.
+- **Refused names.** rebom never passes: its own settings (names that start with `POSTGRES_`, `ENCRYPTION_`, `REBOM_` or `REARM_`); a name that contains `PASS`, `PWD`, `SECRET`, `TOKEN`, `KEY`, `SALT`, `CREDENTIAL` or `AUTH`, in any case; `NODE_OPTIONS`, `DOTNET_STARTUP_HOOKS` and names that start with `LD_` or `CORECLR_`; and the names of the first point, which it manages itself and which cannot be added to another tool or changed this way. A refused name is not an error: the pod starts, the name is left out and reported.
+- **A secret with an unusual name is not recognised.** A variable such as a connection string that holds a password is passed when you list it. Do not list it.
+- **One log line at start** says what rebom took: `child environment passthrough`, with the accepted names, the refused names, the accepted names that the enrichment run does not get (`withheldFromEnrichment`) and the number of malformed entries. It is a warning when a name was refused or an entry was malformed, and it never holds a value. With a rebom log level above info the line is written only when it is a warning.
+- **TEA.** The runs that fetch from TEA servers have their own, shorter list and never get the extra names.
+- **Empty list.** An empty or missing value renders no variable. A `REBOM_CHILD_ENV_PASSTHROUGH` (names separated by commas) in the secret of `rebom.backend.rebomPropsSecretName` is then honoured; a chart value that is not empty takes precedence over it.
+- **Upgrading.** An upgrade with an old values file, or with `--reuse-values`, renders nothing new, and the rebom pod is not restarted by this value. The change comes with the rebom-backend image: from the image that has it, a variable you set on the rebom pod for one of the tools (a Go or .NET run time setting, `TZ`, a locale variable other than `LANG` and `LC_ALL`) no longer reaches the tool until its name is listed here, and a Go setting no longer reaches the enrichment run at all. `REARM_` variables and a rearm configuration file in the home directory are no longer read by the CLI, and that cannot be turned back. An image from before the change ignores this value and passes its whole environment to the tools.
+
+Check a running install:
+
+```bash
+kubectl -n <ns> logs deploy/<r>-rebom-backend | grep 'child environment passthrough'
+```

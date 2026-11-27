@@ -4,6 +4,7 @@ import {
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText,
     teaActErrorText, TEA_ACT_GATEWAY_TEXT,
     teaActLabel, teaActProgress, teaEntryChecksums, teaEntryFileName, teaEntryDownloadRef, teaMediaTypeExtension,
+    teaPublishVariables, teaNoAggregateText, teaNoSbomConfirmAvailable, type TeaReleaseWithoutSbom,
 } from './teaPublication'
 
 vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
@@ -415,5 +416,203 @@ describe('the TEA act progress (the server publishes within the request)', () =>
             .toContain('Its component releases are published with it.')
         expect(teaActProgress('hide', { kind: 'PRODUCT_RELEASE', cascades: true }).text)
             .not.toContain('component releases are published')
+    })
+})
+
+// TPF-257 (design 3.9, rows T-890, T-891, T-892 and T-894): a publish of releases without an SBOM is
+// named in the confirmation, sends the no-SBOM policy only for a list the dialog named, and the
+// summary and the TEA section say what was published with no aggregated SBOM.
+const own = (profiles: string[] = ['default']): TeaReleaseWithoutSbom =>
+    ({ release: 'r-1', componentName: 'shop-api', version: '1.4.0', profiles })
+const child = (i: number, profiles: string[] = ['default']): TeaReleaseWithoutSbom =>
+    ({ release: 'c-' + i, componentName: 'lib-' + i, version: '0.' + i, profiles })
+
+describe('teaPublishConfirm with the releases without an SBOM (T-890)', () => {
+    const views = [
+        view(),
+        view({ effectiveVisibility: 'PUBLIC', publication: publication() }),
+        view({ kind: 'PRODUCT_RELEASE', cascades: true, cascadeChildren: 3 }),
+    ]
+
+    it('no third argument and an empty list give the confirmation of today', () => {
+        for (const v of views) {
+            const today = teaPublishConfirm(v, NAMES)
+            expect(teaPublishConfirm(v, NAMES, [])).toEqual(today)
+            expect(teaPublishConfirm(v, NAMES, undefined)).toEqual(today)
+        }
+        expect(teaPublishConfirm(view(), NAMES, []).confirmButtonText).toBe('Publish')
+        expect(teaPublishConfirm(view(), NAMES, []).icon).toBeUndefined()
+    })
+
+    it('the release itself: names its SBOM profile after the existing parts, with the warning icon, the red button and Publish without SBOM', () => {
+        const today = teaPublishConfirm(view(), NAMES)
+        const c = teaPublishConfirm(view(), NAMES, [own()])
+        expect(c.text).toBe(today.text + ' This release has no SBOM for the SBOM profile default: it is published with no '
+            + 'aggregated SBOM for it.')
+        expect(c.icon).toBe('warning')
+        expect(c.confirmButtonColor).toBe('#d33')
+        expect(c.confirmButtonText).toBe('Publish without SBOM')
+        expect(c.titleText).toBe(today.titleText)
+        expect(c.showCancelButton).toBe(true)
+        expect(c.text).not.toContain('removed from the latest collection')
+    })
+
+    it('several SBOM profiles of the release read in the plural', () => {
+        const c = teaPublishConfirm(view(), NAMES, [own(['default', 'top'])])
+        expect(c.text).toContain('This release has no SBOM for the SBOM profiles default, top: it is published with no '
+            + 'aggregated SBOM for them.')
+    })
+
+    it('a re-publish whose publication lists an aggregate of the name says it is removed from the latest collection', () => {
+        const v = view({ publication: publication({ aggregateArtifacts: [{ profileName: 'default', artifact: 'agg-1' },
+            { profileName: 'top', artifact: 'agg-2' }] }) })
+        const c = teaPublishConfirm(v, NAMES, [own(['default', 'extra'])])
+        expect(c.confirmButtonText).toBe('Re-publish without SBOM')
+        expect(c.text).toContain('This release has no SBOM for the SBOM profiles default, extra: it is published with no '
+            + 'aggregated SBOM for them. The aggregated SBOM published earlier (default) is removed from the latest '
+            + 'collection; earlier collection versions keep it.')
+        expect(c.text).not.toContain('(default, extra)')
+        expect(c.icon).toBe('warning')
+    })
+
+    it('three component releases are named with their SBOM profiles; one reads in the singular', () => {
+        const product = view({ kind: 'PRODUCT_RELEASE', cascades: true, cascadeChildren: 4 })
+        const c = teaPublishConfirm(product, NAMES, [child(1), child(2, ['default', 'top']), child(3)])
+        expect(c.text).toBe(teaPublishConfirm(product, NAMES).text + ' 3 component releases have no SBOM and are published '
+            + 'with no aggregated SBOM: lib-1 0.1 (default); lib-2 0.2 (default, top); lib-3 0.3 (default).')
+        expect(c.text).not.toContain('This release has no SBOM')
+        expect(c.confirmButtonText).toBe('Publish without SBOM')
+        const one = teaPublishConfirm(product, NAMES, [child(1)])
+        expect(one.text).toContain(' 1 component release has no SBOM and is published with no aggregated SBOM: lib-1 0.1 (default).')
+    })
+
+    it('the product itself comes first, its component releases after it', () => {
+        const product = view({ kind: 'PRODUCT_RELEASE', cascades: true, cascadeChildren: 1 })
+        const c = teaPublishConfirm(product, NAMES, [own(), child(1)])
+        expect(c.text.indexOf('This release has no SBOM')).toBeGreaterThan(0)
+        expect(c.text.indexOf('1 component release has no SBOM')).toBeGreaterThan(c.text.indexOf('This release has no SBOM'))
+    })
+
+    it('25 component releases: names 20 and then and 5 more', () => {
+        const children = Array.from({ length: 25 }, (_, i) => child(i + 1))
+        const c = teaPublishConfirm(view({ kind: 'PRODUCT_RELEASE', cascades: true, cascadeChildren: 25 }), NAMES, children)
+        expect(c.text).toContain('25 component releases have no SBOM and are published with no aggregated SBOM: lib-1 0.1 (default); ')
+        expect(c.text).toContain('lib-20 0.20 (default); and 5 more.')
+        expect(c.text).not.toContain('lib-21')
+        expect(c.text).not.toContain('lib-25')
+    })
+
+    it('a component name with markup stays verbatim in text; the dialog has no html key', () => {
+        const markup = '<img src=x onerror=alert(1)><b>lib</b>'
+        const c: any = teaPublishConfirm(view(), NAMES, [{ release: 'c-9', componentName: markup, version: '<i>1</i>',
+            profiles: ['<s>p</s>'] }])
+        expect(c).toHaveProperty('text')
+        expect(c).not.toHaveProperty('html')
+        expect(c).not.toHaveProperty('title')
+        expect(c.text).toContain(markup + ' <i>1</i> (<s>p</s>)')
+    })
+
+    it('a row with no name or version is named by its release uuid', () => {
+        const c = teaPublishConfirm(view(), NAMES, [{ release: 'c-7', componentName: null, version: null, profiles: ['default'] }])
+        expect(c.text).toContain('1 component release has no SBOM and is published with no aggregated SBOM: c-7 (default).')
+    })
+})
+
+describe('teaPublishVariables and the edition gate (T-891, T-893)', () => {
+    it('an empty list sends the release alone, with no noSbom key', () => {
+        expect(teaPublishVariables('r-1', [])).toEqual({ release: 'r-1' })
+        expect(teaPublishVariables('r-1', [])).not.toHaveProperty('noSbom')
+        expect(teaPublishVariables('r-1', null)).toEqual({ release: 'r-1' })
+        expect(teaPublishVariables('r-1', undefined)).not.toHaveProperty('noSbom')
+    })
+
+    it('a list with a row adds noSbom PUBLISH_WITHOUT_AGGREGATE', () => {
+        expect(teaPublishVariables('r-1', [child(1)])).toEqual({ release: 'r-1', noSbom: 'PUBLISH_WITHOUT_AGGREGATE' })
+        expect(teaPublishVariables('r-1', [own(), child(1)])).toEqual({ release: 'r-1', noSbom: 'PUBLISH_WITHOUT_AGGREGATE' })
+    })
+
+    it('asks on every licensed edition and on an unloaded user, never on CE', () => {
+        for (const t of ['SAAS', 'DEMO', 'MANAGED_SERVICE', undefined, null]) expect(teaNoSbomConfirmAvailable(t)).toBe(true)
+        expect(teaNoSbomConfirmAvailable('OSS')).toBe(false)
+    })
+})
+
+describe('teaPublishSummary names what was published with no aggregated SBOM (T-892)', () => {
+    const empty = { version: 1, entries: [] }
+
+    it('a release published without an aggregate says so after the lead part', () => {
+        const text = teaPublishSummary({ outcome: 'PUBLISHED', publication: publication({ latestVersion: 1, aggregateArtifact: null,
+            aggregateArtifacts: [] }), collection: empty, artifacts: [], children: [], withoutAggregate: ['default'] })
+        expect(text).toBe('Published: collection version 1; no aggregated SBOM for: default; 0 artifacts published, 0 skipped')
+    })
+
+    it('a product names each child published without an aggregate among the per-child lines', () => {
+        const text = teaPublishSummary({ outcome: 'PUBLISHED', publication: publication({ latestVersion: 1 }),
+            collection: { version: 1, entries: [{ artifact: 'agg-1', revision: 1, origin: 'SYNTHETIC' }] },
+            artifacts: [], withoutAggregate: [],
+            children: [
+                { release: 'c-1', componentName: 'web', version: '2.0', outcome: 'PUBLISHED', withoutAggregate: [] },
+                { release: 'c-2', componentName: 'lib', version: '0.1', outcome: 'PUBLISHED', withoutAggregate: ['default', 'top'] },
+                { release: 'c-3', componentName: 'db', version: '0.9', outcome: 'REFUSED', refusal: 'LIFECYCLE_TOO_LOW',
+                    detail: 'db 0.9 is DRAFT', withoutAggregate: [] },
+            ] })
+        expect(text).toBe('Published: collection version 1; aggregate SBOM revision 1; 0 artifacts published, 0 skipped; '
+            + '2 component releases published, 0 skipped, 1 refused. '
+            + 'lib 0.1: published with no aggregated SBOM (default, top); '
+            + 'db 0.9: refused (LIFECYCLE_TOO_LOW): db 0.9 is DRAFT')
+    })
+
+    it('UNCHANGED appends the two parts when they exist', () => {
+        const text = teaPublishSummary({ outcome: 'UNCHANGED', publication: publication({ latestVersion: 1 }), collection: empty,
+            artifacts: [], withoutAggregate: ['default'],
+            children: [{ release: 'c-2', componentName: 'lib', version: '0.1', outcome: 'UNCHANGED', withoutAggregate: ['default'] }] })
+        expect(text).toBe('Nothing changed since collection version 1; no aggregated SBOM for: default. '
+            + 'lib 0.1: published with no aggregated SBOM (default)')
+        expect(teaPublishSummary({ outcome: 'UNCHANGED', publication: publication({ latestVersion: 1 }), collection: empty,
+            artifacts: [], children: [], withoutAggregate: ['default'] }))
+            .toBe('Nothing changed since collection version 1; no aggregated SBOM for: default')
+    })
+
+    it('a result without the fields, or with empty lists, gives the text of today', () => {
+        const base = { outcome: 'PUBLISHED', publication: publication({ latestVersion: 1 }),
+            collection: { version: 1, entries: [{ artifact: 'agg-1', revision: 5, origin: 'SYNTHETIC' }] }, artifacts: [],
+            children: [{ release: 'c-1', componentName: 'web', version: '2.0', outcome: 'PUBLISHED' }] }
+        const today = 'Published: collection version 1; aggregate SBOM revision 5; 0 artifacts published, 0 skipped; '
+            + '1 component releases published, 0 skipped, 0 refused'
+        expect(teaPublishSummary(base)).toBe(today)
+        expect(teaPublishSummary({ ...base, withoutAggregate: [],
+            children: [{ ...base.children[0], withoutAggregate: [] }] })).toBe(today)
+        expect(teaPublishSummary({ outcome: 'UNCHANGED', publication: publication({ latestVersion: 3 }), collection: { version: 3 },
+            artifacts: [], children: [] })).toBe('Nothing changed since collection version 3')
+    })
+})
+
+describe('teaNoAggregateText (T-894)', () => {
+    const LINE = 'The latest collection has no aggregated SBOM.'
+    const collections = (latest: any[]) => [
+        { version: 1, entries: [{ artifact: 'agg-1', revision: 1, origin: 'SYNTHETIC' }] },
+        { version: 2, entries: latest },
+    ]
+
+    it('a published release whose latest collection has no entry, or ride-alongs only, answers the line', () => {
+        expect(teaNoAggregateText(view({ publication: publication(), collections: collections([]) }))).toBe(LINE)
+        expect(teaNoAggregateText(view({ publication: publication(),
+            collections: collections([{ artifact: 'a-2', revision: 1, origin: 'REAL' }]) }))).toBe(LINE)
+    })
+
+    it('an aggregate in the latest collection, a hidden publication or none answers null', () => {
+        expect(teaNoAggregateText(view({ publication: publication(),
+            collections: collections([{ artifact: 'agg-1', revision: 2, origin: 'SYNTHETIC' }, { artifact: 'a-2', revision: 1, origin: 'REAL' }]) })))
+            .toBeNull()
+        expect(teaNoAggregateText(view({ publication: publication({ state: 'HIDDEN' }), collections: collections([]) }))).toBeNull()
+        expect(teaNoAggregateText(view({ publication: null, collections: [] }))).toBeNull()
+        expect(teaNoAggregateText(null)).toBeNull()
+    })
+
+    it('reads the latest version, not an earlier one, and null when the view does not carry it', () => {
+        const earlierEmpty = [{ version: 1, entries: [] }, { version: 2, entries: [{ artifact: 'agg-1', revision: 1, origin: 'SYNTHETIC' }] }]
+        expect(teaNoAggregateText(view({ publication: publication({ latestVersion: 2 }), collections: earlierEmpty }))).toBeNull()
+        expect(teaNoAggregateText(view({ publication: publication({ latestVersion: 3 }), collections: earlierEmpty }))).toBeNull()
+        expect(teaNoAggregateText(view({ publication: publication({ latestVersion: null }), collections: collections([]) }))).toBe(LINE)
     })
 })

@@ -27,6 +27,26 @@ func main() {
 			"validated for grammar only, namespace containment is DISABLED. Set the " +
 			"env var to restrict pushes/pulls to a single registry namespace.")
 	}
+	r := newRouter()
+	sugar.Info("Server starting on port 8083")
+	if err := r.Run(":8083"); err != nil {
+		sugar.Fatalw("Server stopped", "error", err)
+	}
+}
+
+// ginMode returns the gin mode the service runs in: the value of GIN_MODE when
+// it is set and not empty, else release. Unset and empty are the same case.
+func ginMode() string {
+	if mode := os.Getenv(gin.EnvGinMode); mode != "" {
+		return mode
+	}
+	return gin.ReleaseMode
+}
+
+// newRouter sets the gin mode and builds the engine with its middleware and
+// routes. The mode is set before gin.New(), which prints the debug warning.
+func newRouter() *gin.Engine {
+	gin.SetMode(ginMode())
 	r := gin.New()
 	r.SetTrustedProxies([]string{"127.0.0.1"})
 	r.Use(gin.Recovery())
@@ -35,9 +55,7 @@ func main() {
 	r.POST("/push", uploadFile)
 	r.GET("/pull", downloadFile)
 	r.GET("/health", healthCheck)
-	sugar.Info("Server starting on port 8083")
-	r.Run(":8083")
-
+	return r
 }
 
 func setGinConfigurations(router *gin.Engine) {

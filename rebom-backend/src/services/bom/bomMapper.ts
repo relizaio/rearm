@@ -1,5 +1,6 @@
 import { BomDto, BomMetaDto, BomRecord } from '../../types';
 import { fetchProcessedBomWithRetry } from '../oci';
+import { boundFailureText } from '../../childFailure';
 
 export class BomMapper {
     /**
@@ -13,7 +14,7 @@ export class BomMapper {
             uuid: record.uuid,
             createdDate: record.created_date,
             lastUpdatedDate: record.last_updated_date,
-            meta: record.meta,
+            meta: BomMapper.servedMeta(record.meta),
             bom: record.bom,
             tags: record.tags,
             organization: record.organization,
@@ -71,9 +72,20 @@ export class BomMapper {
             mergeVersion: record.meta.mergeVersion,
             enrichmentStatus: record.meta.enrichmentStatus,
             enrichmentTimestamp: record.meta.enrichmentTimestamp,
-            enrichmentError: record.meta.enrichmentError,
+            enrichmentError: typeof record.meta.enrichmentError === 'string' ? boundFailureText(record.meta.enrichmentError) : record.meta.enrichmentError,
             enrichments: record.meta.enrichments
         };
+    }
+
+    /**
+     * The meta of a row as it is served: a shallow copy with enrichmentError bounded and cleaned when it
+     * is a string (rows written before TPF-261 hold a child's whole stdout there). The row itself is
+     * never changed; a meta without such a string is passed as it is.
+     */
+    static servedMeta<T>(meta: T): T {
+        const m = meta as { enrichmentError?: unknown } | null | undefined;
+        if (!m || typeof m.enrichmentError !== 'string') return meta;
+        return { ...m, enrichmentError: boundFailureText(m.enrichmentError) } as T;
     }
 
     static toDtoArray(records: BomRecord[]): BomDto[] {

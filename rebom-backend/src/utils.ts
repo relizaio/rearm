@@ -1,8 +1,10 @@
-const { spawn } = require('node:child_process')
+import { spawnChild, ChildSpawnOptions } from './childProcess';
+import { buildChildEnv, ChildTool } from './childEnv';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { logger } from './logger';
+import { childFailure, childNotStarted } from './childFailure';
 import { pool, runQuery, withTransaction } from './db';
 
 export function getPool() {
@@ -13,17 +15,33 @@ export { runQuery, withTransaction, pool };
 
 // stderrLevel: the level each stderr chunk is logged at. 'error' (the default) keeps the historical
 // `shell command error:` line; 'info' and 'warn' log `shell command stderr:` (SCORE-68 ADR-4).
-export async function shellExec(cmd: string, args: any[], timeout?: number, stderrLevel: 'error' | 'warn' | 'info' = 'error'): Promise<string> { // timeout = in ms
+// env: the complete environment of the child, as ShellExecDetailedOptions.env. When absent, the child
+// gets the base list of childEnv.ts (buildChildEnv(ChildTool.BASE)), never rebom's environment. Never logged.
+export async function shellExec(cmd: string, args: any[], timeout?: number, stderrLevel: 'error' | 'warn' | 'info' = 'error', env?: NodeJS.ProcessEnv): Promise<string> { // timeout = in ms
   return new Promise((resolve, reject) => {
       let options: any = {}
       if (timeout) options.timeout = timeout
-      const child = spawn(cmd, args, options)
+      options.env = env ?? buildChildEnv(ChildTool.BASE)
+      const child: any = spawnChild(cmd, args, options)
       let resData = ""
-      child.stdout.on('data', (data: string)=> {
+      // One outcome per call: the first of 'error' (the child never started) and 'close' decides,
+      // a later event is ignored.
+      let settled = false
+      child.on('error', (err: NodeJS.ErrnoException) => {
+          // With a pid the child did start (for example a signal that could not be sent): 'close' still comes.
+          if (child.pid !== undefined) {
+              logger.error(`shell process error after start: ${err?.code ?? 'unknown'}`)
+              return
+          }
+          if (settled) return
+          settled = true
+          reject(childNotStarted(cmd, err?.code))
+      })
+      child.stdout?.on('data', (data: string)=> {
           resData += data
       })
     
-      child.stderr.on('data', (data: any) => {
+      child.stderr?.on('data', (data: any) => {
           if (stderrLevel === 'error') {
               logger.error(`shell command error: ${data}`)
           } else {
@@ -31,7 +49,9 @@ export async function shellExec(cmd: string, args: any[], timeout?: number, stde
           }
       })
 
-      child.on('exit', (code: number) => {
+      child.on('close', (code: number) => {
+          if (settled) return
+          settled = true
           if (code !== 0) logger.error(`shell process exited with code ${code}`)
           if (code === 0) {
               if (resData) {
@@ -39,8 +59,7 @@ export async function shellExec(cmd: string, args: any[], timeout?: number, stde
               }
               resolve(resData)
           } else {
-              logger.error(resData)
-              reject(resData)
+              reject(childFailure(cmd, { killedByTimeout: child.killed === true, exitCode: code ?? null, signal: child.signalCode ?? null, timeoutMs: timeout }, resData))
           }
       })
   })
@@ -62,7 +81,7 @@ export interface ShellExecDetailedOptions {
     timeoutMs: number;
     maxStdoutBytes: number;
     maxStderrBytes?: number;
-    /** The complete environment of the child. When given, nothing of rebom's environment is inherited. */
+    /** The complete environment of the child. When absent, the base list of childEnv.ts, never rebom's environment. */
     env?: NodeJS.ProcessEnv;
     /**
      * Start the child as the leader of its own process group and kill the whole group (the child's
@@ -77,7 +96,8 @@ const DEFAULT_MAX_STDERR_BYTES = 64 * 1024;
 
 /**
  * Sibling of shellExec for callers that need the exit code, stderr and a bounded stdout.
- * Never rejects and logs nothing. Resolves on 'close' (stdout fully drained), or on
+ * Never rejects (but for the guard of childProcess.ts, which only a code defect reaches) and logs
+ * nothing. Resolves on 'close' (stdout fully drained), or on
  * 'error' when the process never started. On timeout or stdout overflow the process
  * is killed with SIGKILL and the promise still resolves only once it has closed.
  */
@@ -93,11 +113,10 @@ export function shellExecDetailed(cmd: string, args: string[], opts: ShellExecDe
         let stderrOverflow = false;
         let settled = false;
 
-        // Only the options a caller asked for are added, so callers without them spawn exactly as before.
-        const spawnOptions: Record<string, unknown> = { stdio: ['ignore', 'pipe', 'pipe'] };
-        if (opts.env !== undefined) spawnOptions.env = opts.env;
+        // The environment is always given (the base list when the caller gave none); detached only on request.
+        const spawnOptions: ChildSpawnOptions = { stdio: ['ignore', 'pipe', 'pipe'], env: opts.env ?? buildChildEnv(ChildTool.BASE) };
         if (opts.killProcessGroup) spawnOptions.detached = true;
-        const child = spawn(cmd, args, spawnOptions);
+        const child: any = spawnChild(cmd, args, spawnOptions);
         if (child.pid !== undefined && opts.onSpawn) opts.onSpawn(child.pid);
 
         const kill = () => {
