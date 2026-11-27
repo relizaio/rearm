@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { NRadio, NSelect } from 'naive-ui'
+import { present } from './startDialogTestKit'
 
 const query = vi.fn()
 const mutate = vi.fn()
@@ -112,7 +113,7 @@ function deferredList () {
 
 const listCalls = () => query.mock.calls.filter(c => c[0].query === GET_UPSTREAM_OFFERED_ITEMS).map(c => c[0])
 const sourceReads = () => query.mock.calls.filter(c => c[0].query === GET_UPSTREAM_SOURCE).map(c => c[0])
-const byId = (w: any, id: string) => w.find(`[data-testid="${id}"]`)
+const byId = (w: any, id: string) => present(w.find(`[data-testid="${id}"]`), id)
 const allById = (w: any, id: string) => w.findAll(`[data-testid="${id}"]`)
 const rowsOf = (w: any) => w.findAll('[data-testid="upstream-start-list"] tbody tr.n-data-table-tr')
     .filter((r: any) => !r.classes().includes('n-data-table-tr--expanded'))
@@ -126,6 +127,7 @@ async function mountList (props: Record<string, any> = {}) {
 }
 
 async function click (w: any, id: string, index = 0) {
+    expect(allById(w, id).length, `no element ${id}`).toBeGreaterThan(index)
     await allById(w, id)[index].trigger('click')
     await flushPromises()
 }
