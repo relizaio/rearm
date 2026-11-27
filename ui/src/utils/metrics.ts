@@ -4,6 +4,7 @@ import { searchDtrackComponentByPurl } from '@/utils/dtrack'
 import { Info20Regular } from '@vicons/fluent'
 import { Edit, Eye } from '@vicons/tabler'
 import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
+import { analysisStateLabel } from '@/utils/findingAnalysisLabels'
 import { resolveKevCveId } from '@/utils/kevService'
 import { ROW_SEVERITIES, emptySeverityCounts, findingTypeOf, renderFindingId, severityBucketOf } from '@/utils/findingUtils'
 import { FindingType } from '@/constants/findingType'
@@ -343,7 +344,7 @@ export function buildVulnerabilityColumns(
         // Show info icon for any finding with an analysis state
         if (row.analysisState) {
           const tooltipContent = [
-            `State: ${row.analysisState}`,
+            `State: ${analysisStateLabel(row.analysisState)}`,
             h('br'),
             `Date: ${row.analysisDate ? new Date(row.analysisDate).toLocaleString('en-CA', {hour12: false}) : 'Unknown'}`
           ]

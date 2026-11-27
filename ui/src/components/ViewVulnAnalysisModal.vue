@@ -64,6 +64,7 @@ import { Info20Regular } from '@vicons/fluent'
 import commonFunctions from '@/utils/commonFunctions'
 import { assessmentFieldsAvailable, assessmentSummaryLines, canWriteFindingAnalysis } from '@/utils/assessmentFields'
 import { vulnAnalysisFieldsFragment } from '@/utils/vulnAnalysisQueries'
+import { analysisJustificationLabel, analysisResponseLabel, analysisScopeLabel, analysisStateLabel, findingTypeLabel, locationTypeLabel } from '@/utils/findingAnalysisLabels'
 
 interface Props {
     show: boolean
@@ -106,7 +107,7 @@ const notification = useNotification()
 
 const myorg = computed(() => store.state.org)
 const myuser = computed(() => store.getters.myuser)
-const featureSetLabel = computed(() => myorg.value?.featureSetLabel || 'Feature Set')
+const featureSetLabel = computed(() => store.getters.myorg?.terminology?.featureSetLabel || 'Feature Set')
 const loading = ref(false)
 const analysisRecords = ref<any[]>([])
 const showCreateAnalysisModal = ref(false)
@@ -119,7 +120,7 @@ const isVisible = computed({
 })
 
 const modalTitle = computed(() => {
-    return `Finding Analysis Records - ${props.findingType}: ${props.findingId}, location: ${props.location}`
+    return `Finding Analysis Records - ${findingTypeLabel(props.findingType)}: ${props.findingId}, location: ${props.location}`
 })
 
 // Helper function to check if a specific scope with UUID exists in analysis records
@@ -209,15 +210,8 @@ const columns: DataTableColumns<any> = [
         width: 120,
         render: (row: any) => {
             // Determine scope label based on component type
-            let scopeLabel = row.scope
-            if (row.componentDetails?.type === 'PRODUCT') {
-                if (row.scope === 'COMPONENT') {
-                    scopeLabel = 'PRODUCT'
-                } else if (row.scope === 'BRANCH') {
-                    scopeLabel = featureSetLabel.value.toUpperCase()
-                }
-            }
-            return h(NTag, { type: 'info', size: 'small' }, { default: () => scopeLabel })
+            const scopeText = analysisScopeLabel(row.scope, row.componentDetails?.type, featureSetLabel.value)
+            return h(NTag, { type: 'info', size: 'small' }, { default: () => scopeText })
         }
     },
     {
@@ -286,8 +280,8 @@ const columns: DataTableColumns<any> = [
                 }, () => displayText)
             }
             
-            // Fallback to scopeUuid if no details available
-            return row.scopeUuid || '-'
+            // No details: print the placeholder, never the uuid
+            return '-'
         }
     },
     {
@@ -295,7 +289,7 @@ const columns: DataTableColumns<any> = [
         key: 'locationType',
         width: 120,
         render: (row: any) => {
-            return h(NTag, { type: 'success', size: 'small' }, { default: () => row.locationType })
+            return h(NTag, { type: 'success', size: 'small' }, { default: () => locationTypeLabel(row.locationType) })
         }
     },
     {
@@ -313,7 +307,7 @@ const columns: DataTableColumns<any> = [
             return h(NTag, { 
                 type: stateColors[row.analysisState] || 'default', 
                 size: 'small' 
-            }, { default: () => row.analysisState })
+            }, { default: () => analysisStateLabel(row.analysisState) })
         }
     },
     {
@@ -322,7 +316,7 @@ const columns: DataTableColumns<any> = [
         width: 180,
         ellipsis: { tooltip: true },
         render: (row: any) => {
-            return row.analysisJustification || '-'
+            return analysisJustificationLabel(row.analysisJustification) || '-'
         }
     },
     {
@@ -351,13 +345,13 @@ const columns: DataTableColumns<any> = [
                     // Build tooltip content
                     const tooltipLines: string[] = []
                     if (history.justification) {
-                        tooltipLines.push(`Justification: ${history.justification}`)
+                        tooltipLines.push(`Justification: ${analysisJustificationLabel(history.justification)}`)
                     }
                     if (history.severity) {
                         tooltipLines.push(`Severity: ${history.severity}`)
                     }
                     if (history.responses && history.responses.length > 0) {
-                        tooltipLines.push(`Responses: ${history.responses.join(', ')}`)
+                        tooltipLines.push(`Responses: ${history.responses.map(analysisResponseLabel).join(', ')}`)
                     }
                     if (history.recommendation) {
                         tooltipLines.push(`Recommendation: ${history.recommendation}`)
@@ -375,7 +369,7 @@ const columns: DataTableColumns<any> = [
                         type: stateColors[history.state] || 'default', 
                         size: 'tiny',
                         style: 'margin-right: 4px;'
-                    }, { default: () => history.state })
+                    }, { default: () => analysisStateLabel(history.state) })
                     
                     const dateSpan = h('span', { style: 'font-size: 12px;' }, dateStr)
                     
