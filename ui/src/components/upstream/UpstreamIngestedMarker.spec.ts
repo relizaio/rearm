@@ -134,6 +134,45 @@ afterEach(() => {
     expect(mutate).not.toHaveBeenCalled()
 })
 
+const { GET_UPSTREAM_OFFERED_ITEMS } = await import('@/utils/upstreamOfferQueries')
+
+// T-1163 (TPF-243 design 3.2 and 3.8, threat model rows iv and v): the marker opens the start of a
+// follow by uuid and never reads the source's list by itself; a reader and the CE edition get no
+// dialog and no button.
+describe('T-1163: the source list from the marker', () => {
+    const listCalls = () => sent(GET_UPSTREAM_OFFERED_ITEMS)
+
+    it('a reader gets no dialog, no button and no list request', async () => {
+        answer({ origin: item({ updateState: 'NO_LONGER_UPDATED' }), source: SOURCE_ROW })
+        const w = await mountMarker('ITEM', false)
+        expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
+        expect(w.findComponent(StartModal).exists()).toBe(false)
+        expect(listCalls()).toEqual([])
+        w.unmount()
+    })
+
+    it('CE gets no dialog, no button and no request at all', async () => {
+        answer({ origin: item({ updateState: 'NO_LONGER_UPDATED' }), source: SOURCE_ROW })
+        getters.myuser = { installationType: 'OSS' }
+        const w = await mountMarker('ITEM', true)
+        expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
+        expect(w.findComponent(StartModal).exists()).toBe(false)
+        expect(query).not.toHaveBeenCalled()
+        w.unmount()
+    })
+
+    it('an administrator opens the dialog by uuid and no list request is sent', async () => {
+        answer({ origin: item({ updateState: 'NO_LONGER_UPDATED' }), source: SOURCE_ROW })
+        const w = await mountMarker('ITEM', true)
+        await w.get('[data-testid="upstream-marker-follow-item"]').trigger('click')
+        await flushPromises()
+        expect(w.findComponent(StartModal).exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-start-uuid"]').exists()).toBe(true)
+        expect(listCalls()).toEqual([])
+        w.unmount()
+    })
+})
+
 describe('T-580: the gate and an item that was not ingested', () => {
     for (const subject of ['ITEM', 'RELEASE'] as const) {
         it(`${subject}: OSS and a user not loaded yet render nothing and send nothing`, async () => {
@@ -344,45 +383,6 @@ describe('T-581: the marker of a product or component', () => {
             expect(router.push).not.toHaveBeenCalled()
         })
     }
-})
-
-const { GET_UPSTREAM_OFFERED_ITEMS } = await import('@/utils/upstreamOfferQueries')
-
-// T-1163 (TPF-243 design 3.2 and 3.8, threat model rows iv and v): the marker opens the start of a
-// follow by uuid and never reads the source's list by itself; a reader and the CE edition get no
-// dialog and no button.
-describe('T-1163: the source list from the marker', () => {
-    const listCalls = () => sent(GET_UPSTREAM_OFFERED_ITEMS)
-
-    it('a reader gets no dialog, no button and no list request', async () => {
-        answer({ origin: item({ updateState: 'NO_LONGER_UPDATED' }), source: SOURCE_ROW })
-        const w = await mountMarker('ITEM', false)
-        expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
-        expect(w.findComponent(StartModal).exists()).toBe(false)
-        expect(listCalls()).toEqual([])
-        w.unmount()
-    })
-
-    it('CE gets no dialog, no button and no request at all', async () => {
-        answer({ origin: item({ updateState: 'NO_LONGER_UPDATED' }), source: SOURCE_ROW })
-        getters.myuser = { installationType: 'OSS' }
-        const w = await mountMarker('ITEM', true)
-        expect(w.find('[data-testid="upstream-marker-follow-item"]').exists()).toBe(false)
-        expect(w.findComponent(StartModal).exists()).toBe(false)
-        expect(query).not.toHaveBeenCalled()
-        w.unmount()
-    })
-
-    it('an administrator opens the dialog by uuid and no list request is sent', async () => {
-        answer({ origin: item({ updateState: 'NO_LONGER_UPDATED' }), source: SOURCE_ROW })
-        const w = await mountMarker('ITEM', true)
-        await w.get('[data-testid="upstream-marker-follow-item"]').trigger('click')
-        await flushPromises()
-        expect(w.findComponent(StartModal).exists()).toBe(true)
-        expect(w.find('[data-testid="upstream-start-uuid"]').exists()).toBe(true)
-        expect(listCalls()).toEqual([])
-        w.unmount()
-    })
 })
 
 describe('T-582: the marker of a release and its snapshot', () => {
