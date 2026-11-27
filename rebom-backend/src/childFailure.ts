@@ -53,8 +53,13 @@ export interface ChildOutcome {
 }
 
 const VISIBLE = /[\x21-\x7E]/;
-const DIGIT = /[0-9]/;
-const STATUS_PHRASE = 'returned status ';
+/**
+ * Rule 5's phrase. Runs of spaces count as one space: rule 3 has already turned control and non-ASCII
+ * characters into spaces and rule 8 collapses them later, so `returned  status \t500` must cut here or
+ * the result would hold the body and a second pass would cut it (TPF-261 T-1). Each repetition is of
+ * one character (no nested repetition), and rule 5 sees at most FAILURE_TEXT_WINDOW characters.
+ */
+const STATUS_PHRASE = /returned +status +[0-9]+/;
 
 /**
  * The line a failure text is read from (rule 1): the first line that starts with `Error`, else the last
@@ -74,18 +79,13 @@ function pickLine(text: string): string | null {
     return lastVisible;
 }
 
-/** Rule 5: at the first `returned status ` followed by digits, everything after the digits is dropped. */
+/**
+ * Rule 5: at the first `returned status ` followed by digits, everything after the digits is dropped.
+ * Any run of spaces may stand between the words and before the digits.
+ */
 function dropAfterStatus(text: string): string {
-    let at = text.indexOf(STATUS_PHRASE);
-    while (at !== -1) {
-        let end = at + STATUS_PHRASE.length;
-        if (end < text.length && DIGIT.test(text[end])) {
-            while (end < text.length && DIGIT.test(text[end])) end++;
-            return text.slice(0, end);
-        }
-        at = text.indexOf(STATUS_PHRASE, at + 1);
-    }
-    return text;
+    const at = STATUS_PHRASE.exec(text);
+    return at === null ? text : text.slice(0, at.index + at[0].length);
 }
 
 /**

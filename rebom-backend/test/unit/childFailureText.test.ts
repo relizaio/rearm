@@ -152,6 +152,36 @@ describe('T-1242 boundFailureText: nothing follows returned status <n>', () => {
     it('the first phrase followed by digits is the one that cuts', () => {
         expect(bound('Error: returned status x then returned status 404: BODYW')).toBe('Error: returned status x then returned status 404');
     });
+
+    // Rule 3 turns these into spaces and rule 8 collapses spaces, so each of them must not keep the body.
+    const SEPARATORS: Array<[string, string]> = [
+        ['two spaces', '  '],
+        ['a NUL', ' \u0000'],
+        ['a tab', ' \t'],
+        ['a carriage return', ' \r'],
+        ['a non-ASCII character', ' \u00e9'],
+        ['a no-break space', ' \u00a0'],
+        ['a tab alone', '\t'],
+        ['a mixed run', ' \u0000\t\u2028 \u00e9 ']
+    ];
+
+    for (const [label, sep] of SEPARATORS) {
+        it(`${label} between status and the digits`, () => {
+            const text = bound('Error: BEAR API returned status' + sep + '500: BODYW');
+            expectShape(text);
+            expect(text).toBe('Error: BEAR API returned status 500');
+        });
+
+        it(`${label} between returned and status`, () => {
+            const text = bound('Error: BEAR API returned' + sep + 'status 500: BODYW');
+            expectShape(text);
+            expect(text).toBe('Error: BEAR API returned status 500');
+        });
+    }
+
+    it('an earlier phrase with two spaces before its digits is the one that cuts', () => {
+        expect(bound('Error: returned status  7 then returned status 404: BODYW')).toBe('Error: returned status 7');
+    });
 });
 
 describe('T-1240 boundFailureText applied to its own result returns the same text', () => {
@@ -160,6 +190,37 @@ describe('T-1240 boundFailureText applied to its own result returns the same tex
         for (const raw of seen) {
             const once = boundFailureText(raw);
             expect(boundFailureText(once)).toBe(once);
+        }
+    });
+
+    /** Nothing follows the first returned status <n> of a result. */
+    function expectNothingAfterStatus(text: string): void {
+        const at = /returned status [0-9]+/.exec(text);
+        if (at !== null) expect(text.length).toBe(at.index + at[0].length);
+    }
+
+    it('for generated texts made of the fragments the rules act on', () => {
+        const FRAGMENTS = [
+            'returned', 'status', 'returned status ', ' ', '  ', '\t', '\u0000', '\r', '\n', '\u00e9', '\u00a0', '\u2028',
+            '"', '\\', '@', '://', '5', '500', ':', 'Error', 'Error: ', 'BODYW', REMOVED_MARK, 'x', 'y'.repeat(700)
+        ];
+        // A fixed linear congruential sequence, so a failure names the same input on every run.
+        let state = 20261127;
+        const next = (n: number): number => {
+            state = (Math.imul(state, 1103515245) + 12345) >>> 0;
+            return state % n;
+        };
+        for (let i = 0; i < 5000; i++) {
+            let raw = '';
+            const parts = 1 + next(24);
+            for (let j = 0; j < parts; j++) raw += FRAGMENTS[next(FRAGMENTS.length)];
+            const once = boundFailureText(raw);
+            expect(boundFailureText(once), JSON.stringify(raw)).toBe(once);
+            expectShape(once);
+            expectNothingAfterStatus(once);
+            expect(once).not.toContain('@');
+            expect(once).not.toContain('://');
+            expect(once).not.toContain('"');
         }
     });
 });
