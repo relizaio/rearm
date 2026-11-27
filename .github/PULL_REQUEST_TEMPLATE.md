@@ -37,6 +37,7 @@
 - [ ] Documentation updated
 - [ ] No sensitive data committed (keys, tokens, secrets)
 - [ ] Backward compatibility considered
+- [ ] If this changes what a merged SBOM, a generated document or a check holds for the same input (rebom, the pin of the checking engine, the words of the confirmation statement): the description says so, for the maintainer who keeps the change record of regulated outputs (documentation, Workflows)
 
 ## Notes for Reviewers
 - Call out areas that need special attention or where you'd like feedback

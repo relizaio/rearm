@@ -190,6 +190,27 @@ jobs:
       - name: Run UI unit tests
         working-directory: ui
         run: npm test
+  check-regulated-output-pins:
+    needs: detect
+    # The pins of rebom (its engine commit, the image that builds the engine, the sums of the tools it
+    # downloads) are identifiers of the change record of regulated outputs. A push that changes
+    # rebom-backend/ or the copy of the record under documentation_site/ compares the two; main always.
+    if: needs.detect.outputs.rebom == 'true' || needs.detect.outputs.docs == 'true' || github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    name: Check Regulated Output Pins Of Rebom
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # the pushed commit only: the check reads rebom-backend/ and the record at HEAD
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+      - name: The pins of rebom are the ones the change record names
+        run: node documentation_site/ci/regulated-outputs/regulated-outputs.mjs pins
   build-ui:
     # test-ui runs whenever this job would (its condition is a superset), so no UI image is
     # built from a commit whose lint or specs fail.
@@ -332,7 +353,7 @@ jobs:
           enable_codeql: 'true'
           codeql_language: 'javascript'
   build-rebom-backend:
-    needs: detect
+    needs: [detect, check-regulated-output-pins]
     if: needs.detect.outputs.rebom == 'true' || github.ref == 'refs/heads/main'
     permissions:
       id-token: write
