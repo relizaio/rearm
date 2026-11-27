@@ -45,6 +45,7 @@ vi.mock('../../src/utils', async (importOriginal) => {
 });
 
 import { shellExec } from '../../src/utils';
+import { ChildFailureKind, ChildProcessError } from '../../src/childFailure';
 import { enrichCycloneDxBom } from '../../src/services/bom/bomProcessingService';
 import { mergeBomObjects } from '../../src/services/bom/bomMergeService';
 import { SpdxService } from '../../src/services/spdx/spdxService';
@@ -83,11 +84,24 @@ function settledState<T>(p: Promise<T>): { done: boolean } {
     return s;
 }
 
-/** Rejects with an Error (any class) whose message is exactly the given text. */
+/**
+ * The rejection of a child that could not be started: a ChildProcessError of kind NOT_STARTED (TPF-261
+ * design 3.12, written by the second of the two pull requests to merge) whose message is exactly the
+ * given text, with no code, signal or timeout of a child that never ran.
+ */
+function expectNotStartedError(err: any, message: string): void {
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(ChildProcessError);
+    expect(err.kind).toBe(ChildFailureKind.NOT_STARTED);
+    expect(err.message).toBe(message);
+    expect(err.exitCode).toBeNull();
+    expect(err.signal).toBeNull();
+    expect(err.timeoutMs).toBeNull();
+}
+
 async function expectNotStarted(p: Promise<unknown>, message: string): Promise<void> {
     const err: any = await p.then(() => { throw new Error('resolved'); }, (e) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect(err.message).toBe(message);
+    expectNotStartedError(err, message);
 }
 
 const turn = () => new Promise((r) => setImmediate(r));
@@ -126,8 +140,7 @@ describe('shellExec settles when its child cannot be started, and settles once',
                         (e) => e
                     );
                     expect(Date.now() - started).toBeLessThan(5000);
-                    expect(err).toBeInstanceOf(Error);
-                    expect(err.message).toBe(`${MISSING} could not be started: ENOENT`);
+                    expectNotStartedError(err, `${MISSING} could not be started: ENOENT`);
                     expect(err.spawnargs).toBeUndefined();
                     expect(err.path).toBeUndefined();
                     const own = JSON.stringify(Object.getOwnPropertyNames(err).map((k) => [k, String(err[k])]));
@@ -200,9 +213,7 @@ describe('shellExec settles when its child cannot be started, and settles once',
         it('(f) an error without a code: the cause reads unknown', async () => {
             const p = shellExec(STAND_IN, ['x']);
             lastCall().child.emit('error', new Error('no code'));
-            const err: any = await p.then(() => { throw new Error('resolved'); }, (e) => e);
-            expect(err).toBeInstanceOf(Error);
-            expect(err.message).toBe(`${STAND_IN} could not be started: unknown`);
+            await expectNotStarted(p, `${STAND_IN} could not be started: unknown`);
         });
 
         it('(g) a child without pipes: error EMFILE then close -24 rejects as not started, not a TypeError', async () => {
@@ -213,7 +224,7 @@ describe('shellExec settles when its child cannot be started, and settles once',
             notStarted(call, 'EMFILE', -24);
             const err: any = await p.then(() => { throw new Error('resolved'); }, (e) => e);
             expect(err).not.toBeInstanceOf(TypeError);
-            expect(err.message).toBe(`${STAND_IN} could not be started: EMFILE`);
+            expectNotStartedError(err, `${STAND_IN} could not be started: EMFILE`);
         });
     });
 
@@ -302,8 +313,7 @@ describe('shellExec settles when its child cannot be started, and settles once',
                 options
             ).then(() => { throw new Error('resolved'); }, (e) => e);
             expect(Date.now() - started).toBeLessThan(5000);
-            expect(err).toBeInstanceOf(Error);
-            expect(err.message).toBe('rearm could not be started: ENOENT');
+            expectNotStartedError(err, 'rearm could not be started: ENOENT');
             expect(fake.calls.map((c) => c.cmd)).toEqual(['rearm']);
             const inputs = argsAfter(fake.calls[0], '--input-files');
             expect(inputs).toHaveLength(2);
