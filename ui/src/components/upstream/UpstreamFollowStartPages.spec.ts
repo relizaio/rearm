@@ -7,7 +7,7 @@
 // link of a followed row.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { FOLLOW, ORG, firstPageVars, item, items, page } from './startDialogTestKit'
+import { FOLLOW, ORG, S1, firstPageVars, item, items, page } from './startDialogTestKit'
 import { makeKit } from './startDialogTestKit'
 
 const query = vi.fn()
@@ -17,6 +17,7 @@ vi.mock('vue-router', async (orig) => ({ ...(await orig<any>()), useRouter: () =
 
 const { default: StartModal } = await import('./UpstreamFollowStartModal.vue')
 const { default: Table } = await import('./UpstreamOfferTable.vue')
+const { default: ProbeResult } = await import('./UpstreamProbeResult.vue')
 const { GET_UPSTREAM_OFFERED_ITEMS } = await import('@/utils/upstreamOfferQueries')
 const labels = await import('@/utils/upstreamLabels')
 const { answer, deferred, allById, byId, mountList, click, lookUp } = makeKit(query, mutate, StartModal, GET_UPSTREAM_OFFERED_ITEMS, 'upstreamOfferedItems')
@@ -100,6 +101,21 @@ describe('the page of the table after a page of the list', () => {
         d.pending[0].resolve(page({ items: items(60) }))
         await flushPromises()
         expect(vm.browse.tablePage).toBe(1)
+        w.unmount()
+    })
+
+    it('makesTheTableAgainForAnotherSetOfTheSameViewEvenWhenTheRowsAreThere', async () => {
+        answer({ list: page({ items: items(3) }) })
+        const w = await mountList()
+        const vm = vmOf(w)
+        const element = w.find('[data-testid="upstream-start-list"]').element
+        const rows = vm.browse.set
+        vm.replaceSet(vm.browse, S1, 'PRODUCT', null)
+        vm.browse.set = rows
+        vm.browse.phase = 'LOADED'
+        await flushPromises()
+        expect(w.find('[data-testid="upstream-start-list"]').exists()).toBe(true)
+        expect(w.find('[data-testid="upstream-start-list"]').element).not.toBe(element)
         w.unmount()
     })
 })
@@ -218,5 +234,22 @@ describe('what the dialog passes to the table and shows around it', () => {
         expect(vmOf(w).listInFlight).toBe(false)
         expect(firstPageVars()).toEqual({ source: vmOf(w).model.source, kind: 'PRODUCT', identifier: null, pageSize: 100, pageToken: null })
         w.unmount()
+    })
+
+    it('handsTheProbeResultTheFailedPageAsAFinishedProbeForAFirstPageAndForALaterPage', async () => {
+        const failed = page({ items: null, failure: 'SOURCE_FAILURE', sourceFailure: 'TIMED_OUT', message: 'Slow.' })
+        answer({ list: failed })
+        const first = await mountList()
+        const probe = byId(first, 'upstream-start-list-failure').findComponent(ProbeResult)
+        expect(probe.props('probe')).toEqual({ state: 'DONE', result: 'TIMED_OUT', message: 'Slow.' })
+        expect(probe.props('credentialKind')).toBe('NONE')
+        first.unmount()
+        answer({ list: [TOKEN_PAGE(3), page({ items: null, failure: 'SOURCE_FAILURE', sourceFailure: 'AUTHENTICATION_FAILED', message: 'No.' })] })
+        const later = await mountList()
+        await click(later, 'upstream-start-more')
+        const laterProbe = byId(later, 'upstream-start-list-failure').findComponent(ProbeResult)
+        expect(laterProbe.props('probe')).toEqual({ state: 'DONE', result: 'AUTHENTICATION_FAILED', message: 'No.' })
+        expect(laterProbe.props('credentialKind')).toBe('NONE')
+        later.unmount()
     })
 })
