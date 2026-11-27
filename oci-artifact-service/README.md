@@ -21,6 +21,7 @@ export REGISTRY_HOST=<HOST>
 | `LOG_TYPE` | `plain` | Log format: `plain` (human-readable) or `json` (structured JSON) |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error`, `dpanic`, `panic`, `fatal` |
 | `LOG_HEALTH_CHECK` | `false` | Log health check requests (`/health` endpoint) |
+| `GIN_MODE` | `release` | gin mode: `release` or `debug`. Unset or empty means `release`. `debug` is for debugging only: the service then prints the gin warning, its route list and gin debug lines at start, and a recovered panic logs the request headers. Any other value stops the service at start |
 
 ## Usage
 

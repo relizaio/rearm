@@ -2,6 +2,16 @@
 
 Every option of this chart is documented in `values.yaml`, next to the value. This file holds what needs more room than a comment.
 
+## Run mode of the artifact service
+
+The value `ociArtifactService.ginMode` sets the gin mode of the oci-artifact service; the chart renders it as `GIN_MODE` of the `rearm-oci-artifact` container.
+
+- `release`, the default. Empty, `null` or a values file without the key also give `release`, so an upgrade with an old values file needs no edit.
+- `debug`, for debugging only. The service then prints the gin warning, its route list and gin debug lines at start, and the log line of a recovered panic also holds the request line and headers.
+- Any other value stops `helm template`, `helm install` and `helm upgrade` with `ociArtifactService.ginMode: "<value>" is not release or debug.`, and the running pod is not touched.
+
+Request logging (`logFormatType`, `logLevel`) is the service's own and does not depend on the mode. The line to wait for at start is `Server starting on port 8083`. Render check: `helm template rearm . -n rearm | python3 tests/check_oci_gin_mode.py release` (or `debug` with `--set ociArtifactService.ginMode=debug`).
+
 ## Network policies
 
 The chart renders Kubernetes NetworkPolicies from the `networkPolicy` block of `values.yaml` (template `templates/networkpolicy.yaml`).
