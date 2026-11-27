@@ -1,0 +1,29 @@
+# .github/workflows/release_notes_check.yml (FDAW-127 part 2)
+# Checks that the notes of a published ReARM release carry the section the change record of
+# regulated outputs gives for it. The tag and the notes are read by the script from the event
+# file; nothing of the event is written into a command line here.
+on:
+  release:
+    types: [published, edited]
+
+name: Release notes check
+
+permissions:
+  contents: read
+
+jobs:
+  regulated-output-changes:
+    name: Regulated output changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # the record of the release before this one is read from its tag
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+      - name: The notes carry the section of the change record
+        run: node documentation_site/ci/regulated-outputs/regulated-outputs.mjs release
