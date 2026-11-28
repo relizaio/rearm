@@ -4,8 +4,11 @@ import {
     analysisResponseLabel,
     analysisScopeLabel,
     analysisStateLabel,
+    CLOSED_FINDING_WORDS,
+    closedCountText,
     findingTypeLabel,
-    locationTypeLabel
+    locationTypeLabel,
+    openCountText
 } from './findingAnalysisLabels'
 
 /**
@@ -73,5 +76,30 @@ describe('L-2 analysisScopeLabel on a product', () => {
         [['ORG', undefined, undefined], 'Organization']
     ] as Array<[[string, string | undefined, string | undefined], string]>)('%j reads %s', (args, word) => {
         expect(analysisScopeLabel(...args)).toBe(word)
+    })
+})
+
+/**
+ * FDAW-153 T-11: the two finding lists say closed and open, and each count names what it counts (findings on
+ * the release findings list, analysis records on the Finding Analysis page).
+ */
+describe('closed and open words (FDAW-153 3.5)', () => {
+    it('counts read with the thing counted, singular for one', () => {
+        expect(closedCountText(0, 'finding')).toBe('(0 closed findings)')
+        expect(closedCountText(1, 'record')).toBe('(1 closed record)')
+        expect(openCountText(36, 'finding')).toBe('(36 open findings)')
+        expect(openCountText(1, 'finding')).toBe('(1 open finding)')
+        expect(closedCountText(35, 'record')).toBe('(35 closed records)')
+    })
+
+    it('the five words are literal', () => {
+        expect(CLOSED_FINDING_WORDS).toEqual({
+            showClosed: 'Show closed',
+            showOpen: 'Show open',
+            closedHelp: 'Closed: assessed as not affected, false positive or resolved',
+            openHelp: 'Open: not assessed yet, in triage, or exploitable',
+            includeClosed: 'Include closed findings'
+        })
+        expect(Object.isFrozen(CLOSED_FINDING_WORDS)).toBe(true)
     })
 })
