@@ -6,6 +6,7 @@ import { classifyGraphqlError, isSchemaDriftError } from './graphqlDriftFallback
 import type { DriftFallbackClient } from './graphqlDriftFallback'
 import type { MutationClient } from './setSbomComponentSupport'
 import type { LevelOfSupport, SupportParty } from './supportAttestationInput'
+import { BULK_CLAIM_CONFLICT_ERROR, supportClaimsContradict } from './supportAttestationInput'
 import { validateJustifiedUnknown } from './justifiedUnknownLabels'
 
 // One definition of the backend enums, shared with the per-component form. A local copy
@@ -261,6 +262,8 @@ export function validateBulkInput (input: BulkAttestInput): string[] {
         out.push('Choose why the end-of-support date cannot be given, or switch back to Date.')
     }
     if (hasUnknown) out.push(...validateJustifiedUnknown(input.endOfSupportUnknownCode, input.endOfSupportUnknownText))
+    // FDAW-161 3.4: the server refuses the pair in bulk; say so before the walk
+    if (hasUnknown && supportClaimsContradict(input.levelOfSupport, input.endOfSupportUnknownCode)) out.push(BULK_CLAIM_CONFLICT_ERROR)
     // Mandatory for a sweep even though the server only demands it for un-retracting.
     // Nothing else in the record distinguishes one action across 800 components from 800
     // individual judgements: assessmentSource is MANUAL either way. reason is per-write,

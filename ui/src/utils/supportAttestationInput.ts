@@ -29,6 +29,24 @@ export function levelOfSupportLabel (value: LevelOfSupport | null | undefined): 
     return option ? option.label : humanizeEnum(value)
 }
 
+/**
+ * FDAW-161 3.3: true when the level and the end-of-support reason contradict each other, the same table as the
+ * server's SupportClaimConflict. Today one pair: actively maintained with "community project, no support commitment".
+ */
+export function supportClaimsContradict (level: string | null | undefined, unknownCode: string | null | undefined): boolean {
+    return level === 'ACTIVELY_MAINTAINED' && unknownCode === 'COMMUNITY_PROJECT'
+}
+
+/** The single attestation form's warning while the effective values contradict (FDAW-161 3.8); Save stays enabled. */
+export const SUPPORT_CLAIM_CONFLICT_WARNING = 'Actively maintained together with "community project, no support'
+    + ' commitment" reads as a contradiction in the FDA addendum. Saved as you enter it, and listed for review before'
+    + ' Finalize.'
+
+/** The server's refusal of a bulk request carrying the pair (SupportClaimConflict.BULK_REQUEST_REFUSED), word for word. */
+export const BULK_CLAIM_CONFLICT_ERROR = 'A bulk entry cannot record the level actively maintained together with the'
+    + ' end-of-support reason "community project, no support commitment": for each component one of them is likely'
+    + ' untrue. Check each project and record the level one component at a time, or choose another reason.'
+
 export type SupportParty = 'FIRST_PARTY' | 'THIRD_PARTY'
 export type SupportMilestoneType =
     'END_OF_GUARANTEED_SUPPORT' | 'END_OF_SUPPORT' | 'END_OF_LIFE'
@@ -127,6 +145,20 @@ export function unknownChanged (form: AttestationForm, baseline?: Partial<Record
     const stored = storedUnknown(baseline)
     return !stored || stored.code !== form.endOfSupportUnknownCode
         || stored.text !== (form.endOfSupportUnknownText ?? '').trim()
+}
+
+/**
+ * FDAW-161 3.8: true when the values a save would leave contradict. The level is the form's, else the stored one; the
+ * end-of-support reason is the form's choice in Justified unknown mode, none when the form clears the stored unknown,
+ * else the stored one.
+ */
+export function attestationClaimConflict (form: AttestationForm, baseline?: Partial<Record<string, unknown>> | null): boolean {
+    const level = form.levelOfSupport ?? (baseline?.attestedLevelOfSupport ?? baseline?.levelOfSupport ?? null) as string | null
+    let code: string | null
+    if (form.clearEndOfSupportUnknown) code = null
+    else if (form.endOfSupportMode === 'UNKNOWN' && form.endOfSupportUnknownCode) code = form.endOfSupportUnknownCode
+    else code = storedUnknown(baseline)?.code ?? null
+    return supportClaimsContradict(level, code)
 }
 
 /**

@@ -5,6 +5,7 @@ import {
     isEmptyAttestation,
     attestationVariables,
     replacesStoredDate,
+    attestationClaimConflict,
     unknownChanged,
     MILESTONE_FIELD_TO_TYPE,
     MILESTONE_TYPE_TO_FIELD,
@@ -108,6 +109,11 @@ export function useAttestationForm () {
     /** Choosing Justified unknown on a row that holds a date: the editor offers the replace, with a reason. */
     function replacesDate (): boolean {
         return replacesStoredDate(form, seededRef.value as any)
+    }
+
+    /** FDAW-161 3.8: the values this save would leave contradict; a warning only, Save stays enabled. */
+    function claimConflict (): boolean {
+        return attestationClaimConflict(form, seededRef.value as any)
     }
 
     /** Re-asserting a withdrawn claim is a reversal; the audit row is its only trace. */
@@ -383,6 +389,7 @@ export function useAttestationForm () {
         open,
         isUnRetract,
         replacesDate,
+        claimConflict,
         milestoneChanged,
         needsJustificationDecision,
         confirmJustification,

@@ -1247,6 +1247,11 @@
                          A requirement stated only where the operator is not looking is not
                          stated -- but stating it TWICE is its own confusion, so there is one
                          renderer and it is this one. -->
+                    <!-- FDAW-161 3.8: a warning, not an error; the single write is saved as entered -->
+                    <n-alert v-if="attestForm.claimConflict()" type="warning" :show-icon="true"
+                        data-testid="attest-claim-conflict" style="margin-bottom: 12px;">
+                        {{ SUPPORT_CLAIM_CONFLICT_WARNING }}
+                    </n-alert>
                     <div v-if="!attestLoading && !attestSaving && attestForm.errors().length"
                         style="margin-bottom: 8px; font-size: 12px; color: #d03050;
                                text-align: left; max-width: 560px;">
@@ -2877,7 +2882,7 @@ import type { BulkAttestInput, BulkCollectResult, BulkOutcome, NotWrittenGroup }
 import { useAttestationForm } from '@/utils/useAttestationForm'
 import type { AttestTarget } from '@/utils/useAttestationForm'
 import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils/supportAttestationInput'
-import { LEVEL_OF_SUPPORT_OPTIONS, levelOfSupportLabel } from '@/utils/supportAttestationInput'
+import { LEVEL_OF_SUPPORT_OPTIONS, levelOfSupportLabel, SUPPORT_CLAIM_CONFLICT_WARNING } from '@/utils/supportAttestationInput'
 import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
 import { setSbomComponentSupportVars, setVendoredComponentSupportVars } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
