@@ -77,12 +77,17 @@ While highlighting regulatory pressure, we strive to make sure that ReARM bears 
 10. Component release-level alerts and changelog for changes in SBOM dependencies
 11. Finding audit (includes audit for vulnerabilities, weaknesses, policy violations)
 12. RBAC
-13. VEX import and export workflow (CycloneDX, OpenVEX). Import workflow supports staging area.
+13. VEX import and export workflow (CycloneDX, OpenVEX). Import workflow supports staging area
 14. Agentic Dashboard
+15. Exchanging BOMs, other security artifacts and release metadata with public or specific people or organizations only via [Transparency Exchange API](#transparency-exchange-api)
+16. HBOM support
 
 ## Future Capabilities (Medium-Term Roadmap)
-1. Better handling and prescribed workflows for Attestations
-2. Options to exchange BOM data with public or specific people or organizations only (via both [Transparency Exchange API](#transparency-exchange-api) and ReARM own capabilities)
+1. Safety, SRAC capabilities
+2. CBOM, AIBOM support
+3. CycloneDX 2.0 support (once released)
+4. SPDX 3.0.1 support, SPDX 3.1.x support (once released)
+5. Better handling and prescribed workflows for Attestations (CDXA, in-toto, SLSA)
 
 ## Releases
 ReARM follows [Trunk Based Development (TBD)](https://trunkbaseddevelopment.com/) methodology. This means that maintainers commit directly to the main branch where possible. Consumers should use releases marked as SHIPPED (or GENERAL_AVAILABILITY).
