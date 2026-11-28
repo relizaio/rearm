@@ -56,6 +56,15 @@ export const SOURCE_JUSTIFICATION = '; justification'
 export const SOURCE_BULK_JUSTIFICATION = '; bulk justification'
 export const ASSERTED_BY_JUSTIFICATION = '; justification: '
 export const NOT_AVAILABLE_PREFIX = 'not available: '
+/** The state cell of a live row entered in bulk (FDAW-161 3.7 item 1), FdaDocumentStrings.ATTESTED_BULK by text. */
+export const ATTESTED_BULK = 'attested (bulk entry)'
+/** The header row on the SBOM's support properties (FDAW-161 3.7 item 2), the server's strings by text. */
+export const SBOM_SUPPORT_PROPERTIES_LABEL = 'Support properties in the SBOM'
+export const SBOM_SUPPORT_PROPERTIES_NOTE = 'In the SBOM, reliza:support:status is worked out from the recorded support'
+    + ' dates alone (UNKNOWN when neither an end-of-support nor an end-of-guaranteed-support date is recorded); it is not'
+    + ' the level of support. reliza:support:disclosure derived-non-attested-current-state says that ReARM added the'
+    + ' SBOM\'s support properties from its records; they are not the attestation itself. The attested statements are the'
+    + ' rows below, with who made each and how (Source, Attestation state).'
 /**
  * The PURL cell's label for a vendored component described in ReARM (FDAW-15 3.5, 3.10), the
  * Pro addendum's FdaDocumentStrings.VENDORED_SUFFIX by text.
@@ -146,7 +155,7 @@ export function addendumRow (c: AddendumComponent): unknown[] {
         live ? (c.levelOfSupport || LEVEL_NOT_STATED) : NOT_ASSESSED,
         live ? endOfSupportCell(c) : null,
         live && !c.levelOfSupport ? c.justification : null,
-        live ? 'attested' : (c.attestationState ? labelOrLower(ATTESTATION_STATE_TEXT, c.attestationState) : NOT_ASSESSED),
+        live ? (c.bulk || c.endOfSupportUnknownBulk ? ATTESTED_BULK : 'attested') : (c.attestationState ? labelOrLower(ATTESTATION_STATE_TEXT, c.attestationState) : NOT_ASSESSED),
         live ? documentInstantText(c.assessedAt, true) : null,
         live ? sourceCell(c) : null,
         live ? assertedByCell(c) : null
@@ -180,6 +189,7 @@ export function addendumHeaderRows (d: AddendumData): unknown[][] {
         ['Components in this release', d.totalComponents],
         ['Components with a support attestation', d.attestedComponents],
         ['Components with no support attestation', d.unassessedComponents],
+        [SBOM_SUPPORT_PROPERTIES_LABEL, SBOM_SUPPORT_PROPERTIES_NOTE],
         []
     ]
     // FDAW-154 3.4: the cover summary is its own document, not an addendum row

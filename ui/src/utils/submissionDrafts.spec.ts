@@ -236,7 +236,7 @@ describe('FDAW-16 row 13: readinessRows and the readiness terms of draftButtons'
 
     it('readinessRows: an organization-wide verb by the two facts', () => {
         expect(one(SUPPLIER, { writable: true, canWriteOrg: false })).toEqual({ rule: 'SBOM_SUPPLIER', text: 'Supplier name: 5 of 10 not met',
-            tag: 'Must fix', count: 5, verb: 'ADD_SUPPLIERS', verbLabel: 'Add suppliers', verbDisabled: true, sentence: ORG_SENTENCE })
+            tag: 'Must fix', count: 5, verb: 'ADD_SUPPLIERS', verbLabel: 'Add suppliers', verbDisabled: true, sentence: ORG_SENTENCE, items: [], itemsTruncated: false })
         const writer = one(SUPPLIER, { writable: true, canWriteOrg: true })
         expect([writer.verb, writer.verbDisabled, writer.sentence]).toEqual(['ADD_SUPPLIERS', false, null])
         const reader = one(SUPPLIER, { writable: false, canWriteOrg: false })
