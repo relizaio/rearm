@@ -3,6 +3,7 @@ import { logger } from './logger';
 import { initEncryption } from './services/encryptionService';
 import { startEnrichmentScheduler, stopEnrichmentScheduler } from './services/enrichmentScheduler';
 import { logRawRepositoryCensus } from './services/oci';
+import { productVersionWarning } from './services/bom/bomProcessingService';
 
 // Global error handlers to prevent process crashes (like Spring Boot)
 // These ensure the service stays running even when unexpected errors occur
@@ -38,6 +39,9 @@ process.on('SIGINT', () => {
 async function startApolloServer() {
   // Initialize encryption service (uses defaults if env vars not set)
   initEncryption();
+
+  // One line per process start when the deployment names no ReARM version
+  const w = productVersionWarning(); if (w) logger.warn(w);
 
   // Start GraphQL server separately
   const server = createGraphqlServer();

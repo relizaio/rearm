@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as BomProcessingService from '../../src/services/bom/bomProcessingService';
 import { loadFixture, generateSerialNumber, validateCycloneDxStructure, validateRebomTool } from '../helpers';
 
@@ -407,6 +407,14 @@ describe('BOM Processing Service - Unit Tests', () => {
     });
 
     describe('createRebomToolObject', () => {
+
+        // The tool entry carries a version only when the deployment names one (FDAW-155)
+        const savedProductVersion = process.env.REARM_PRODUCT_VERSION;
+        beforeEach(() => { process.env.REARM_PRODUCT_VERSION = '26.10.28'; });
+        afterEach(() => {
+            if (savedProductVersion === undefined) delete process.env.REARM_PRODUCT_VERSION;
+            else process.env.REARM_PRODUCT_VERSION = savedProductVersion;
+        });
         it('should create rebom tool for spec 1.6', () => {
             const tool = BomProcessingService.createRebomToolObject('1.6');
             
@@ -449,6 +457,14 @@ describe('BOM Processing Service - Unit Tests', () => {
     });
 
     describe('attachRebomToolToBom', () => {
+
+        // The tool entry carries a version only when the deployment names one (FDAW-155)
+        const savedProductVersion = process.env.REARM_PRODUCT_VERSION;
+        beforeEach(() => { process.env.REARM_PRODUCT_VERSION = '26.10.28'; });
+        afterEach(() => {
+            if (savedProductVersion === undefined) delete process.env.REARM_PRODUCT_VERSION;
+            else process.env.REARM_PRODUCT_VERSION = savedProductVersion;
+        });
         it('should add rebom tool to spec 1.6 BOM with correct structure', () => {
             const bom = loadFixture('cyclonedx-raw-cdxgen.json');
             const originalToolCount = bom.metadata.tools.components.length;

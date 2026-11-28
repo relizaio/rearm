@@ -3032,21 +3032,29 @@ export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, las
 }
 
 /**
- * The ReARM version named on ReARM's tool entry when the deployment does not pass one (a local
- * run, a compose file without REARM_PRODUCT_VERSION). Must match the backend's
- * Utils.REARM_PRODUCT_VERSION_FALLBACK.
- */
-export const REARM_PRODUCT_VERSION_FALLBACK = '26.08.95';
-
-/**
  * The version for the rearm tool entry: the ReARM product version the deployment passes
  * (REARM_PRODUCT_VERSION, the chart's appVersion, which is also what the UI shows as the ReARM
- * version), else {@link REARM_PRODUCT_VERSION_FALLBACK}. rebom's own release is not used: the
- * entry names ReARM, and rebom's version is not one a reader can match to a ReARM release.
+ * version), trimmed, or undefined when the deployment passes none (unset or blank). No constant
+ * stands in for it: the entry then names ReARM without a version, as the backend's tool entry
+ * does (Utils.rearmProductVersion). rebom's own release is not used: the entry names ReARM, and
+ * rebom's version is not one a reader can match to a ReARM release.
  */
-export function rebomToolVersion(): string {
+export function rebomToolVersion(): string | undefined {
   const v = process.env.REARM_PRODUCT_VERSION?.trim();
-  return v ? v : REARM_PRODUCT_VERSION_FALLBACK;
+  return v ? v : undefined;
+}
+
+/** The startup warning logged when the deployment passes no REARM_PRODUCT_VERSION. */
+export const PRODUCT_VERSION_WARNING =
+  'REARM_PRODUCT_VERSION is not set: SBOMs this service writes will name ReARM without a version. '
+  + 'Set it to the ReARM version of this deployment (the Pro chart sets it from appVersion).';
+
+/**
+ * {@link PRODUCT_VERSION_WARNING} when {@link rebomToolVersion} has no value (variable unset or
+ * blank), else undefined. Reads the environment on each call and logs nothing itself.
+ */
+export function productVersionWarning(): string | undefined {
+  return rebomToolVersion() === undefined ? PRODUCT_VERSION_WARNING : undefined;
 }
 
 function isLegacyToolsSpec(specVersion?: string): boolean {
@@ -3062,8 +3070,11 @@ function isLegacyToolsSpec(specVersion?: string): boolean {
  * (group, supplier, licenses, ...) made every 1.4 document fail schema validation.
  */
 export function createRebomToolObject(specVersion: string): any {
+  // version only when the deployment names one: absent, never null or ""
+  const version = rebomToolVersion();
   if (isLegacyToolsSpec(specVersion)) {
-    const legacyTool: any = { vendor: "io.reliza", name: "rearm", version: rebomToolVersion() };
+    const legacyTool: any = { vendor: "io.reliza", name: "rearm" };
+    if (version !== undefined) legacyTool.version = version;
     if (specVersion === '1.4' || !specVersion) {
       legacyTool.externalReferences = [
         { url: "ssh://git@github.com/relizaio/rearm.git", type: "vcs" },
@@ -3076,7 +3087,7 @@ export function createRebomToolObject(specVersion: string): any {
     type: "application",
     name: "rearm",
     group: "io.reliza",
-    version: rebomToolVersion(),
+    ...(version !== undefined ? { version } : {}),
     supplier: { name: "Reliza Incorporated" },
     description: "The evidence store for your entire supply chain",
     licenses: [
