@@ -10,6 +10,14 @@
  */
 export const RELEASE_NODE_PROPERTY = 'reliza:export:releaseNode'
 
+/**
+ * rebom writes this property on the root of a merge whose linkOrphanComponents made top-level
+ * components that no dependency entry named direct dependencies of that root: their number, as a
+ * decimal string (FDAW-160 3.1). It travels with the node into a product merge. Like
+ * RELEASE_NODE_PROPERTY it is only ever rebom's own record: every uploaded copy is removed.
+ */
+export const DEPENDENCIES_INFERRED_PROPERTY = 'reliza:export:dependenciesInferred'
+
 /** The `meta.mod` rebom writes on a row it stored from its own merge. */
 export const REBOM_MERGE_MOD = 'rebom'
 
@@ -19,6 +27,15 @@ export const UPLOAD_MOD = 'raw'
 /** True for a `properties` entry named RELEASE_NODE_PROPERTY, whatever its value. */
 export function isReleaseNodeStamp(property: any): boolean {
   return !!property && typeof property === 'object' && property.name === RELEASE_NODE_PROPERTY
+}
+
+/**
+ * True for a `properties` entry that is one of rebom's node stamps (RELEASE_NODE_PROPERTY or
+ * DEPENDENCIES_INFERRED_PROPERTY), whatever its value.
+ */
+export function isRebomNodeStamp(property: any): boolean {
+  return !!property && typeof property === 'object'
+    && (property.name === RELEASE_NODE_PROPERTY || property.name === DEPENDENCIES_INFERRED_PROPERTY)
 }
 
 /** True only for a row rebom stored from its own merge: `meta.mod` exactly `rebom`. */
@@ -32,7 +49,8 @@ export type ReleaseNodeStripResult = {
 }
 
 /**
- * Removes every `properties` entry named RELEASE_NODE_PROPERTY, whatever its value, from every
+ * Removes every rebom node stamp (isRebomNodeStamp: RELEASE_NODE_PROPERTY and
+ * DEPENDENCIES_INFERRED_PROPERTY), whatever its value, from every
  * object of the document at any depth (the walk of rearm-saas's stripPropertiesEverywhere: every
  * array and every object is entered). Pure: with nothing to remove it returns the input itself;
  * otherwise a copy that shares every untouched subtree, the input and its nodes never mutated.
@@ -55,7 +73,7 @@ export function stripReleaseNodeStamps(bom: any): ReleaseNodeStripResult {
       const value = node[key]
       let next = walk(value)
       if (key === 'properties' && Array.isArray(next)) {
-        const kept = next.filter((p: any) => !isReleaseNodeStamp(p))
+        const kept = next.filter((p: any) => !isRebomNodeStamp(p))
         if (kept.length !== next.length) {
           count += next.length - kept.length
           next = kept
