@@ -631,7 +631,7 @@ When **CycloneDX 1.6 (JSON) BOV** is selected, additional options become availab
 
 | Option | Description |
 |---|---|
-| **Include Suppressed** | Include `FALSE_POSITIVE` / `NOT_AFFECTED` findings |
+| **Include closed findings** | Include findings in `FALSE_POSITIVE`, `NOT_AFFECTED` or `RESOLVED` state (closed findings) |
 | **Include Analysis** | Embed the current triage state for each vulnerability |
 
 Violations and Weaknesses are not included in the BOV — the spec covers only vulnerabilities.

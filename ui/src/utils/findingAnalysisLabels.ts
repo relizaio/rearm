@@ -52,3 +52,16 @@ export function analysisScopeLabel (scope: Maybe, componentType?: Maybe, feature
     }
     return labelOrHumanized(ANALYSIS_SCOPE_LABELS, scope)
 }
+
+// FDAW-153 3.5: the screens' word for a finding whose state is not affected, false positive or resolved
+// (isSuppressedAnalysisState). The API, the package settings and the VDR/VEX keep the word "suppressed".
+export const CLOSED_FINDING_WORDS = Object.freeze({
+    showClosed: 'Show closed',
+    showOpen: 'Show open',
+    closedHelp: 'Closed: assessed as not affected, false positive or resolved',
+    openHelp: 'Open: not assessed yet, in triage, or exploitable',
+    includeClosed: 'Include closed findings'
+})
+export type CountedThing = 'finding' | 'record'
+export const closedCountText = (n: number, thing: CountedThing): string => `(${n} closed ${thing}${n === 1 ? '' : 's'})`
+export const openCountText = (n: number, thing: CountedThing): string => `(${n} open ${thing}${n === 1 ? '' : 's'})`
