@@ -31,6 +31,7 @@ const {
 const { GET_UPSTREAM_SOURCE } = await import('@/utils/upstreamSourceQueries')
 const { driftKindLabel, forbiddenSentence, unfollowStatement } = await import('@/utils/upstreamLabels')
 const { NSelect } = await import('naive-ui')
+const { RUN_COUNTERS } = await import('@/utils/upstreamHelp')
 
 const ORG = '11111111-2222-3333-4444-555555555555'
 const FOLLOW = 'cccccccc-0000-4000-8000-000000000001'
@@ -796,6 +797,47 @@ describe('TPF-230 the pending releases and the reconfigure dialog', () => {
         await flushPromises()
         expect(calls(query, GET_UPSTREAM_FOLLOW, 'query').length).toBe(followReads + 1)
         expect(mutate).not.toHaveBeenCalled()
+        w.unmount()
+    })
+})
+
+describe('the follow page, way back and explanations', () => {
+    it('links back to the Follows tab of the organization\'s Upstream page', async () => {
+        const w = await mountPage(follow())
+        const back = w.get('[data-testid="upstream-follow-back"]')
+        expect(back.text()).toBe('\u2190 Follows')
+        expect(JSON.parse(back.attributes('data-to') as string)).toEqual({ name: 'UpstreamOfOrg', params: { orguuid: ORG }, query: { tab: 'follows' } })
+        w.unmount()
+    })
+
+    it('lists every counter of a run with its explanation, the bytes in megabytes with the exact count on hover', async () => {
+        const runs = [run({ counters: counters({ bytes: 1294967296, filesStored: 17 }) })]
+        const w = await mountServed(READER, { runs })
+        await w.get('[data-testid="upstream-run-row-toggle"]').trigger('click')
+        const rows = w.findAll('[data-testid^="upstream-run-row-counter-"]')
+        expect(rows.map(r => r.attributes('data-testid'))).toEqual(RUN_COUNTERS.map(c => 'upstream-run-row-counter-' + c.key))
+        for (const r of rows) expect(r.find('.n-icon').exists(), r.attributes('data-testid')).toBe(true)
+        const bytes = w.get('[data-testid="upstream-run-row-counter-bytes"]')
+        expect(bytes.text()).toBe('Bytes downloaded: 1,235.0 MB')
+        expect(bytes.get('span[title]').attributes('title')).toBe('1,294,967,296 bytes')
+        expect(w.get('[data-testid="upstream-run-row-counter-filesStored"]').text()).toBe('Files stored: 17')
+        w.unmount()
+    })
+
+    it('puts an info icon on the Version lines title and on the Depth, Lines and Line headers', async () => {
+        const w = await mountPage(follow())
+        expect(w.get('[data-testid="upstream-follow-lines"] h5').find('.n-icon').exists()).toBe(true)
+        const componentHeaders = w.findAll('th').filter(th => ['Depth', 'Lines'].includes(th.text()))
+        expect(componentHeaders.map(th => th.text()).sort()).toEqual(['Depth', 'Lines'])
+        for (const th of componentHeaders) expect(th.find('.n-icon').exists(), th.text()).toBe(true)
+        w.unmount()
+    })
+
+    it('puts an info icon on the Line header of the releases', async () => {
+        const w = await mountServed(READER)
+        const line = w.get('[data-testid="upstream-follow-releases"]').findAll('th').find(th => th.text() === 'Line')
+        expect(line, 'the releases table has a Line header').toBeTruthy()
+        expect(line!.find('.n-icon').exists()).toBe(true)
         w.unmount()
     })
 })

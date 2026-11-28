@@ -15,6 +15,8 @@ import { NDataTable, NTag } from 'naive-ui'
 import commonFunctions from '@/utils/commonFunctions'
 import { isUuid } from '@/utils/upstream'
 import { depthOriginLabel, driftBehaviourLabel, followStatusLabel, itemKindLabel, itemUpdateStateLabel, labelOf, runStateLabel } from '@/utils/upstreamLabels'
+import { DEPTH_HELP, ON_DRIFT_HELP } from '@/utils/upstreamHelp'
+import FieldLabel from '../FieldLabel.vue'
 
 const props = defineProps<{
     orgUuid: string
@@ -87,8 +89,8 @@ const columns = computed((): DataTableColumns<any> => [
     { key: 'rearm', title: 'In ReARM', render: rearmCell },
     { key: 'source', title: 'Source', render: sourceCell },
     { key: 'state', title: 'State', render: stateCell },
-    { key: 'depth', title: 'Depth', render: depthCell },
-    { key: 'onDrift', title: 'On drift', render: (row: any) => h('span', labelOf(driftBehaviourLabel, row.onDrift)) },
+    { key: 'depth', title: () => h(FieldLabel, { label: 'Depth', tip: DEPTH_HELP }), render: depthCell },
+    { key: 'onDrift', title: () => h(FieldLabel, { label: 'On drift', tip: ON_DRIFT_HELP }), render: (row: any) => h('span', labelOf(driftBehaviourLabel, row.onDrift)) },
     { key: 'pending', title: 'Pending', render: pendingCell },
     { key: 'lastRun', title: 'Last run', render: lastRunCell },
 ])

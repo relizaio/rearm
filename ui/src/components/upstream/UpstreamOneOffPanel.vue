@@ -6,7 +6,8 @@
                     <n-input v-model:value="teiText" placeholder="tei://..." data-testid="upstream-tei-input" @keyup.enter="onIngest" />
                 </n-form-item>
                 <div class="upstream-hint" data-testid="upstream-tei-hint">{{ TEI_HINT }}</div>
-                <n-form-item label="Source">
+                <n-form-item>
+                    <template #label><field-label label="Source" :tip="TEI_SOURCE_HELP" /></template>
                     <n-select v-model:value="sourceChoice" :options="sourceOptions" style="max-width: 360px" data-testid="upstream-tei-source" />
                 </n-form-item>
             </n-form>
@@ -130,6 +131,8 @@ import {
 } from '@/utils/upstreamLabels'
 import UpstreamProbeResult from './UpstreamProbeResult.vue'
 import UpstreamSourceFormModal from './UpstreamSourceFormModal.vue'
+import FieldLabel from '../FieldLabel.vue'
+import { TEI_SOURCE_HELP } from '@/utils/upstreamHelp'
 
 enum OneOffState {
     RESOLVING = 'RESOLVING',
