@@ -122,8 +122,8 @@ in both `staged` and `unmatched`, and not counted as imported. See
 
 | Exit | Meaning |
 |---|---|
-| 0 | every VEX or SAFETY_CONTEXT artifact imported something, or `--allow-import-failure` was given |
-| 1 | the call did not complete or nothing was sent: an input error, the server refused the call, a transport error, or `--wait-for-sbom` ran out |
+| 0 | every VEX or SAFETY_CONTEXT artifact imported something (or the upload completed and `--allow-import-failure` was given) |
+| 1 | the call did not complete or nothing was sent: an input error, the server refused the call, the server refused the CLI's question about which import result fields it reports, a transport error, or `--wait-for-sbom` ran out |
 | 3 | the upload completed, but an artifact imported nothing or its result is unknown; the artifacts are stored, so a re-run uploads them again |
 
 When an artifact fails the check the final line reads
@@ -134,6 +134,8 @@ When an artifact fails the check the final line reads
 With `--allow-import-failure` on the command line, `addartifact` exits 0 even when an artifact imported
 nothing or its result is unknown, and still prints the summary; the final line then reads
 `import check: <f> of <k> VEX/SAFETY_CONTEXT artifacts imported nothing or have no known result; accepted by --allow-import-failure`.
+
+The flag does not cover a server that refuses the CLI's question about which import result fields it reports: the CLI then uploads nothing and exits 1 with or without the flag, and re-running the step is safe.
 
 The flag is read only from the command line. No environment variable and no config file key sets it,
 so a CI variable cannot turn the check off: put the flag on the step's own command.
