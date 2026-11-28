@@ -95,8 +95,10 @@
             </n-form-item>
             <template v-if="myUser.installationType !== 'OSS' && component.deviceClass !== 'NONE'">
                 <n-form-item label="Issuing agency">
-                    <n-select v-model:value="component.medicalProfile.issuingAgency" clearable
-                        :options="[{label: 'GS1', value: 'GS1'}, {label: 'HIBCC', value: 'HIBCC'}, {label: 'ICCBBA', value: 'ICCBBA'}]" />
+                    <n-select v-model:value="component.medicalProfile.issuingAgency" clearable :options="ISSUING_AGENCY_OPTIONS" />
+                    <template #feedback>
+                        <span data-testid="create-issuing-agency-help">{{ ISSUING_AGENCY_HELP }}</span>
+                    </template>
                 </n-form-item>
                 <n-form-item label="UDI-bearing component">
                     <n-switch v-model:value="component.medicalProfile.udiBearing" />
@@ -242,6 +244,7 @@ import graphqlClient from '@/utils/graphql'
 import CreateVcsRepository from '@/components/CreateVcsRepository.vue'
 import constants from '@/utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
+import { ISSUING_AGENCY_HELP, ISSUING_AGENCY_OPTIONS } from '@/utils/medicalDeviceSetup'
 
 const props = defineProps<{
     orgProp: string,

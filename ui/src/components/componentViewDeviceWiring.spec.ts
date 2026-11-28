@@ -45,3 +45,27 @@ describe('the Medical device tab in words (FDAW-78 row 17)', () => {
         expect(load.slice(0, load.indexOf('\n}\n'))).toContain('scrollToLabelingTextOnce()')
     })
 })
+
+describe('Issuing agency help on the Medical device tab (FDAW-157)', () => {
+    it('T-2: the help line sits in the UDI block after the Issuing agency select and before UDI-bearing', () => {
+        const start = template.indexOf('data-testid="device-udi-fields"')
+        expect(start).toBeGreaterThan(-1)
+        const block = template.slice(start)
+        const select = block.indexOf('v-model:value="deviceProfile.issuingAgency"')
+        const help = block.search(/<div[^>]*data-testid="device-issuing-agency-help"[^>]*>\s*\{\{ ISSUING_AGENCY_HELP \}\}\s*<\/div>/)
+        const udi = block.indexOf('deviceProfile.udiBearing')
+        expect(select).toBeGreaterThan(-1)
+        expect(help).toBeGreaterThan(select)
+        expect(udi).toBeGreaterThan(help)
+    })
+
+    it('T-2: the script imports both constants from medicalDeviceSetup and keeps no local options', () => {
+        const script = strip(parseSfc(componentView).descriptor.scriptSetup?.content
+            ?? parseSfc(componentView).descriptor.script?.content ?? '')
+        const imp = script.match(/import \{([^}]*)\} from '@\/utils\/medicalDeviceSetup'/)
+        expect(imp).not.toBeNull()
+        expect(imp![1]).toMatch(/\bISSUING_AGENCY_HELP\b/)
+        expect(imp![1]).toMatch(/\bISSUING_AGENCY_OPTIONS\b/)
+        expect(script).not.toContain('const ISSUING_AGENCY_OPTIONS')
+    })
+})

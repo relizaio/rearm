@@ -16,6 +16,13 @@ import { packageStateOf } from './packageSettings'
  */
 
 export const QUESTION_TRACKED_821 = 'Subject to an FDA tracking order (21 CFR 821)'
+/** FDAW-157: the help line under "Issuing agency" (Medical device tab and Create component). */
+export const ISSUING_AGENCY_HELP =
+    'The FDA-accredited UDI issuing agency that assigned the device identifier; GS1 (GTIN) is the usual one.'
+/** The three FDA-accredited issuing agencies (21 CFR 830), shown by their own names; value = stored value. */
+export const ISSUING_AGENCY_OPTIONS = [
+    { label: 'GS1', value: 'GS1' }, { label: 'HIBCC', value: 'HIBCC' }, { label: 'ICCBBA', value: 'ICCBBA' }
+]
 export const QUESTION_FDA_PREMARKET = 'Prepare FDA premarket submissions (US)?'
 export const MEDICAL_DEVICE_SAVED = 'Medical device settings saved'
 export const MEDICAL_DEVICE_SETUP_LINK_TEXT = 'Settings > Medical device'
