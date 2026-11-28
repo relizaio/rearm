@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from './agentBoardTarget'
+import { boardTargetOptions, targetChip, targetFilter, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from './agentBoardTarget'
 import { boardFieldOfError } from './agentBoardNaming'
 
 // The target picker in the board form (task RD2-4).
@@ -74,10 +74,72 @@ describe('the board target picker', () => {
         for (const m of ['target api is not a member of payments; add it first',
             'Board requires a target component -- the node it builds',
             'Target component not found: 0000', 'Target component is archived',
-            'Target component belongs to another organization']) {
+            'Target component belongs to another organization',
+            // T-1384: the board document refusal (task TPF-274) reaches the field too.
+            'Target component is a board document component; a board builds a component or product']) {
             expect(boardFieldOfError(m)).toBe('target')
         }
         expect(boardFieldOfError("taskPrefix 'R' must be 2 to 8 letters and digits, e.g. RD")).toBe('taskPrefix')
         expect(boardFieldOfError('Board name is required')).toBeNull()
+    })
+    // Task TPF-274: products are offered beside components, and a typed or pasted uuid selects its item.
+    const prods = [
+        { uuid: 'p1', name: 'shop', type: 'PRODUCT' },
+        { uuid: 'p2', name: 'api', type: 'PRODUCT' },
+        { uuid: 'p3', name: 'gone', type: 'PRODUCT', status: 'ARCHIVED' },
+    ]
+    const SHOP = '5b1c0a7e-3f4d-4e2a-9c61-0d8e7f6a5b41'
+    const API_C = '0c9e2d4f-7a1b-4c3d-8e5f-6a7b8c9d0e12'
+    const real = [
+        { uuid: '1d2e3f40-5a6b-4c7d-8e9f-0a1b2c3d4e5f', name: 'web', type: 'COMPONENT' },
+        { uuid: API_C, name: 'api', type: 'COMPONENT' },
+        { uuid: SHOP, name: 'shop', type: 'PRODUCT' },
+        { uuid: '9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a', name: 'api', type: 'PRODUCT' },
+    ]
+
+    it('T-1380: offers products with their type beside components, sorted by name then type', () => {
+        const opts = boardTargetOptions([...comps, ...prods])
+        expect(opts.map(o => [o.label, o.type])).toEqual([
+            ['api', 'COMPONENT'], ['api', 'PRODUCT'], ['shop', 'PRODUCT'], ['web', 'COMPONENT']])
+        expect(opts.map(o => o.value)).not.toContain('d1')
+        expect(opts.map(o => o.value)).not.toContain('c3')
+        expect(opts.map(o => o.value)).not.toContain('p3')
+        expect(targetOptionType(opts.find(o => o.label === 'shop'))).toBe('product')
+    })
+
+    it('T-1381: a full uuid matches its own item only; any other text matches names', () => {
+        const opts = boardTargetOptions(real)
+        const matching = (p: string) => opts.filter(o => targetFilter(p, o)).map(o => `${o.label} ${o.type}`)
+        expect(matching('SHO')).toEqual(['shop PRODUCT'])
+        expect(matching(' api ')).toEqual(['api COMPONENT', 'api PRODUCT'])
+        expect(matching(`  ${SHOP.toUpperCase()} `)).toEqual(['shop PRODUCT'])
+        expect(matching(` ${API_C.toUpperCase()}`)).toEqual(['api COMPONENT'])
+        expect(matching(SHOP.slice(0, 8))).toEqual([])
+        expect(matching('')).toHaveLength(opts.length)
+    })
+
+    it('T-1382: a uuid no option holds adds one unlisted option, sent normalized', () => {
+        const other = 'AB12CD34-EF56-4A78-9B01-23456789ABCD'
+        const value = other.toLowerCase()
+        const opts = boardTargetOptions(real, null, [`  ${other} `, value])
+        const unlisted = opts.filter(o => o.unlisted)
+        expect(unlisted).toEqual([{ label: value, value, type: '', unlisted: true }])
+        expect(targetOptionType(unlisted[0])).toBe('not in the list, checked on save')
+        expect(targetPatch(null, unlisted[0].value)).toBe(value)
+        const current = { uuid: '7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918', name: 'checkout', type: 'PRODUCT' }
+        for (const entered of [SHOP, current.uuid, '00000000-0000-0000-0000-000000000000', 'abc', null]) {
+            expect(boardTargetOptions(real, current, [entered]).filter(o => o.unlisted), String(entered)).toEqual([])
+        }
+    })
+
+    it('T-1383: the chip of a product target links to the Products page; its label is plain text', () => {
+        expect(targetChip({ target: 'p1', targetDetails: { uuid: 'p1', name: 'shop', type: 'PRODUCT' } }, 'o1'))
+            .toEqual({ label: 'target shop', to: '/productsOfOrg/o1/p1' })
+        expect(targetChip({ target: 'p1', targetDetails: null }, 'o1', prods)?.to).toBe('/productsOfOrg/o1/p1')
+        expect(targetChip({ target: 'x1', targetDetails: { uuid: 'x1', name: 'x' } }, 'o1')?.to).toBe('/componentsOfOrg/o1/x1')
+        expect(targetChip({ target: 'x1', targetDetails: { uuid: 'x1', name: 'x', type: 'SOMETHING' } }, 'o1')?.to)
+            .toBe('/componentsOfOrg/o1/x1')
+        expect(targetChip({ target: 'p9', targetDetails: { uuid: 'p9', name: '<b>x</b>', type: 'PRODUCT' } }, 'o1')?.label)
+            .toBe('target <b>x</b>')
     })
 })
