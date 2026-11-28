@@ -39,6 +39,10 @@
                     <n-button v-if="r.verb" size="tiny" style="margin-left: 8px;" data-testid="draft-readiness-verb"
                         :disabled="r.verbDisabled" @click="emit('fix', r.verb)">{{ r.verbLabel }}</n-button>
                     <div v-if="r.sentence" data-testid="draft-readiness-org-write" class="text-muted draft-readiness-sentence">{{ r.sentence }}</div>
+                    <ul v-if="r.items.length" data-testid="draft-readiness-items" class="draft-readiness-items">
+                        <li v-for="(i, n) in r.items" :key="n" data-testid="draft-readiness-item">{{ i }}</li>
+                        <li v-if="r.itemsTruncated" class="text-muted">{{ READINESS_ITEMS_TRUNCATED }}</li>
+                    </ul>
                 </div>
                 <div v-if="mustFixOpen(draft) > 0" data-testid="draft-readiness-fix" class="draft-line text-muted">{{ READINESS_FIX_TEXT }}</div>
             </template>
@@ -99,7 +103,7 @@ import { computed, ref, watch } from 'vue'
 import { NAlert, NButton, NSpace, NTag, useNotification } from 'naive-ui'
 import { DRAFT_JOB_STATE_LABELS, DRAFT_STATE_LABELS, NEW_VERSION_REASON_LABELS, labelOf, submissionActorText, submissionDateText } from '@/utils/submissions'
 import {
-    DRAFT_FILES_HINT, READINESS_FIX_TEXT, READINESS_TAGS, READINESS_UNCHECKED, READINESS_UNCHECKED_AWAITING, SETTING_UNREAD, STALE_NOT_BUILT,
+    DRAFT_FILES_HINT, READINESS_FIX_TEXT, READINESS_ITEMS_TRUNCATED, READINESS_TAGS, READINESS_UNCHECKED, READINESS_UNCHECKED_AWAITING, SETTING_UNREAD, STALE_NOT_BUILT,
     STILL_RUNNING, contentDispositionFileName, draftButtons, draftConfirmationLine, draftDiffSections, draftDiffSummary, draftPartRows,
     draftStaleBanner, draftZipOffered, mustFixOpen, readinessRows, type DraftPartDownload,
 } from '@/utils/submissionDrafts'
@@ -236,6 +240,11 @@ async function download (part: DraftPartDownload) {
 }
 .draft-readiness-sentence {
     margin-left: 1rem;
+    font-size: 12px;
+}
+.draft-readiness-items {
+    margin: 2px 0 0 1rem;
+    padding-left: 1rem;
     font-size: 12px;
 }
 .draft-diff-line {

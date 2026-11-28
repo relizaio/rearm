@@ -155,6 +155,8 @@ export interface ReadinessFacts { writable?: boolean, canWriteOrg?: boolean, can
 export interface ReadinessRowView {
     rule: string, text: string, tag: string | null, count: number,
     verb: string | null, verbLabel: string | null, verbDisabled: boolean, sentence: string | null,
+    /** FDAW-161 3.8: the items an open REVIEW row lists, `label (detail)`; none otherwise. */
+    items: string[], itemsTruncated: boolean,
 }
 
 function readinessRowList (draft: any): any[] {
@@ -179,6 +181,7 @@ export function mustFixOpen (draft: any): number {
 export function readinessRows (draft: any, facts: ReadinessFacts): ReadinessRowView[] {
     return readinessRowList(draft).map(r => {
         const open = r?.outcome !== 'PASS'
+        const review = open && r?.severity === 'REVIEW'
         const label = open && facts?.writable && typeof r?.verb === 'string' ? (READINESS_VERB_LABELS[r.verb] ?? null) : null
         const orgWide = label !== null && ORG_WIDE_VERBS.includes(r.verb)
         const findings = label !== null && FINDING_ANALYSIS_VERBS.includes(r.verb)
@@ -192,9 +195,20 @@ export function readinessRows (draft: any, facts: ReadinessFacts): ReadinessRowV
             verbLabel: label,
             verbDisabled: disabled,
             sentence: !disabled ? null : findings ? FINDING_ANALYSIS_WRITE_SENTENCE : orgWriteSentence(label as string),
+            items: review ? reviewItems(r) : [],
+            itemsTruncated: review && r?.itemsTruncated === true,
         }
     })
 }
+
+/** The items of a row as the card lists them: the label, with the detail in parentheses when there is one. */
+function reviewItems (r: any): string[] {
+    if (!Array.isArray(r?.items)) return []
+    return r.items.filter((i: any) => i && i.label).map((i: any) => i.detail ? `${i.label} (${i.detail})` : String(i.label))
+}
+
+/** The card's line under a truncated item list (FDAW-161 3.8). */
+export const READINESS_ITEMS_TRUNCATED = 'and more; the row\'s count is the total'
 
 /** The readiness reason of Finalize and Confirm, in the server's order: unchecked first, then an open must-fix row. */
 function readinessReason (draft: any, awaiting: boolean): string | null {
