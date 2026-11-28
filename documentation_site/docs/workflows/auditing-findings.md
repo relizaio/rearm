@@ -75,7 +75,7 @@ The Findings Modal is accessible from release views, component views, and the da
 - **Sources** - list of sources that reported the finding (specific Releases and Artifacts where finding was discoverd)
 
 The switches above the table filter it:
-- **Show Suppressed** and **Show Unsuppressed** - suppressed findings (state `FALSE_POSITIVE`, `NOT_AFFECTED` or `RESOLVED`) are shown as strikethrough.
+- **Show closed** and **Show open** - closed findings (state `FALSE_POSITIVE`, `NOT_AFFECTED` or `RESOLVED`) are shown as strikethrough.
 - **KEV Only** - only known exploited vulnerabilities.
 - **Has Fix** - only findings whose advisory names a version that fixes them.
 - **Group by Component** - one row per component; see [Grouping by Component](#grouping-by-component). ReARM remembers the choice.
@@ -203,7 +203,7 @@ When creating or updating a finding analysis, you will be able to work with the 
 | **Not Affected** | Info | Component is not affected - **suppresses** the finding |
 | **Resolved** | Success | The finding was fixed in this component - **suppresses** the finding |
 
-Findings in `FALSE_POSITIVE`, `NOT_AFFECTED` or `RESOLVED` state are **suppressed** and excluded from active finding counts.
+Findings in `FALSE_POSITIVE`, `NOT_AFFECTED` or `RESOLVED` state are **suppressed** and excluded from active finding counts. The screens call such a finding closed; the API, the package settings and the VDR/VEX options keep the word suppressed.
 
 Confirm and Finalize of a regulatory package need every finding of the release assessed: not in triage, with a discovery method, and what its state asks for (a justification or an explanation for Not Affected and False Positive, an explanation for Resolved, and a risk level, at least one risk control and a response, recommendation or workaround for Exploitable); a known exploited finding also needs an explanation. See [Readiness rules](./readiness-rules). An assessment that was never given a discovery method, such as one made before ReARM's analysis dialogs offered the field or created by a VEX import, has none until one is set.
 
@@ -227,8 +227,8 @@ The Finding Analysis view supports the following filters:
 - **Branch / Feature Set** - filter to a specific branch
 - **Release** - filter to a specific release version
 - **Finding ID search** - free-text search across finding IDs and aliases
-- **Show Suppressed** toggle - include or exclude suppressed findings
-- **Show Unsuppressed** toggle - include or exclude active findings
+- **Show closed** toggle - include or exclude closed analysis records
+- **Show open** toggle - include or exclude open analysis records
 
 When component, branch, or release filters are active, the view also surfaces **new findings** from those release artifacts that have not yet been analyzed, allowing you to triage them inline.
 
