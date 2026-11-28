@@ -111,13 +111,13 @@ async function wholeRow(uuid: string, reReadRow: (uuid: string) => Promise<BomRe
 /**
  * Only rebom's own stamp is served: a row that is not a merge output (`meta.mod` other than
  * `rebom`: every upload, and the uploads stored before the ingest strip) loses every
- * `reliza:export:releaseNode` entry; a merge output comes back as fetched (SCORE-60 ADR-9 (c)).
+ * rebom node stamp (`reliza:export:releaseNode`, `reliza:export:dependenciesInferred`); a merge output comes back as fetched (SCORE-60 ADR-9 (c)).
  */
 function servedAs(row: Pick<BomRecord, 'uuid' | 'meta'>, content: any): any {
     if (isRebomMergeOutput(row.meta)) return content;
     const stripped = stripReleaseNodeStamps(content);
     if (stripped.count > 0) {
-        logger.debug({ bomUuid: row.uuid, removed: stripped.count }, 'Removed release node stamps from a row that is not a merge output');
+        logger.debug({ bomUuid: row.uuid, removed: stripped.count }, 'Removed rebom node stamps from a row that is not a merge output');
     }
     return stripped.bom;
 }

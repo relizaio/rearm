@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stripReleaseNodeStamps, isRebomMergeOutput, RELEASE_NODE_PROPERTY, REBOM_MERGE_MOD } from '../../src/services/bom/releaseNodeStamp';
+import { stripReleaseNodeStamps, isRebomMergeOutput, isRebomNodeStamp, RELEASE_NODE_PROPERTY, DEPENDENCIES_INFERRED_PROPERTY, REBOM_MERGE_MOD } from '../../src/services/bom/releaseNodeStamp';
 
 /**
  * SCORE-60 (T-23, ADR-9): rebom removes `reliza:export:releaseNode` from every document it did not
@@ -104,6 +104,46 @@ describe('stripReleaseNodeStamps', () => {
         expect(result.bom).not.toBe(bom);
         expect(result.bom.components[3]).toBe(bom.components[3]);
         expect(result.bom.metadata.component).not.toBe(bom.metadata.component);
+    });
+});
+
+describe('stripReleaseNodeStamps with reliza:export:dependenciesInferred (FDAW-160 3.1 item 4, T-1)', () => {
+    const INFERRED = { name: DEPENDENCIES_INFERRED_PROPERTY, value: '5' };
+
+    it('isRebomNodeStamp is true for either name, whatever its value, and false otherwise', () => {
+        expect(DEPENDENCIES_INFERRED_PROPERTY).toBe('reliza:export:dependenciesInferred');
+        expect(isRebomNodeStamp(STAMP)).toBe(true);
+        expect(isRebomNodeStamp({ name: DEPENDENCIES_INFERRED_PROPERTY, value: 'x' })).toBe(true);
+        expect(isRebomNodeStamp(FOLDED)).toBe(false);
+        expect(isRebomNodeStamp(null)).toBe(false);
+        expect(isRebomNodeStamp('reliza:export:dependenciesInferred')).toBe(false);
+    });
+
+    it('removes both names at any depth, and the count includes both', () => {
+        const bom = stampedEverywhere();
+        bom.metadata.component.properties = [KEEP, STAMP, INFERRED];
+        bom.components[1].components[0].components[0].properties = [INFERRED, KEEP];
+        bom.components[0].properties = [SUPPORT, { name: DEPENDENCIES_INFERRED_PROPERTY, value: 'not-a-number' }];
+
+        const result = stripReleaseNodeStamps(bom);
+
+        // eight stamps before; the root gains one record, two stamps are swapped for records
+        expect(result.count).toBe(9);
+        const names = namesEverywhere(result.bom);
+        expect(names).not.toContain(RELEASE_NODE_PROPERTY);
+        expect(names).not.toContain(DEPENDENCIES_INFERRED_PROPERTY);
+        expect(result.bom.metadata.component.properties).toStrictEqual([KEEP]);
+        expect(result.bom.components[0].properties).toStrictEqual([SUPPORT]);
+        expect(result.bom.components[1].components[0].components[0].properties).toStrictEqual([KEEP]);
+    });
+
+    it('a document with neither is returned as itself', () => {
+        const bom = { metadata: { component: { name: 'root', 'bom-ref': 'r', properties: [KEEP] } }, components: [{ name: 'a', properties: [FOLDED] }] };
+
+        const result = stripReleaseNodeStamps(bom);
+
+        expect(result.bom).toBe(bom);
+        expect(result.count).toBe(0);
     });
 });
 
