@@ -87,6 +87,18 @@ export const MAX_CONTROLS = 10
 /** The longest control description the backend accepts (AssessmentFields.MAX_CONTROL_DESCRIPTION_LENGTH). */
 export const MAX_CONTROL_DESCRIPTION_LENGTH = 2048
 
+/** The residual risk conclusion of an exploitable finding (FDAW-162; the backend's ResidualRiskAcceptability and AssessmentLabels). */
+export const RESIDUAL_RISK_OPTIONS = [
+    { label: 'Acceptable', value: 'ACCEPTABLE' },
+    { label: 'Not acceptable', value: 'NOT_ACCEPTABLE' }
+]
+
+/** The longest residual risk rationale the backend accepts (AssessmentFields.MAX_RESIDUAL_RISK_RATIONALE_LENGTH). */
+export const MAX_RESIDUAL_RISK_RATIONALE_LENGTH = 2048
+
+/** The longest risk file reference the backend accepts (AssessmentFields.MAX_RISK_FILE_REFERENCE_LENGTH). */
+export const MAX_RISK_FILE_REFERENCE_LENGTH = 512
+
 /** The server's FindingType (FDAW-150 3.1): one source for the Finding Analysis filter and the printed label. */
 export const FINDING_TYPE_OPTIONS = [
     { label: 'Vulnerability', value: 'VULNERABILITY' },

@@ -179,6 +179,47 @@
                         </n-button>
                     </n-space>
                 </n-form-item>
+
+                <template v-if="visibleAssessment.residualRisk">
+                    <n-form-item
+                        path="residualRiskAcceptability"
+                        :validation-status="residualRiskWarning ? 'warning' : undefined"
+                        :feedback="residualRiskWarning || undefined"
+                    >
+                        <template #label>
+                            <field-label label="Residual risk" :tip="FIELD_HELP.residualRisk" />
+                        </template>
+                        <n-select
+                            v-model:value="assessmentForm.residualRiskAcceptability"
+                            :options="RESIDUAL_RISK_OPTIONS"
+                            placeholder="Select acceptable or not acceptable"
+                        />
+                    </n-form-item>
+
+                    <n-form-item path="residualRiskRationale">
+                        <template #label>
+                            <field-label label="Residual risk rationale" :tip="FIELD_HELP.residualRiskRationale" />
+                        </template>
+                        <n-input
+                            v-model:value="assessmentForm.residualRiskRationale"
+                            type="textarea"
+                            placeholder="Why the residual risk is or is not acceptable"
+                            :rows="3"
+                            :maxlength="MAX_RESIDUAL_RISK_RATIONALE_LENGTH"
+                        />
+                    </n-form-item>
+
+                    <n-form-item path="riskFileReference">
+                        <template #label>
+                            <field-label label="Risk file reference (optional)" :tip="FIELD_HELP.riskFileReference" />
+                        </template>
+                        <n-input
+                            v-model:value="assessmentForm.riskFileReference"
+                            placeholder="For example SRMR-014 section 4.2"
+                            :maxlength="MAX_RISK_FILE_REFERENCE_LENGTH"
+                        />
+                    </n-form-item>
+                </template>
             </template>
         </n-form>
 
@@ -213,6 +254,9 @@ import {
     DISCOVERY_METHOD_OPTIONS,
     MAX_CONTROL_DESCRIPTION_LENGTH,
     MAX_CONTROLS,
+    MAX_RESIDUAL_RISK_RATIONALE_LENGTH,
+    MAX_RISK_FILE_REFERENCE_LENGTH,
+    RESIDUAL_RISK_OPTIONS,
     RISK_CONTROL_TYPE_OPTIONS,
     RISK_LEVEL_OPTIONS
 } from '@/constants/vulnAnalysis'
@@ -221,6 +265,7 @@ import {
     assessmentInputOf,
     assessmentFormOf,
     emptyAssessmentForm,
+    residualRiskMissing,
     shownAssessmentForm,
     validateControls,
     visibleAssessmentFields,
@@ -289,6 +334,8 @@ const assessmentShown = computed(() => assessmentFieldsAvailable(store.getters.m
 const visibleAssessment = computed(() => visibleAssessmentFields(formData.value.state))
 const initialAssessment = ref<AssessmentForm>(emptyAssessmentForm())
 const assessmentForm = ref<AssessmentForm>(emptyAssessmentForm())
+// FDAW-162: what the gate would call missing from the residual risk conclusion; a warning, never a block on Save
+const residualRiskWarning = computed(() => residualRiskMissing(formData.value.state, assessmentForm.value))
 const controlsError = ref<string | null>(null)
 watch(() => assessmentForm.value.controls, () => { controlsError.value = null }, { deep: true })
 

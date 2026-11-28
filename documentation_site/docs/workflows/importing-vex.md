@@ -4,7 +4,7 @@ VEX (Vulnerability Exploitability eXchange) lets you record analysis decisions a
 
 For the underlying triage model and how Finding Analysis records work, start with [Auditing Findings](./auditing-findings).
 
-A Finding Analysis record created from a VEX document has no discovery method, risk level or controls. In a regulatory package's readiness check such a finding is listed under Every finding has an assessment at least until an analyst sets its discovery method in the finding's analysis; an exploitable finding also needs a risk level and a risk control.
+A Finding Analysis record created from a VEX document has no discovery method, risk level or controls. In a regulatory package's readiness check such a finding is listed under Every finding has an assessment at least until an analyst sets its discovery method in the finding's analysis; an exploitable finding also needs a risk level, a risk control and a residual risk conclusion with its rationale.
 
 ## When to import VEX vs. triage manually
 

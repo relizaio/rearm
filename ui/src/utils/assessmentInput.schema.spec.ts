@@ -24,9 +24,20 @@ function coerceErrors (schema: GraphQLSchema, mutation: string, value: unknown):
 }
 
 const ALL_THREE = assessmentInputOf(emptyAssessmentForm(), {
+    ...emptyAssessmentForm(),
     discoveryMethod: 'SECURITY_TESTING',
     riskLevel: 'NEGLIGIBLE',
     controls: [{ type: 'COMPENSATING', description: 'network isolated' }, { type: 'PLANNED_UPDATE', description: 'next release' }]
+})
+
+/** FDAW-162 T-13: the six keys, the three of FDAW-17 and the residual risk conclusion. */
+const ALL_SIX = assessmentInputOf(emptyAssessmentForm(), {
+    discoveryMethod: 'SECURITY_TESTING',
+    riskLevel: 'NEGLIGIBLE',
+    controls: [{ type: 'COMPENSATING', description: 'network isolated' }],
+    residualRiskAcceptability: 'NOT_ACCEPTABLE',
+    residualRiskRationale: 'Reachable on the service port; fixed in the next release.',
+    riskFileReference: 'SRMR-014 section 4.2'
 })
 
 const CREATE = {
@@ -58,6 +69,19 @@ describe.runIf(proSchema)('assessment input coerces against the Pro schema', () 
 
     it('UpdateVulnAnalysisInput with all three fields', () => {
         expect(coerceErrors(schema, 'updateVulnAnalysis', { ...UPDATE, ...ALL_THREE })).toEqual([])
+    })
+
+    it('the six keys coerce against both inputs (FDAW-162 T-13)', () => {
+        expect(Object.keys(ALL_SIX).sort()).toEqual(['controls', 'discoveryMethod', 'residualRiskAcceptability',
+            'residualRiskRationale', 'riskFileReference', 'riskLevel'])
+        expect(coerceErrors(schema, 'createVulnAnalysis', { ...CREATE, ...ALL_SIX })).toEqual([])
+        expect(coerceErrors(schema, 'updateVulnAnalysis', { ...UPDATE, ...ALL_SIX })).toEqual([])
+    })
+
+    it('a residual risk acceptability outside the enum does not coerce (FDAW-162 T-13)', () => {
+        const maybe = { residualRiskAcceptability: 'MAYBE' }
+        expect(coerceErrors(schema, 'createVulnAnalysis', { ...CREATE, ...maybe }).length).toBeGreaterThan(0)
+        expect(coerceErrors(schema, 'updateVulnAnalysis', { ...UPDATE, ...maybe }).length).toBeGreaterThan(0)
     })
 
     it('an emptied controls list coerces (it clears the stored controls)', () => {
