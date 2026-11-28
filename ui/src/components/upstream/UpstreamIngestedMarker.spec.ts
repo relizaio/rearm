@@ -559,7 +559,7 @@ describe('the marker folded and unfolded', () => {
     const testid = (w: any, id: string) => w.find(`[data-testid="${id}"]`)
 
     it('starts as one line: the headline and the toggle, no title and no details', async () => {
-        answer({ origin: item(), source: SOURCE_ROW, follows: [coveringFollow()] })
+        answer({ origin: item({ activeFollow: FOLLOW }), source: SOURCE_ROW, follow: followRow() })
         const w = await mountMarker('ITEM', false, false)
         expect(testid(w, 'upstream-marker-headline').text()).toBe('Ingested from Acme TEA: Product ' + HOSTILE)
         expect(testid(w, 'upstream-marker-toggle').text()).toBe('Show details')
@@ -573,7 +573,7 @@ describe('the marker folded and unfolded', () => {
     })
 
     it('opens to the title and the details with their info icons, and folds again', async () => {
-        answer({ origin: item(), source: SOURCE_ROW, follows: [coveringFollow()] })
+        answer({ origin: item({ activeFollow: FOLLOW }), source: SOURCE_ROW, follow: followRow() })
         const w = await mountMarker('ITEM', false, false)
         await testid(w, 'upstream-marker-toggle').trigger('click')
         await flushPromises()
@@ -590,7 +590,7 @@ describe('the marker folded and unfolded', () => {
     })
 
     it('keeps the warnings of an item folded: no longer updated, and a follow whose last run found the item gone', async () => {
-        answer({ origin: item({ updateState: 'NO_LONGER_UPDATED' }), source: SOURCE_ROW, follows: [coveringFollow('ITEM_GONE')] })
+        answer({ origin: item({ updateState: 'NO_LONGER_UPDATED', activeFollow: FOLLOW }), source: SOURCE_ROW, follow: followRow('ITEM_GONE') })
         const w = await mountMarker('ITEM', false, false)
         expect(testid(w, 'upstream-marker-update-state').text()).toBe('No longer updated')
         expect(testid(w, 'upstream-marker-update-state-help').attributes('aria-label')).toBe(UPDATE_STATE_HELP.NO_LONGER_UPDATED)
@@ -600,7 +600,7 @@ describe('the marker folded and unfolded', () => {
     })
 
     it('keeps the warnings of a release folded: gone and a rewritten collection; the one-off and its icon open with the details', async () => {
-        answer({ origin: release({ integrity: 'UPSTREAM_REWROTE_COLLECTION' }), source: SOURCE_ROW, follows: [] })
+        answer({ origin: release({ integrity: 'UPSTREAM_REWROTE_COLLECTION' }), source: SOURCE_ROW })
         const w = await mountMarker('RELEASE', false, false)
         expect(testid(w, 'upstream-marker-headline').text()).toBe('Ingested from Acme TEA: upstream release 1.4.0')
         expect(testid(w, 'upstream-marker-gone').exists()).toBe(true)
@@ -617,7 +617,7 @@ describe('the marker folded and unfolded', () => {
     })
 
     it('folds again when it is shown for another component', async () => {
-        answer({ origin: item(), source: SOURCE_ROW, follows: [] })
+        answer({ origin: item(), source: SOURCE_ROW })
         const w = await mountMarker('ITEM')
         expect(testid(w, 'upstream-marker-depth').exists()).toBe(true)
         await w.setProps({ uuid: 'bbbbbbbb-0000-4000-8000-000000000003' })
