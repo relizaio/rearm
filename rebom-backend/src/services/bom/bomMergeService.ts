@@ -3,7 +3,7 @@ import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../t
 import type { BomOrigin } from './bomAddService';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectWithMetaById } from './bomCrudService';
-import { extractTldFromBom, dropExcludedAndDevComponents, assignMissingBomRefs, stripPurlCredentials, stripPersonalDataAndLocalPaths, linkOrphanComponents, recordMergeCounts, inheritedCountOf, MergeCounts, DEV_COMPONENTS_EXCLUDED_PROPERTY, EXCLUDED_SCOPE_DROPPED_PROPERTY, OPTIONAL_SCOPE_DROPPED_PROPERTY, PERSONAL_DATA_STRIPPED_PROPERTY, LOCAL_PATHS_STRIPPED_PROPERTY, CREDENTIALS_STRIPPED_PROPERTY, ORPHAN_COMPONENTS_LINKED_PROPERTY, FILE_COMPONENTS_EXCLUDED_PROPERTY, extractFileFilteredBom, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, linkUnfoldedRoots, establishPurl, rekeyUnlistedInputs, mergeRootKeyRecords, MergeRowMeta, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
+import { extractTldFromBom, dropExcludedAndDevComponents, assignMissingBomRefs, stripPurlCredentials, stripPersonalDataAndLocalPaths, linkOrphanComponents, recordMergeCounts, inheritedCountOf, MergeCounts, DEV_COMPONENTS_EXCLUDED_PROPERTY, EXCLUDED_SCOPE_DROPPED_PROPERTY, OPTIONAL_SCOPE_DROPPED_PROPERTY, PERSONAL_DATA_STRIPPED_PROPERTY, LOCAL_PATHS_STRIPPED_PROPERTY, CREDENTIALS_STRIPPED_PROPERTY, ORPHAN_COMPONENTS_LINKED_PROPERTY, FILE_COMPONENTS_EXCLUDED_PROPERTY, extractFileFilteredBom, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, declareInferredCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, linkUnfoldedRoots, establishPurl, rekeyUnlistedInputs, mergeRootKeyRecords, MergeRowMeta, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -107,6 +107,9 @@ export async function mergeBomsWithInputRecord(ids: string[], rebomOptions: Rebo
     if (mergedBom) mergedBom = dropDanglingRefs(mergedBom).bom
     // After it: adds no dependency ref, and describes the placeholders that survived.
     if (mergedBom) mergedBom = declareUnknownCompositions(mergedBom, rebomOptions.missingSbomComponents).bom
+    // FDAW-160 3.1: the nodes whose dependency list a merge inferred (this one's root, or a component
+    // release's node in a product) are stated unknown, after the placeholder entry.
+    if (mergedBom) mergedBom = declareInferredCompositions(mergedBom).bom
     // FDAW-6 3.3, FDAW-19 3.2: the seven records, each only when its pass ran (the dev, credential and
     // orphan ones always, the seventh under ignoreDev), this merge's counts plus what the merge rows
     // among the inputs recorded.

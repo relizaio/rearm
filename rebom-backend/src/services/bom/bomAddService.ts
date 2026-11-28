@@ -48,14 +48,14 @@ export async function addBom(bomInput: BomInput, origin: BomOrigin = 'UPLOAD'): 
 }
 
 /**
- * An uploaded document never carries rebom's release node stamp into storage: only a merge output
+ * An uploaded document never carries rebom's node stamps (release node, dependencies inferred) into storage: only a merge output
  * keeps it (SCORE-60 ADR-9 (a)).
  */
 function withoutUploadedStamps(bom: any, origin: BomOrigin): any {
   if (origin === 'MERGE') return bom;
   const stripped = stripReleaseNodeStamps(bom);
   if (stripped.count > 0) {
-    logger.info({ removed: stripped.count }, 'Removed reliza:export:releaseNode from an uploaded document');
+    logger.info({ removed: stripped.count }, 'Removed rebom node stamps from an uploaded document');
   }
   return stripped.bom;
 }

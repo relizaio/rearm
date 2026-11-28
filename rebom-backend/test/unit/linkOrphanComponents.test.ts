@@ -63,4 +63,44 @@ describe('linkOrphanComponents (FDAW-6 T6)', () => {
         expect(r.count).toBe(1);
         expect(r.bom.dependencies).toStrictEqual([{ ref: 'root', dependsOn: ['dup'] }]);
     });
+
+    describe('the root record (FDAW-160 3.1 item 1)', () => {
+        const recordsOf = (bom: any) => (bom.metadata.component.properties || [])
+            .filter((p: any) => p.name === 'reliza:export:dependenciesInferred');
+
+        it('three orphans give metadata.component exactly one reliza:export:dependenciesInferred = "3"', () => {
+            const r = linkOrphanComponents(doc([{ ref: 'root', dependsOn: ['a'] }]));
+            expect(r.count).toBe(3);
+            expect(recordsOf(r.bom)).toStrictEqual([{ name: 'reliza:export:dependenciesInferred', value: '3' }]);
+        });
+
+        it('a root already carrying the record with "9" ends with one entry "3", other properties kept', () => {
+            const bom: any = doc([{ ref: 'root', dependsOn: ['a'] }]);
+            bom.metadata.component.properties = [
+                { name: 'reliza:export:dependenciesInferred', value: '9' },
+                { name: 'keep', value: 'me' },
+                { name: 'reliza:export:dependenciesInferred', value: '2' }
+            ];
+            const r = linkOrphanComponents(bom);
+            expect(r.bom.metadata.component.properties).toStrictEqual([
+                { name: 'keep', value: 'me' },
+                { name: 'reliza:export:dependenciesInferred', value: '3' }
+            ]);
+            expect(bom.metadata.component.properties).toHaveLength(3);
+        });
+
+        it('nothing to link returns the input itself, with no record added', () => {
+            const bom: any = doc([{ ref: 'root', dependsOn: ['a', 'b', 'c', 'd'] }]);
+            const r = linkOrphanComponents(bom);
+            expect(r.bom).toBe(bom);
+            expect(r.bom.metadata.component.properties).toBeUndefined();
+        });
+
+        it('a full graph (every component named) adds no record (FDAW-160 test 5)', () => {
+            const bom: any = doc([{ ref: 'root', dependsOn: ['a', 'b'] }, { ref: 'b', dependsOn: ['c', 'd'] }]);
+            const r = linkOrphanComponents(bom);
+            expect(r.count).toBe(0);
+            expect(r.bom).toBe(bom);
+        });
+    });
 });

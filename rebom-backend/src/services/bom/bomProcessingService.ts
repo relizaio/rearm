@@ -19,8 +19,8 @@ import { getBearCredentials, getBearIntegration } from '../integrationService';
 import { SpdxService } from '../spdx';
 import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
 import { effectiveSkipPatterns } from './enrichmentSkipPatterns';
-import { RELEASE_NODE_PROPERTY, isReleaseNodeStamp, isRebomMergeOutput, stripReleaseNodeStamps } from './releaseNodeStamp';
-export { RELEASE_NODE_PROPERTY } from './releaseNodeStamp';
+import { RELEASE_NODE_PROPERTY, DEPENDENCIES_INFERRED_PROPERTY, isReleaseNodeStamp, isRebomMergeOutput, stripReleaseNodeStamps } from './releaseNodeStamp';
+export { RELEASE_NODE_PROPERTY, DEPENDENCIES_INFERRED_PROPERTY } from './releaseNodeStamp';
 import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
@@ -2118,6 +2118,45 @@ export function declareUnknownCompositions(bom: any, requested: MissingSbomCompo
   return { bom: { ...bom, metadata, compositions }, count: dependencies.length }
 }
 
+/** A DEPENDENCIES_INFERRED_PROPERTY value that counts: a positive decimal integer (FDAW-160 3.1 item 3). */
+const DEPENDENCIES_INFERRED_VALUE = /^[1-9][0-9]{0,8}$/
+
+/**
+ * FDAW-160 3.1 item 3, the last pass of a merge, after declareUnknownCompositions: states that the
+ * dependencies of every node whose dependency list ReARM inferred are unknown. Collects the bom-refs
+ * of `metadata.component` and of every component at any depth that carries
+ * DEPENDENCIES_INFERRED_PROPERTY with a positive decimal integer value; a node without a bom-ref, or
+ * with another value, is skipped and logged at debug. Appends one `compositions` entry
+ * `{ aggregate: unknown, dependencies: [their bom-refs, sorted, each once] }` after any entry already
+ * there; writes no property and adds no dependency reference. With none, the input itself.
+ */
+export function declareInferredCompositions(bom: any): UnknownCompositionsResult {
+  if (!bom || typeof bom !== 'object') return { bom, count: 0 }
+  const refs = new Set<string>()
+  const visit = (node: any) => {
+    if (!node || typeof node !== 'object') return
+    const stamp = Array.isArray(node.properties)
+      ? node.properties.find((p: any) => p?.name === DEPENDENCIES_INFERRED_PROPERTY)
+      : undefined
+    if (stamp) {
+      const ref = bomRefOf(node)
+      const valid = typeof stamp.value === 'string' && DEPENDENCIES_INFERRED_VALUE.test(stamp.value)
+      if (ref && valid) refs.add(ref)
+      else logger.debug({ ref, value: stamp.value }, 'dependencies inferred record skipped: no bom-ref or not a positive integer')
+    }
+    if (Array.isArray(node.components)) node.components.forEach(visit)
+  }
+  visit(bom.metadata?.component)
+  if (Array.isArray(bom.components)) bom.components.forEach(visit)
+  if (!refs.size) return { bom, count: 0 }
+  const dependencies = [...refs].sort()
+  const compositions = [
+    ...(Array.isArray(bom.compositions) ? bom.compositions : []),
+    { aggregate: COMPOSITION_AGGREGATE_UNKNOWN, dependencies }
+  ]
+  return { bom: { ...bom, compositions }, count: dependencies.length }
+}
+
 // ---------------------------------------------------------------------------------------------
 // FDAW-6 3.2 (B9): personal data, local paths and URL credentials out of the merged document.
 // A closed catalogue by exact name and by shape; a value is never traced across fields.
@@ -2731,8 +2770,10 @@ export type OrphanLinkResult = {
  * top-level component (`components[]` only) with a bom-ref that no resolvable dependency entry names
  * as `ref` or in `dependsOn`, and that is not the merged root, is appended in component order to the
  * merged root's `dependsOn`. Under FLAT the merged root is the release, and a component an input
- * lists without any edge is, on everything the document knows, its direct dependency. Pure: the
- * input itself when nothing is linked.
+ * lists without any edge is, on everything the document knows, its direct dependency. When it links
+ * any, the root (`metadata.component`) carries exactly one DEPENDENCIES_INFERRED_PROPERTY entry with
+ * their number, any entry of that name already on it removed first (FDAW-160 3.1). Pure: the input
+ * itself when nothing is linked.
  */
 export function linkOrphanComponents(bom: any): OrphanLinkResult {
   const none = { bom, count: 0 }
@@ -2751,7 +2792,15 @@ export function linkOrphanComponents(bom: any): OrphanLinkResult {
   if (!linked.length) return none
   logger.info(`orphan link: ${linked.length} top-level components in no dependency entry linked under the merged root`)
   const dependencies: any[] = Array.isArray(bom.dependencies) ? bom.dependencies : []
-  return { bom: { ...bom, dependencies: appendUnderRoot(dependencies, rootRef, linked) }, count: linked.length }
+  const root = bom.metadata.component
+  const rootProperties = Array.isArray(root.properties)
+    ? root.properties.filter((p: any) => p?.name !== DEPENDENCIES_INFERRED_PROPERTY)
+    : []
+  const component = { ...root, properties: [...rootProperties, { name: DEPENDENCIES_INFERRED_PROPERTY, value: String(linked.length) }] }
+  return {
+    bom: { ...bom, metadata: { ...bom.metadata, component }, dependencies: appendUnderRoot(dependencies, rootRef, linked) },
+    count: linked.length
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -4346,7 +4395,7 @@ export async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any |
     // not merge is re-stored without them, as at ingest (SCORE-60 ADR-9 (f)).
     if (!isRebomMergeOutput(bomRecord.meta)) {
       const stripped = stripReleaseNodeStamps(rawBom);
-      if (stripped.count > 0) logger.debug({ bomUuid: bomRecord.uuid, removed: stripped.count }, 'Removed release node stamps from a re-processed upload');
+      if (stripped.count > 0) logger.debug({ bomUuid: bomRecord.uuid, removed: stripped.count }, 'Removed rebom node stamps from a re-processed upload');
       rawBom = stripped.bom;
     }
 

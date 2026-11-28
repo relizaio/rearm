@@ -34,12 +34,13 @@ vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) =>
     const names = ['extractTldFromBom', 'dropExcludedAndDevComponents', 'stripPurlCredentials', 'assignMissingBomRefs', 'rekeyUnlistedInputs',
         'carryServices', 'dedupeBomRefs', 'stripPersonalDataAndLocalPaths', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots',
         'markReleaseNode', 'extractFileFilteredBom', 'linkUnfoldedRoots', 'linkOrphanComponents', 'dropDanglingRefs',
-        'declareUnknownCompositions', 'recordMergeCounts'];
+        'declareUnknownCompositions', 'declareInferredCompositions', 'recordMergeCounts'];
     return { ...actual, ...Object.fromEntries(names.map(n => [n, recorded(n)])) };
 });
 
 import { mergeBoms } from '../../src/services/bom/bomMergeService';
 import {
+    DEPENDENCIES_INFERRED_PROPERTY,
     DEV_COMPONENTS_EXCLUDED_PROPERTY,
     EXCLUDED_SCOPE_DROPPED_PROPERTY,
     PERSONAL_DATA_STRIPPED_PROPERTY,
@@ -105,7 +106,7 @@ describe('mergeBoms: the FDAW-6 passes in the pipeline', () => {
             'extractTldFromBom', 'dropExcludedAndDevComponents', 'stripPurlCredentials', 'assignMissingBomRefs',
             'rekeyUnlistedInputs', 'merge-boms', 'carryServices', 'dedupeBomRefs', 'stripPersonalDataAndLocalPaths',
             'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'linkUnfoldedRoots',
-            'linkOrphanComponents', 'dropDanglingRefs', 'declareUnknownCompositions', 'recordMergeCounts'
+            'linkOrphanComponents', 'dropDanglingRefs', 'declareUnknownCompositions', 'declareInferredCompositions', 'recordMergeCounts'
         ]);
         const at = (name: string) => passes.calls.find(c => c.name === name)!;
         // each per-input pass is handed what the one before it returned
@@ -118,7 +119,8 @@ describe('mergeBoms: the FDAW-6 passes in the pipeline', () => {
         expect(at('foldReleaseRoots').args[0]).toBe(at('stripPersonalDataAndLocalPaths').result.bom);
         expect(at('linkOrphanComponents').args[0]).toBe(at('linkUnfoldedRoots').result.bom);
         expect(at('dropDanglingRefs').args[0]).toBe(at('linkOrphanComponents').result.bom);
-        expect(at('recordMergeCounts').args[0]).toBe(at('declareUnknownCompositions').result.bom);
+        expect(at('declareInferredCompositions').args[0]).toBe(at('declareUnknownCompositions').result.bom);
+        expect(at('recordMergeCounts').args[0]).toBe(at('declareInferredCompositions').result.bom);
         expect(bom).toBe(at('recordMergeCounts').result);
 
         // the engine never saw the dev, the excluded node or the credential; the keyless node has its ref
@@ -205,5 +207,83 @@ describe('mergeBoms: the FDAW-6 passes in the pipeline', () => {
                 expect(property(bom, name)).toMatch(/^\d+$/);
             }
         }
+    });
+});
+
+/**
+ * FDAW-160 3.1 (architecture test 3): the inferred-links pass in the pipeline. rebom's side only: the
+ * mocked merge-boms builds its output from the input roots as the CLI does; that the real CLI carries
+ * the record into a product is shown by harness scenario (a) and bom-merge-dependencies-inferred.test.ts.
+ */
+describe('mergeBoms: the dependency links a merge inferred (FDAW-160)', () => {
+    const FW = 'pkg:generic/acme/firmware@2.0.0';
+    const DEVICE = 'pkg:generic/acme/device@1.0.0';
+    const libs = ['a', 'b', 'c'].map(n => ({ type: 'library', name: n, version: '1.0.0', purl: `pkg:npm/${n}@1.0.0`, 'bom-ref': `pkg:npm/${n}@1.0.0` }));
+    const graphless = (): any => ({
+        bomFormat: 'CycloneDX', specVersion: '1.6', version: 1, serialNumber: 'urn:uuid:5d0b7f6e-0a5c-4b8e-9d1e-000000000160',
+        metadata: { component: { type: 'firmware', name: 'firmware', version: '2.0.0', purl: FW, 'bom-ref': FW } },
+        components: libs.map(l => ({ ...l }))
+    });
+
+    beforeEach(() => {
+        passes.calls.length = 0;
+        mergeInputs.objs = [];
+        findBomObjectById.mockReset();
+        shellExec.mockReset();
+    });
+
+    it('runs after declareUnknownCompositions; a component merge of an input without dependencies[] ends with the root record, the entry and orphanComponentsLinked equal', async () => {
+        findBomObjectById.mockImplementation(async () => graphless());
+        // merge-boms, faked: the inputs' components under the merged root, and no entry at all
+        shellExec.mockImplementation(async () => {
+            passes.calls.push({ name: 'merge-boms', args: [] });
+            return JSON.stringify({
+                bomFormat: 'CycloneDX', specVersion: '1.6', version: 1, serialNumber: 'urn:uuid:5d0b7f6e-0a5c-4b8e-9d1e-0000000001ff',
+                metadata: { component: { type: 'firmware', name: 'firmware', version: '2.0.0', purl: FW, 'bom-ref': FW }, tools: { components: [] } },
+                components: mergeInputs.objs.flatMap((b: any) => b.components || [])
+            });
+        });
+
+        const bom = await mergeBoms(['fw'], { name: 'firmware', group: 'acme', version: '2.0.0', purl: FW, structure: 'FLAT', tldOnly: false, ignoreDev: false } as any, 'org');
+
+        const names = passes.calls.map(c => c.name);
+        expect(names.indexOf('declareInferredCompositions')).toBe(names.indexOf('declareUnknownCompositions') + 1);
+        expect(property(bom, ORPHAN_COMPONENTS_LINKED_PROPERTY)).toBe('3');
+        expect(bom.metadata.component.properties.filter((p: any) => p.name === DEPENDENCIES_INFERRED_PROPERTY))
+            .toStrictEqual([{ name: DEPENDENCIES_INFERRED_PROPERTY, value: '3' }]);
+        expect(bom.compositions).toStrictEqual([{ aggregate: 'unknown', dependencies: [FW] }]);
+    });
+
+    it('a product merge of that stored merge output: the entry names the component node, and its record is not stripped on the way', async () => {
+        const componentOutput = {
+            ...graphless(),
+            metadata: { component: { type: 'firmware', name: 'firmware', version: '2.0.0', purl: FW, 'bom-ref': FW,
+                properties: [{ name: DEPENDENCIES_INFERRED_PROPERTY, value: '3' }] } },
+            dependencies: [{ ref: FW, dependsOn: libs.map(l => l['bom-ref']) }],
+            compositions: [{ aggregate: 'unknown', dependencies: [FW] }]
+        };
+        findBomObjectById.mockImplementation(async () => structuredClone(componentOutput));
+        // merge-boms under PRESERVE_UNDER_NEW_ROOT, faked as the CLI builds it: each input's
+        // metadata.component, properties included, as a node under the product root, the inputs'
+        // entries carried, the root's entry naming the input roots, and no compositions.
+        shellExec.mockImplementation(async () => {
+            passes.calls.push({ name: 'merge-boms', args: [] });
+            const inputs = mergeInputs.objs;
+            return JSON.stringify({
+                bomFormat: 'CycloneDX', specVersion: '1.6', version: 1, serialNumber: 'urn:uuid:5d0b7f6e-0a5c-4b8e-9d1e-0000000002ff',
+                metadata: { component: { type: 'device', name: 'device', version: '1.0.0', purl: DEVICE, 'bom-ref': DEVICE }, tools: { components: [] } },
+                components: inputs.flatMap((b: any) => [b.metadata.component, ...(b.components || [])]),
+                dependencies: [{ ref: DEVICE, dependsOn: inputs.map((b: any) => b.metadata.component['bom-ref']) }, ...inputs.flatMap((b: any) => b.dependencies || [])]
+            });
+        });
+
+        const bom = await mergeBoms(['fw-merge'], { name: 'device', group: 'acme', version: '1.0.0', purl: DEVICE, structure: 'FLAT', rootComponentMergeMode: 'PRESERVE_UNDER_NEW_ROOT', tldOnly: false, ignoreDev: false } as any, 'org');
+
+        expect(mergeInputs.objs[0].metadata.component.properties).toContainEqual({ name: DEPENDENCIES_INFERRED_PROPERTY, value: '3' });
+        const node = bom.components.find((c: any) => c['bom-ref'] === FW);
+        expect(node.properties).toContainEqual({ name: DEPENDENCIES_INFERRED_PROPERTY, value: '3' });
+        expect((bom.metadata.component.properties || []).filter((p: any) => p.name === DEPENDENCIES_INFERRED_PROPERTY)).toStrictEqual([]);
+        expect(property(bom, ORPHAN_COMPONENTS_LINKED_PROPERTY)).toBe('0');
+        expect(bom.compositions).toStrictEqual([{ aggregate: 'unknown', dependencies: [FW] }]);
     });
 });
