@@ -4,7 +4,7 @@
              read the texts, so it does not say which are missing (FDAW-16's readiness row). -->
         <div v-if="fdaPremarket === 'ENABLED'" data-testid="device-fda-texts" class="text-muted"
             style="font-size: 12px; margin-top: 6px; max-width: 720px;">
-            FDA texts: the assessment justification and the three labeling statements (patches may cease at end of
+            FDA texts: the cover summary template and the three labeling statements (patches may cease at end of
             support, risk-transfer process reference, risk increases over time) are written once for the organization,
             under <router-link data-testid="device-fda-texts-link" :to="fdaTextsRoute">{{ PROSE_SETTINGS_LOCATION }}</router-link>.
             An organization administrator edits them.

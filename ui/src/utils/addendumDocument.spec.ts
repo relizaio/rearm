@@ -116,19 +116,14 @@ describe('addendumHeaderRows', () => {
         expect(rows.find(r => r[0] === 'Components with a support attestation')![1]).toBe(4)
     })
 
-    it('states the narrative scope beside the text', () => {
-        const org = addendumHeaderRows(data())
-        expect(org.find(r => r[0] === 'Justification scope')![1]).toBe('organization default')
-        const rel = addendumHeaderRows(data({ narrativeIsPerRelease: true }))
-        expect(rel.find(r => r[0] === 'Justification scope')![1]).toBe('this release')
-    })
-
-    // A blank "Assessment justification" heading reads as "we had nothing to say" rather
-    // than "nobody has written this yet".
-    it('omits the justification block entirely when neither level has one', () => {
-        const rows = addendumHeaderRows(data({ narrative: null }))
-        expect(rows.map(r => r[0])).not.toContain('Assessment justification')
-        expect(rows.map(r => r[0])).not.toContain('Justification scope')
+    // FDAW-154 3.4 (T-12a): the cover summary is its own document; the addendum prints no row of it, whatever the
+    // narrative and its scope
+    it('prints no assessment justification and no justification scope row, whatever the narrative', () => {
+        for (const over of [{}, { narrativeIsPerRelease: true }, { narrative: null }]) {
+            const labels = addendumHeaderRows(data(over)).map(r => r[0])
+            expect(labels).not.toContain('Assessment justification')
+            expect(labels).not.toContain('Justification scope')
+        }
     })
 
     it('includes each labeling statement only when authored', () => {

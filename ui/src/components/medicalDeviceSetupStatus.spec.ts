@@ -75,9 +75,9 @@ describe('MedicalDeviceSetupStatus (FDAW-78 row 16)', () => {
     it('the FDA texts block while question 2 is Yes, with its link to Submission and labeling text; absent on No', () => {
         const w = mountWith({ status: ALL_DONE })
         const block = w.find('[data-testid="device-fda-texts"]')
-        expect(block.text()).toContain('the assessment justification and the three labeling statements (patches may cease at end of'
+        expect(block.text()).toContain('the cover summary template and the three labeling statements (patches may cease at end of'
             + ' support, risk-transfer process reference, risk increases over time)')
-        expect(block.text().replace(/\s+/g, ' ')).toBe('FDA texts: the assessment justification and the three labeling statements'
+        expect(block.text().replace(/\s+/g, ' ')).toBe('FDA texts: the cover summary template and the three labeling statements'
             + ' (patches may cease at end of support, risk-transfer process reference, risk increases over time) are written once'
             + ' for the organization, under Organization Settings > Admin Settings > General > Submission and labeling text.'
             + ' An organization administrator edits them.')
