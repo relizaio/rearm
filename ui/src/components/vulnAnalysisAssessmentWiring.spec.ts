@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { withoutComments } from '@/utils/specText'
+import { FDA_SUMMARY_ONLY, FIELD_HELP } from '@/constants/vulnAnalysisFieldHelp'
 
 /**
  * FDAW-17c (FDAW-73 row 17): wiring guard for the typed assessment fields of the triage
@@ -62,6 +63,57 @@ describe.each(['./CreateVulnAnalysisModal.vue', './UpdateVulnAnalysisModal.vue']
         expect(code).toMatch(/return assessmentInputOf\(initialAssessment\.value, shown\)/)
         expect(code).toMatch(/const assessment = assessmentInput\(\)\s+if \(!assessment\) return\s+Object\.assign\(input, assessment\)/)
         expect(code).toMatch(/if \(!assessmentShown\.value\) return \{\}/)
+    })
+})
+
+describe.each(['./CreateVulnAnalysisModal.vue', './UpdateVulnAnalysisModal.vue'])('%s residual risk conclusion (FDAW-162 T-15)', (file) => {
+    const code = source(file)
+    const assessmentBlock = code.match(/<template v-if="assessmentShown">([\s\S]*?)\n {12}<\/template>/)?.[1] || ''
+    const residualBlock = assessmentBlock.match(/<template v-if="visibleAssessment\.residualRisk">([\s\S]*?)\n {16}<\/template>/)?.[1] || ''
+
+    it.each(['residualRiskMissing', 'RESIDUAL_RISK_OPTIONS', 'MAX_RESIDUAL_RISK_RATIONALE_LENGTH',
+        'MAX_RISK_FILE_REFERENCE_LENGTH'])('imports %s, which it uses', (name) => {
+        expectImportedAndUsed(code, name)
+    })
+
+    it('the three items sit under visibleAssessment.residualRisk inside assessmentShown, after the risk controls', () => {
+        expect(residualBlock).toContain('path="residualRiskAcceptability"')
+        expect(residualBlock).toContain('path="residualRiskRationale"')
+        expect(residualBlock).toContain('path="riskFileReference"')
+        expect(assessmentBlock.indexOf('path="controls"')).toBeLessThan(assessmentBlock.indexOf('visibleAssessment.residualRisk'))
+    })
+
+    it('binds the options, the two maximum lengths and the three tips', () => {
+        expect(residualBlock).toMatch(/v-model:value="assessmentForm\.residualRiskAcceptability"\s+:options="RESIDUAL_RISK_OPTIONS"/)
+        expect(residualBlock).toMatch(/v-model:value="assessmentForm\.residualRiskRationale"\s+type="textarea"[\s\S]*?:maxlength="MAX_RESIDUAL_RISK_RATIONALE_LENGTH"/)
+        expect(residualBlock).toMatch(/v-model:value="assessmentForm\.riskFileReference"[\s\S]*?:maxlength="MAX_RISK_FILE_REFERENCE_LENGTH"/)
+        expect(residualBlock).toContain(':tip="FIELD_HELP.residualRisk"')
+        expect(residualBlock).toContain(':tip="FIELD_HELP.residualRiskRationale"')
+        expect(residualBlock).toContain(':tip="FIELD_HELP.riskFileReference"')
+        expect(residualBlock).toContain('label="Residual risk"')
+        expect(residualBlock).toContain('label="Residual risk rationale"')
+        expect(residualBlock).toContain('label="Risk file reference (optional)"')
+    })
+
+    it('the Residual risk item shows the warning as its feedback with status warning', () => {
+        expect(code).toMatch(/const residualRiskWarning = computed\(\(\) => residualRiskMissing\(formData\.value\.state, assessmentForm\.value\)\)/)
+        expect(residualBlock).toMatch(/path="residualRiskAcceptability"\s+:validation-status="residualRiskWarning \? 'warning' : undefined"\s+:feedback="residualRiskWarning \|\| undefined"/)
+    })
+
+    it('the Save handler does not read the warning: it never blocks', () => {
+        const submit = code.match(/const handleSubmit = async \(\) => \{[\s\S]*?\n\}/)?.[0] || ''
+        expect(submit.length).toBeGreaterThan(0)
+        expect(submit).not.toContain('residualRiskWarning')
+        expect(submit).not.toContain('residualRiskMissing')
+    })
+})
+
+describe('the residual risk help texts say where the fields go (FDAW-162 F-3)', () => {
+    it('the shared sentence, and the three entries that end with it', () => {
+        expect(FDA_SUMMARY_ONLY).toBe('Printed in the vulnerability assessment summary of a regulatory package (fda/); not included in the VDR or VEX.')
+        expect(FIELD_HELP.residualRisk.endsWith(' ' + FDA_SUMMARY_ONLY)).toBe(true)
+        expect(FIELD_HELP.residualRiskRationale.endsWith(' ' + FDA_SUMMARY_ONLY)).toBe(true)
+        expect(FIELD_HELP.riskFileReference.endsWith(' ' + FDA_SUMMARY_ONLY + ' Do not enter internal links or credentials.')).toBe(true)
     })
 })
 

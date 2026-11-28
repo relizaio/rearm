@@ -8,6 +8,12 @@
 
 import { AnalysisState } from '@/constants/vulnAnalysis'
 
+/**
+ * Where the residual risk fields leave ReARM (FDAW-162 F-3): one sentence, so the three help texts that end with it
+ * cannot drift.
+ */
+export const FDA_SUMMARY_ONLY = 'Printed in the vulnerability assessment summary of a regulatory package (fda/); not included in the VDR or VEX.'
+
 /** One-line tooltip shown next to each form-field label. */
 export const FIELD_HELP: Record<string, string> = {
     state:
@@ -31,7 +37,13 @@ export const FIELD_HELP: Record<string, string> = {
     riskLevel:
         'Your assessed risk of this finding for the device, with its risk controls in place. Shown for an exploitable or resolved finding.',
     controls:
-        'Up to 10 risk controls, each a kind and a one-line description of how the risk is controlled. Shown for an exploitable or resolved finding.'
+        'Up to 10 risk controls, each a kind and a one-line description of how the risk is controlled. Shown for an exploitable or resolved finding.',
+    residualRisk:
+        'Whether the residual risk of this finding is acceptable for the device, with its risk controls in place. Needed with its rationale for an exploitable finding before a regulatory package can be confirmed or finalized. Shown for an exploitable finding. ' + FDA_SUMMARY_ONLY,
+    residualRiskRationale:
+        'Why the residual risk is or is not acceptable, for example how the controls reduce it and when the fix ships. ' + FDA_SUMMARY_ONLY,
+    riskFileReference:
+        'Optional: where your security risk management file records this conclusion, for example a document number and section. One line. ' + FDA_SUMMARY_ONLY + ' Do not enter internal links or credentials.'
 }
 
 /** Plain-language summary of which fields each state requires (CISA VEX). */

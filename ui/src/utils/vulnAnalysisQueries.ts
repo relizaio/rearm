@@ -4,8 +4,8 @@
  * to the Update dialog, which fills its form from it and sends responses, recommendation and
  * workaround on every save: they are selected here so a save does not clear them.
  *
- * The Pro variant adds the typed assessment fields, which the CE schema does not have yet
- * (CE catch-up deferred); a CE backend refuses a document that selects them.
+ * The Pro variant adds the typed assessment fields (with the residual risk conclusion of FDAW-162), which the CE
+ * schema does not have yet (CE catch-up deferred); a CE backend refuses a document that selects them.
  */
 export function vulnAnalysisFieldsFragment (pro: boolean): string {
     const assessment = pro
@@ -15,7 +15,10 @@ export function vulnAnalysisFieldsFragment (pro: boolean): string {
         controls {
             type
             description
-        }`
+        }
+        residualRiskAcceptability
+        residualRiskRationale
+        riskFileReference`
         : ''
     return `
     uuid

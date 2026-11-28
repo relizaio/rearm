@@ -41,7 +41,8 @@ describe('CE fragment', () => {
     })
 
     it('selects none of the typed assessment fields', () => {
-        for (const field of ['discoveryMethod', 'riskLevel', 'controls']) {
+        for (const field of ['discoveryMethod', 'riskLevel', 'controls', 'residualRiskAcceptability',
+            'residualRiskRationale', 'riskFileReference']) {
             expect(ce).not.toContain(field)
         }
     })
@@ -61,5 +62,13 @@ describe.runIf(proSchema)('Pro fragment', () => {
             }
         }
         expect(pro.replace(/\s+/g, ' ').match(/controls \{ type description \}/g)).toHaveLength(2)
+    })
+
+    it('selects the residual risk conclusion on the record and inside analysisHistory (FDAW-162 T-14)', () => {
+        for (const part of [recordOf(pro), historyOf(pro)]) {
+            for (const field of ['residualRiskAcceptability', 'residualRiskRationale', 'riskFileReference']) {
+                expect(count(part, field), field).toBe(1)
+            }
+        }
     })
 })

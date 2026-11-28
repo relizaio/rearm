@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
     DISCOVERY_METHOD_OPTIONS,
     MAX_CONTROLS,
+    MAX_RESIDUAL_RISK_RATIONALE_LENGTH,
+    MAX_RISK_FILE_REFERENCE_LENGTH,
+    RESIDUAL_RISK_OPTIONS,
     RISK_CONTROL_TYPE_OPTIONS,
     RISK_LEVEL_OPTIONS
 } from '@/constants/vulnAnalysis'
@@ -13,6 +16,8 @@ import {
     canWriteFindingAnalysis,
     cleanControls,
     emptyAssessmentForm,
+    RESIDUAL_RISK_MISSING_PREFIX,
+    residualRiskMissing,
     shownAssessmentForm,
     validateControls,
     visibleAssessmentFields,
@@ -57,20 +62,28 @@ describe('option lists', () => {
 })
 
 describe('visibleAssessmentFields', () => {
+    const none = { discoveryMethod: false, riskLevel: false, controls: false, residualRisk: false }
+
     it.each(['', 'IN_TRIAGE'])('%j shows none', (state) => {
-        expect(visibleAssessmentFields(state)).toEqual({ discoveryMethod: false, riskLevel: false, controls: false })
+        expect(visibleAssessmentFields(state)).toEqual(none)
     })
 
     it('null shows none', () => {
-        expect(visibleAssessmentFields(null)).toEqual({ discoveryMethod: false, riskLevel: false, controls: false })
+        expect(visibleAssessmentFields(null)).toEqual(none)
     })
 
-    it.each(['EXPLOITABLE', 'RESOLVED'])('%s shows all three', (state) => {
-        expect(visibleAssessmentFields(state)).toEqual({ discoveryMethod: true, riskLevel: true, controls: true })
+    it('EXPLOITABLE shows all three and the residual risk conclusion (FDAW-162)', () => {
+        expect(visibleAssessmentFields('EXPLOITABLE'))
+            .toEqual({ discoveryMethod: true, riskLevel: true, controls: true, residualRisk: true })
+    })
+
+    it('RESOLVED shows all three, not the residual risk conclusion', () => {
+        expect(visibleAssessmentFields('RESOLVED'))
+            .toEqual({ discoveryMethod: true, riskLevel: true, controls: true, residualRisk: false })
     })
 
     it.each(['NOT_AFFECTED', 'FALSE_POSITIVE'])('%s shows the discovery method only', (state) => {
-        expect(visibleAssessmentFields(state)).toEqual({ discoveryMethod: true, riskLevel: false, controls: false })
+        expect(visibleAssessmentFields(state)).toEqual({ ...none, discoveryMethod: true })
     })
 })
 
@@ -157,6 +170,89 @@ describe('shownAssessmentForm', () => {
     it('exploitable sends all three changes', () => {
         expect(assessmentInputOf(initial, shownAssessmentForm(initial, edited, 'EXPLOITABLE')))
             .toEqual({ discoveryMethod: 'EXTERNAL_REPORT', riskLevel: 'HIGH', controls: [] })
+    })
+})
+
+describe('the residual risk conclusion (FDAW-162 T-12)', () => {
+    const stored = form({
+        residualRiskAcceptability: 'ACCEPTABLE',
+        residualRiskRationale: 'Port closed in the field.',
+        riskFileReference: 'SRMR-014 section 4.2'
+    })
+    const MISSING = 'Needed before a regulatory package can be confirmed or finalized: '
+
+    it('the residual risk options: values and labels', () => {
+        expect(RESIDUAL_RISK_OPTIONS).toEqual([
+            { label: 'Acceptable', value: 'ACCEPTABLE' },
+            { label: 'Not acceptable', value: 'NOT_ACCEPTABLE' }
+        ])
+        expect(MAX_RESIDUAL_RISK_RATIONALE_LENGTH).toBe(2048)
+        expect(MAX_RISK_FILE_REFERENCE_LENGTH).toBe(512)
+    })
+
+    it('the acceptability is sent only when changed', () => {
+        expect(assessmentInputOf(stored, { ...stored })).toEqual({})
+        expect(assessmentInputOf(stored, { ...stored, residualRiskAcceptability: 'NOT_ACCEPTABLE' }))
+            .toEqual({ residualRiskAcceptability: 'NOT_ACCEPTABLE' })
+        expect(assessmentInputOf(stored, { ...stored, residualRiskAcceptability: null })).toEqual({})
+    })
+
+    it('a changed rationale or reference is sent trimmed; whitespace around the stored text is no change', () => {
+        expect(assessmentInputOf(stored, { ...stored, residualRiskRationale: '  Fixed in 2.5.  ' }))
+            .toEqual({ residualRiskRationale: 'Fixed in 2.5.' })
+        expect(assessmentInputOf(stored, { ...stored, riskFileReference: ' SRMR-015 ' }))
+            .toEqual({ riskFileReference: 'SRMR-015' })
+        expect(assessmentInputOf(stored, { ...stored, riskFileReference: ' SRMR-014 section 4.2 ' })).toEqual({})
+    })
+
+    it('an erased stored text is sent as an empty string, which clears it', () => {
+        expect(assessmentInputOf(stored, { ...stored, residualRiskRationale: '   ', riskFileReference: '' }))
+            .toEqual({ residualRiskRationale: '', riskFileReference: '' })
+    })
+
+    it('a create sends what was typed and nothing for the empty texts', () => {
+        expect(assessmentInputOf(emptyAssessmentForm(), form({ residualRiskAcceptability: 'ACCEPTABLE',
+            residualRiskRationale: 'why' }))).toEqual({ residualRiskAcceptability: 'ACCEPTABLE', residualRiskRationale: 'why' })
+    })
+
+    it('a NOT_AFFECTED state keeps the three initial values, so nothing is sent', () => {
+        const edited = form({ residualRiskAcceptability: 'NOT_ACCEPTABLE', residualRiskRationale: '', riskFileReference: 'x' })
+        const shown = shownAssessmentForm(stored, edited, 'NOT_AFFECTED')
+        expect(shown.residualRiskAcceptability).toBe('ACCEPTABLE')
+        expect(shown.residualRiskRationale).toBe('Port closed in the field.')
+        expect(shown.riskFileReference).toBe('SRMR-014 section 4.2')
+        expect(assessmentInputOf(stored, shown)).toEqual({})
+        expect(assessmentInputOf(stored, shownAssessmentForm(stored, edited, 'EXPLOITABLE')))
+            .toEqual({ residualRiskAcceptability: 'NOT_ACCEPTABLE', residualRiskRationale: '', riskFileReference: 'x' })
+    })
+
+    it('residualRiskMissing names what the gate would call missing, for an exploitable finding only', () => {
+        expect(residualRiskMissing('NOT_AFFECTED', emptyAssessmentForm())).toBeNull()
+        expect(residualRiskMissing(null, emptyAssessmentForm())).toBeNull()
+        expect(residualRiskMissing('EXPLOITABLE', stored)).toBeNull()
+        expect(residualRiskMissing('EXPLOITABLE', emptyAssessmentForm())).toBe(
+            'Needed before a regulatory package can be confirmed or finalized: residual risk acceptability, residual risk rationale')
+        expect(residualRiskMissing('EXPLOITABLE', { ...stored, residualRiskAcceptability: null }))
+            .toBe(MISSING + 'residual risk acceptability')
+        expect(residualRiskMissing('EXPLOITABLE', { ...stored, residualRiskRationale: '  ' }))
+            .toBe(MISSING + 'residual risk rationale')
+        expect(RESIDUAL_RISK_MISSING_PREFIX).toBe(MISSING)
+    })
+
+    it('a record fills the three; a history entry names them by their labels', () => {
+        expect(assessmentFormOf({ residualRiskAcceptability: 'NOT_ACCEPTABLE', residualRiskRationale: 'r', riskFileReference: 'f' }))
+            .toEqual(form({ residualRiskAcceptability: 'NOT_ACCEPTABLE', residualRiskRationale: 'r', riskFileReference: 'f' }))
+        expect(assessmentSummaryLines({
+            controls: [{ type: 'PLANNED_UPDATE', description: 'next release' }],
+            residualRiskAcceptability: 'NOT_ACCEPTABLE',
+            residualRiskRationale: 'Fixed in 2.5.',
+            riskFileReference: 'SRMR-014'
+        })).toEqual([
+            'Risk control: Planned update: next release',
+            'Residual risk: Not acceptable',
+            'Residual risk rationale: Fixed in 2.5.',
+            'Risk file reference: SRMR-014'
+        ])
     })
 })
 
