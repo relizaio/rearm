@@ -213,7 +213,7 @@ describe('the board form: target component', () => {
         expect(template.slice(save, template.indexOf('</n-button>', save)))
             .toContain(':disabled="targetMissing(editingBoardIsNew, editingBoard.target)"')
         expect(template).toContain('v-else-if="targetMissing(editingBoardIsNew, editingBoard.target)"')
-        expect(template).toContain('Target component: {{ TARGET_HINT }}')
+        expect(template).toContain('Target component or product: {{ TARGET_HINT }}')
         expect(source).toContain("taskPrefix: '', documentsDraft: documentsDraftOf(null), target: null }")
     })
 
@@ -225,10 +225,34 @@ describe('the board form: target component', () => {
         expect(save.indexOf('input.target = target')).toBeLessThan(save.indexOf("store.dispatch('updateAgentBoard'"))
     })
 
-    it('offers the fetched software components, keeping the current target on Edit', () => {
-        expect(source).toContain("targetComponents.value = await store.dispatch('fetchComponents', props.orgUuid) ?? []")
-        expect(source).toContain(': targetOf(boards.value.find(x => x.uuid === editingBoard.value?.uuid), targetComponents.value)))')
-        expect(source).toContain('void loadTargetComponents()')
+    it('offers the fetched software components and products, keeping the current target on Edit', () => {
+        expect(source).toContain(': targetOf(boards.value.find(x => x.uuid === editingBoard.value?.uuid), targetItems.value)')
+        expect(source).toContain('void loadTargetItems()')
+    })
+
+    // T-1385 (task TPF-274): products beside components, the uuid-or-name filter, and no stale
+    // unlisted option once the menu closes.
+    it('T-1385: reads components and products together, filters by uuid or name, clears the pattern on close', () => {
+        const load = source.slice(source.indexOf('async function loadTargetItems'))
+        const settled = load.slice(load.indexOf('Promise.allSettled(['), load.indexOf('])'))
+        expect(settled).toContain("store.dispatch('fetchComponents', props.orgUuid)")
+        expect(settled).toContain("store.dispatch('fetchProducts', props.orgUuid)")
+        expect(load).toContain('Could not load the components and products to pick a target from: ')
+        const field = template.indexOf('data-testid="board-target"')
+        const tag = template.slice(template.lastIndexOf('<n-select', field), template.indexOf('/>', field))
+        expect(tag).toContain(':filter="targetFilter"')
+        expect(tag).toContain('@search="(p: string) => { targetPattern = p }"')
+        expect(tag).toContain('@update:show=')
+        expect(tag).not.toContain('@blur=')
+        expect(tag).toContain('placeholder="Target component or product: a name or a uuid"')
+        expect(template).toContain("if (!v) targetPattern = ''")
+        expect(source).toContain('return boardTargetOptions(targetItems.value, current, [targetPattern.value, editingBoard.value?.target])')
+        const edit = source.slice(source.indexOf('function startEditBoard'), source.indexOf('void loadTargetItems()'))
+        expect(edit).toContain("targetPattern.value = ''")
+        const render = source.slice(source.indexOf('const renderTargetOption'), source.indexOf('const boardTargetChip'))
+        expect(render).toContain("h('span', null, [o.label, ")
+        expect(render).not.toContain('innerHTML')
+        expect(source).toContain('boardFieldErrors.value = { target: `Board requires a target component or product: ${TARGET_HINT}` }')
     })
 
     it('shows a refusal about the target beside the field', () => {
@@ -242,11 +266,11 @@ describe('the board form: target component', () => {
         expect(chip).toBeGreaterThan(-1)
         expect(template.slice(chip, template.indexOf('</n-tag>', chip)))
             .toContain('<RouterLink :to="boardTargetChip.to">{{ boardTargetChip.label }}</RouterLink>')
-        expect(source).toContain('const boardTargetChip = computed(() => targetChip(currentBoard.value, props.orgUuid, targetComponents.value))')
+        expect(source).toContain('const boardTargetChip = computed(() => targetChip(currentBoard.value, props.orgUuid, targetItems.value))')
         // T-1: the list is read quietly with the panel too, so the chip can name the target on a
         // server that does not resolve targetDetails.
-        expect(source).toContain('onMounted(() => loadTargetComponents(true))')
-        expect(source).toContain('if (!quiet) notification.error(')
+        expect(source).toContain('onMounted(() => loadTargetItems(true))')
+        expect(source).toContain('if (failure && !quiet) {')
     })
 })
 

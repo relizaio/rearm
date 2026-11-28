@@ -12,7 +12,7 @@ kind: BOARD
 version: 1
 name: platform                  # the board's identity within the organization
 description: the platform team's board
-target: platform-api            # component name, not uuid
+target: platform-api            # component or product name, not uuid
 sources:
   - github:acme/platform
 documentsRepo: https://github.com/acme/platform-docs

@@ -354,20 +354,24 @@
                     <template #prefix><span class="flabel">name</span></template>
                 </n-input>
                 <n-input v-model:value="editingBoard.description" placeholder="Description"/>
-                <!-- The node the board builds (task RD2-4): required on New, editable on Edit; a refusal about
-                     it (not a member of a perspective, archived, ...) is shown beside it. -->
+                <!-- The node the board builds (task RD2-4), a component or a product (task TPF-274): required on
+                     New, editable on Edit; found by name or by a typed or pasted uuid; a refusal about it (not
+                     found, not a member of a perspective, archived, ...) is shown beside it. -->
                 <div>
                     <n-select v-model:value="editingBoard.target" filterable :options="targetOptions"
+                              :filter="targetFilter"
+                              @search="(p: string) => { targetPattern = p }"
+                              @update:show="(v: boolean) => { if (!v) targetPattern = '' }"
                               :render-label="renderTargetOption" data-testid="board-target"
                               :status="boardFieldErrors.target ? 'error' : undefined"
-                              placeholder="Target component"/>
+                              placeholder="Target component or product: a name or a uuid"/>
                     <n-text v-if="boardFieldErrors.target" type="error" data-testid="board-target-error"
                             style="display: block; font-size: 12px;">
                         {{ boardFieldErrors.target }}
                     </n-text>
                     <n-text v-else-if="targetMissing(editingBoardIsNew, editingBoard.target)" depth="3"
                             data-testid="board-target-hint" style="display: block; font-size: 12px;">
-                        Target component: {{ TARGET_HINT }}
+                        Target component or product: {{ TARGET_HINT }}
                     </n-text>
                 </div>
                 <n-select v-model:value="editingBoard.sources" filterable multiple tag
@@ -1055,7 +1059,7 @@ import { isOrgAdmin } from '@/utils/agentReopen'
 import { AGENT_DIR, AgentName, COORDINATOR_SEAT, agentDirectory, agentLabel, agentNamesOf } from '@/utils/agentSessionLabel'
 import { hiddenBoardText, noBoardsText } from '@/utils/agentAccessMessages'
 import { boardPickerOptions, renderBoardOption, reviewBannerLabel } from '@/utils/agentTaskKeys'
-import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
+import { boardTargetOptions, targetChip, targetFilter, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
 import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal, subscribeOffer } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
 import { defaultWorkLevelPatch, groupByFromQuery, groupByOptions, groupingFor, groupTasks, hasLadder, ladderHint, levelFromQuery,
@@ -1841,7 +1845,7 @@ const roleColumns: DataTableColumns<any> = [
 ]
 
 onMounted(refreshBoards)
-onMounted(() => loadTargetComponents(true))
+onMounted(() => loadTargetItems(true))
 watch(selectedBoard, async () => {
     // Picking a board the person can read clears the notice about the one they could not.
     if (selectedBoard.value) hiddenBoard.value = null
@@ -1998,28 +2002,41 @@ async function loadTestedHeads (board: string, seq: number) {
 // A save refusal about one of the naming fields, shown beside it (task fceb1e57).
 const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string, defaultWorkLevel?: string, target?: string, ladder?: string }>({})
 
-// The target picker's list (task RD2-4): the org's software components, read (cache-first) when the
-// form opens. Read into the form, not off the store getter, which also holds components fetched one
-// by one, a board's BOARD_DOCUMENT components among them. Also read quietly with the panel, so the header
-// chip can name the target on a server that does not resolve targetDetails (T-1).
-const targetComponents = ref<any[]>([])
-async function loadTargetComponents (quiet = false) {
-    try {
-        targetComponents.value = await store.dispatch('fetchComponents', props.orgUuid) ?? []
-    } catch (e: any) {
-        targetComponents.value = []
-        if (!quiet) notification.error({ content: `Could not load the components to pick a target from: ${e?.message ?? e}`, duration: 8000 })
+// The target picker's list (task RD2-4): the org's software components and its products (task
+// TPF-274), read (cache-first) when the form opens. Read into the form from the dispatches' return
+// values, not off the store getters, which also hold components and products fetched one by one, a
+// board's BOARD_DOCUMENT components among them. Also read quietly with the panel, so the header chip
+// can name the target on a server that does not resolve targetDetails (T-1). A list that fails is
+// left out; the other one is still offered.
+const targetItems = ref<any[]>([])
+async function loadTargetItems (quiet = false) {
+    const [components, products] = await Promise.allSettled([
+        store.dispatch('fetchComponents', props.orgUuid),
+        store.dispatch('fetchProducts', props.orgUuid)
+    ])
+    targetItems.value = [components, products].flatMap(r => r.status === 'fulfilled' ? (r.value ?? []) : [])
+    const failure = [components, products].find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+    if (failure && !quiet) {
+        notification.error({ content: `Could not load the components and products to pick a target from: ${failure.reason?.message ?? failure.reason}`, duration: 8000 })
     }
 }
-const targetOptions = computed(() => boardTargetOptions(targetComponents.value, editingBoardIsNew.value ? null
-    : targetOf(boards.value.find(x => x.uuid === editingBoard.value?.uuid), targetComponents.value)))
+// What is typed in the target field: a uuid there that no listed item holds is offered as an
+// unlisted option (the server judges it on save). The select clears its own pattern when the menu
+// closes without telling @search, so the panel clears this one on @update:show.
+const targetPattern = ref('')
+const targetOptions = computed(() => {
+    const current = editingBoardIsNew.value ? null
+        : targetOf(boards.value.find(x => x.uuid === editingBoard.value?.uuid), targetItems.value)
+    return boardTargetOptions(targetItems.value, current, [targetPattern.value, editingBoard.value?.target])
+})
 const renderTargetOption = (o: any) => h('span', null, [o.label, h('span', { style: 'color: #888; font-size: 12px;' }, ` · ${targetOptionType(o)}`)])
-const boardTargetChip = computed(() => targetChip(currentBoard.value, props.orgUuid, targetComponents.value))
+const boardTargetChip = computed(() => targetChip(currentBoard.value, props.orgUuid, targetItems.value))
 
 function startEditBoard (b: any | null) {
     editingBoardIsNew.value = b === null
     boardFieldErrors.value = {}
-    void loadTargetComponents()
+    targetPattern.value = ''
+    void loadTargetItems()
     // documentsRepo comes back as the repository ROW; the editor works in uris, and the mutation
     // takes one and resolves it. Flattened here so the input binds to a string.
     editingBoard.value = b ? { ...b, sources: [...(b.sources ?? [])], budgetDollars: microsToDollars(b.budgetMicros),
@@ -2094,7 +2111,7 @@ async function saveBoard () {
         return
     }
     if (targetMissing(editingBoardIsNew.value, editingBoard.value.target)) {
-        boardFieldErrors.value = { target: `Board requires a target component: ${TARGET_HINT}` }
+        boardFieldErrors.value = { target: `Board requires a target component or product: ${TARGET_HINT}` }
         return
     }
     const staleProblem = stalenessProblem(editingBoard.value.stalenessDraft ?? {})
