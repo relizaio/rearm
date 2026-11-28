@@ -652,6 +652,7 @@
                                                     <n-select v-model:value="deviceProfile.issuingAgency" clearable style="width: 200px;"
                                                         :options="ISSUING_AGENCY_OPTIONS" :disabled="!isWritable || savingDevice" />
                                                 </n-space>
+                                                <div class="text-muted" data-testid="device-issuing-agency-help" style="font-size: 12px; margin-top: -4px;">{{ ISSUING_AGENCY_HELP }}</div>
                                                 <n-space align="center">
                                                     <span class="text-muted" style="font-size: 12px; width: 140px;">UDI-bearing component</span>
                                                     <n-switch v-model:value="deviceProfile.udiBearing" :disabled="!isWritable || savingDevice" />
@@ -1579,7 +1580,7 @@ import { loadComponentForForm, useComponentRevision, withExpectedRevision } from
 import graphqlQueries from '../utils/graphqlQueries'
 import { loadComponentDeviceWindow, deviceSaveInput, type DeviceWindowWarning } from '@/utils/componentDeviceWindow'
 import {
-    MEDICAL_DEVICE_SAVED, QUESTION_FDA_PREMARKET, QUESTION_TRACKED_821, SET_UP_MEDICAL_DEVICE, completeSetupOffered,
+    ISSUING_AGENCY_HELP, ISSUING_AGENCY_OPTIONS, MEDICAL_DEVICE_SAVED, QUESTION_FDA_PREMARKET, QUESTION_TRACKED_821, SET_UP_MEDICAL_DEVICE, completeSetupOffered,
     deviceClassFromAnswers, deviceProfileDiffers, deviceProfileFormOf, deviceStepWritten, fdaCustomizedLine,
     fdaDefaultsLine, fdaPremarketBaseline, fdaStillOnLine, isCustomized, loadMedicalDeviceSetupStatus,
     medicalDeviceSetupInput, questionIsMedical, setupStepLines, EMPTY_DEVICE_PROFILE,
@@ -1834,9 +1835,6 @@ const deviceWindowWarnings: Ref<DeviceWindowWarning[]> = ref([])
 /** FDAW-3, B8: the Device tab's one Save, class and window together. */
 const savingDevice: Ref<boolean> = ref(false)
 
-const ISSUING_AGENCY_OPTIONS = [
-    { label: 'GS1', value: 'GS1' }, { label: 'HIBCC', value: 'HIBCC' }, { label: 'ICCBBA', value: 'ICCBBA' }
-]
 const deviceClassEdit: Ref<string> = ref('NONE')
 const deviceClassBaseline: Ref<string> = ref('NONE')
 

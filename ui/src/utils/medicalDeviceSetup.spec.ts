@@ -2,7 +2,7 @@
 // renders from the server's steps and status.
 import { describe, expect, it, vi } from 'vitest'
 import {
-    EMPTY_DEVICE_PROFILE, MEDICAL_DEVICE_SAVED, MEDICAL_DEVICE_SETUP_LINK_TEXT, QUESTION_FDA_PREMARKET,
+    EMPTY_DEVICE_PROFILE, ISSUING_AGENCY_HELP, ISSUING_AGENCY_OPTIONS, MEDICAL_DEVICE_SAVED, MEDICAL_DEVICE_SETUP_LINK_TEXT, QUESTION_FDA_PREMARKET,
     QUESTION_TRACKED_821, SUBMISSIONS_ADMIN_DOES_THIS, SUBMISSIONS_NOT_SET_UP_CELL_LINK, SUBMISSIONS_NOT_SET_UP_TAIL,
     answersFromDeviceClass, completeSetupOffered, deviceClassFromAnswers, deviceProfileDiffers, deviceProfileFormOf,
     deviceStepWritten, fdaCustomizedLine, fdaDefaultsLine, fdaPremarketBaseline, fdaStillOnLine, isCustomized,
@@ -236,5 +236,19 @@ describe('loadMedicalDeviceSetupStatus', () => {
         const boom = new Error('network down')
         const client = { query: vi.fn(async () => { throw boom }) }
         await expect(loadMedicalDeviceSetupStatus(client as any, 'c1')).rejects.toBe(boom)
+    })
+})
+
+describe('Issuing agency help and options (FDAW-157)', () => {
+    it('T-1: the help line is the pinned sentence, names GS1 and carries no raw enum', () => {
+        expect(ISSUING_AGENCY_HELP).toBe(
+            'The FDA-accredited UDI issuing agency that assigned the device identifier; GS1 (GTIN) is the usual one.')
+        expect(ISSUING_AGENCY_HELP).toContain('GS1')
+        expect(ISSUING_AGENCY_HELP).not.toMatch(/\b[A-Z0-9]+_[A-Z0-9_]+\b/)
+    })
+
+    it('T-1: the three agencies, in order, each shown by its own name', () => {
+        expect(ISSUING_AGENCY_OPTIONS.map(o => o.value)).toEqual(['GS1', 'HIBCC', 'ICCBBA'])
+        for (const o of ISSUING_AGENCY_OPTIONS) expect(o.label).toBe(o.value)
     })
 })
